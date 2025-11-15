@@ -1,0 +1,18 @@
+[database]
+path = "./us.db"
+chat_db_path = "./crates/lib/chat.db"
+
+[services]
+poll_interval_ms = 1000
+training_set_sample_rate = 0.05
+
+[models]
+embedding_model = "Qwen/Qwen3-Embedding-0.6B"
+emotion_model = "SamLowe/roberta-base-go_emotions"
+
+[tailscale]
+hostname = "lonni-daemon"
+state_dir = "./tailscale-state"
+
+[grpc]
+port = 50051

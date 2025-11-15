@@ -1,0 +1,51 @@
+[workspace]
+members = ["crates/lib", "crates/server", "crates/client", "crates/sync-macros"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+
+# Iroh - P2P networking and gossip
+iroh = { version = "0.95.0",features = ["discovery-local-network"] }
+iroh-gossip = "0.95.0"
+
+# Database
+rusqlite = "0.37.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Random
+rand = "0.8"
+
+# ML/AI
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = "0.20"
+hf-hub = "0.3"
+
+# Bevy
+bevy = "0.17"
+
+# Synchronization
+parking_lot = "0.12"
+crdts = "7.3"

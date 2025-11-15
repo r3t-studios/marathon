@@ -1,0 +1,77 @@
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Compressed files
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# Rust/Cargo
+target/
+Cargo.lock  # Remove this line if this is a binary crate, keep for libraries
+**/*.rs.bk
+*.pdb
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Environment and config files that may contain secrets
+.env
+.env.local
+.env.*.local
+config.toml  # Remove this if you want to track config
+*.local.toml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Generated documentation
+docs/book/
+target/doc/
+
+# OS-specific network storage
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+
+# Project-specific (based on your untracked files)
+emotion-gradient-config-*.json
