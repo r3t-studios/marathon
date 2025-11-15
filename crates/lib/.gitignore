@@ -1,0 +1,4 @@
+/target
+chat.db
+*.db-shm
+*.db-wal
