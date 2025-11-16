@@ -1,0 +1,142 @@
+//! Async-to-sync bridge for iroh-gossip integration with Bevy
+//!
+//! This module provides the bridge between Bevy's synchronous ECS world and
+//! iroh-gossip's async runtime. It uses channels to pass messages between the
+//! async tokio tasks and Bevy systems.
+//!
+//! **NOTE:** This is a simplified implementation for Phase 3. Full gossip
+//! integration will be completed in later phases.
+
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        Mutex,
+    },
+};
+
+use bevy::prelude::*;
+
+use crate::networking::{
+    error::{
+        NetworkingError,
+        Result,
+    },
+    messages::VersionedMessage,
+    vector_clock::NodeId,
+};
+
+/// Bevy resource wrapping the gossip bridge
+///
+/// This resource provides the interface between Bevy systems and the async
+/// gossip network. Systems can send messages via `send()` and poll for
+/// incoming messages via `try_recv()`.
+#[derive(Resource, Clone)]
+pub struct GossipBridge {
+    /// Queue for outgoing messages
+    outgoing: Arc<Mutex<VecDeque<VersionedMessage>>>,
+
+    /// Queue for incoming messages
+    incoming: Arc<Mutex<VecDeque<VersionedMessage>>>,
+
+    /// Our node ID
+    pub node_id: NodeId,
+}
+
+impl GossipBridge {
+    /// Create a new gossip bridge
+    pub fn new(node_id: NodeId) -> Self {
+        Self {
+            outgoing: Arc::new(Mutex::new(VecDeque::new())),
+            incoming: Arc::new(Mutex::new(VecDeque::new())),
+            node_id,
+        }
+    }
+
+    /// Send a message to the gossip network
+    pub fn send(&self, message: VersionedMessage) -> Result<()> {
+        self.outgoing
+            .lock()
+            .map_err(|e| NetworkingError::Gossip(format!("Failed to lock outgoing queue: {}", e)))?
+            .push_back(message);
+        Ok(())
+    }
+
+    /// Try to receive a message from the gossip network
+    pub fn try_recv(&self) -> Option<VersionedMessage> {
+        self.incoming.lock().ok()?.pop_front()
+    }
+
+    /// Get our node ID
+    pub fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+/// Initialize the gossip bridge
+pub fn init_gossip_bridge(node_id: NodeId) -> GossipBridge {
+    info!("Initializing gossip bridge for node: {}", node_id);
+    GossipBridge::new(node_id)
+}
+
+/// Bevy system to broadcast outgoing messages
+pub fn broadcast_messages_system(/* will be implemented in later phases */) {
+    // This will be populated when we have delta generation
+}
+
+/// Bevy system to receive incoming messages
+///
+/// **Note:** This is deprecated in favor of `receive_and_apply_deltas_system`
+/// which provides full CRDT merge semantics. This stub remains for backward
+/// compatibility.
+pub fn receive_messages_system(bridge: Option<Res<GossipBridge>>) {
+    let Some(bridge) = bridge else {
+        return;
+    };
+
+    // Poll for incoming messages
+    while let Some(message) = bridge.try_recv() {
+        // For now, just log the message
+        debug!("Received message: {:?}", message.message);
+
+        // Use receive_and_apply_deltas_system for full functionality
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gossip_bridge_creation() {
+        let node_id = uuid::Uuid::new_v4();
+        let bridge = GossipBridge::new(node_id);
+
+        assert_eq!(bridge.node_id(), node_id);
+    }
+
+    #[test]
+    fn test_send_message() {
+        use crate::networking::SyncMessage;
+
+        let node_id = uuid::Uuid::new_v4();
+        let bridge = GossipBridge::new(node_id);
+
+        let message = SyncMessage::JoinRequest {
+            node_id,
+            session_secret: None,
+        };
+        let versioned = VersionedMessage::new(message);
+
+        let result = bridge.send(versioned);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_try_recv_empty() {
+        let node_id = uuid::Uuid::new_v4();
+        let bridge = GossipBridge::new(node_id);
+
+        assert!(bridge.try_recv().is_none());
+    }
+}

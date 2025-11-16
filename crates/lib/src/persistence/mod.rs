@@ -37,7 +37,7 @@ mod health;
 mod lifecycle;
 mod metrics;
 mod plugin;
-mod reflection;
+pub mod reflection;
 mod systems;
 mod types;
 

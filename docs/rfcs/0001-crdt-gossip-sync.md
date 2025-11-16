@@ -1,6 +1,6 @@
 # RFC 0001: CRDT Synchronization Protocol over iroh-gossip
 
-**Status:** Approved
+**Status:** Implemented
 **Authors:** Sienna
 **Created:** 2025-11-15
 **Updated:** 2025-11-15
