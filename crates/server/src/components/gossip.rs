@@ -1,12 +1,23 @@
-use bevy::prelude::*;
-use iroh::protocol::Router;
-use iroh::Endpoint;
-use iroh_gossip::api::{GossipReceiver, GossipSender};
-use iroh_gossip::net::Gossip;
-use iroh_gossip::proto::TopicId;
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+use bevy::prelude::*;
+use iroh::{
+    Endpoint,
+    protocol::Router,
+};
+use iroh_gossip::{
+    api::{
+        GossipReceiver,
+        GossipSender,
+    },
+    net::Gossip,
+    proto::TopicId,
+};
+use parking_lot::Mutex;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Message envelope for gossip sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,13 +67,9 @@ pub struct GossipTopic(pub TopicId);
 
 /// Bevy resource for tracking gossip initialization task
 #[derive(Resource)]
-pub struct GossipInitTask(pub bevy::tasks::Task<Option<(
-    Endpoint,
-    Gossip,
-    Router,
-    GossipSender,
-    GossipReceiver,
-)>>);
+pub struct GossipInitTask(
+    pub bevy::tasks::Task<Option<(Endpoint, Gossip, Router, GossipSender, GossipReceiver)>>,
+);
 
 /// Bevy message: a new message that needs to be published to gossip
 #[derive(Message, Clone, Debug)]
@@ -70,7 +77,8 @@ pub struct PublishMessageEvent {
     pub message: lib::Message,
 }
 
-/// Bevy message: a message received from gossip that needs to be saved to SQLite
+/// Bevy message: a message received from gossip that needs to be saved to
+/// SQLite
 #[derive(Message, Clone, Debug)]
 pub struct GossipMessageReceived {
     pub sync_message: SyncMessage,

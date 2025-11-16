@@ -1,7 +1,11 @@
 //! Health monitoring and error recovery for persistence layer
 
+use std::time::{
+    Duration,
+    Instant,
+};
+
 use bevy::prelude::*;
-use std::time::{Duration, Instant};
 
 /// Base delay for exponential backoff in milliseconds
 const BASE_RETRY_DELAY_MS: u64 = 1000; // 1 second
@@ -52,11 +56,10 @@ impl Default for PersistenceHealth {
 }
 
 impl PersistenceHealth {
-    /// Circuit breaker threshold - open after this many consecutive failures
-    pub const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
-
     /// How long to keep circuit breaker open before attempting recovery
     pub const CIRCUIT_BREAKER_COOLDOWN: Duration = Duration::from_secs(60);
+    /// Circuit breaker threshold - open after this many consecutive failures
+    pub const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
 
     /// Record a successful flush
     pub fn record_flush_success(&mut self) {
@@ -102,9 +105,9 @@ impl PersistenceHealth {
 
     /// Check if we should attempt operations (circuit breaker state)
     ///
-    /// **CRITICAL FIX**: Now takes `&mut self` to properly reset the circuit breaker
-    /// after cooldown expires. This prevents the circuit breaker from remaining
-    /// permanently open after one post-cooldown failure.
+    /// **CRITICAL FIX**: Now takes `&mut self` to properly reset the circuit
+    /// breaker after cooldown expires. This prevents the circuit breaker
+    /// from remaining permanently open after one post-cooldown failure.
     pub fn should_attempt_operation(&mut self) -> bool {
         if !self.circuit_breaker_open {
             return true;
@@ -114,7 +117,9 @@ impl PersistenceHealth {
         if let Some(opened_at) = self.circuit_breaker_opened_at {
             if opened_at.elapsed() >= Self::CIRCUIT_BREAKER_COOLDOWN {
                 // Transition to half-open state by resetting the breaker
-                info!("Circuit breaker cooldown elapsed - entering half-open state (testing recovery)");
+                info!(
+                    "Circuit breaker cooldown elapsed - entering half-open state (testing recovery)"
+                );
                 self.circuit_breaker_open = false;
                 self.circuit_breaker_opened_at = None;
                 // consecutive_flush_failures is kept to track if this probe succeeds
@@ -128,7 +133,8 @@ impl PersistenceHealth {
     /// Get exponential backoff delay based on consecutive failures
     pub fn get_retry_delay(&self) -> Duration {
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
-        let delay_ms = BASE_RETRY_DELAY_MS * 2u64.pow(self.consecutive_flush_failures.min(MAX_BACKOFF_EXPONENT));
+        let delay_ms = BASE_RETRY_DELAY_MS *
+            2u64.pow(self.consecutive_flush_failures.min(MAX_BACKOFF_EXPONENT));
         Duration::from_millis(delay_ms.min(MAX_RETRY_DELAY_MS))
     }
 }

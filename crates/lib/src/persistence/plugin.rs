@@ -3,10 +3,17 @@
 //! This module provides a Bevy plugin that sets up all the necessary resources
 //! and systems for the persistence layer.
 
-use crate::persistence::*;
+use std::{
+    ops::{
+        Deref,
+        DerefMut,
+    },
+    path::PathBuf,
+};
+
 use bevy::prelude::*;
-use std::path::PathBuf;
-use std::ops::{Deref, DerefMut};
+
+use crate::persistence::*;
 
 /// Bevy plugin for persistence
 ///
@@ -143,10 +150,7 @@ impl std::ops::DerefMut for WriteBufferResource {
 }
 
 /// Startup system to initialize persistence
-fn persistence_startup_system(
-    db: Res<PersistenceDb>,
-    mut metrics: ResMut<PersistenceMetrics>,
-) {
+fn persistence_startup_system(db: Res<PersistenceDb>, mut metrics: ResMut<PersistenceMetrics>) {
     if let Err(e) = startup_system(db.deref(), metrics.deref_mut()) {
         error!("Failed to initialize persistence: {}", e);
     } else {
@@ -192,10 +196,12 @@ fn collect_dirty_entities_bevy_system(
 
 /// System to automatically track changes to common Bevy components
 ///
-/// This system detects changes to Transform, automatically triggering persistence
-/// by accessing `Persisted` mutably (which marks it as changed via Bevy's change detection).
+/// This system detects changes to Transform, automatically triggering
+/// persistence by accessing `Persisted` mutably (which marks it as changed via
+/// Bevy's change detection).
 ///
-/// Add this system to your app if you want automatic persistence of Transform changes:
+/// Add this system to your app if you want automatic persistence of Transform
+/// changes:
 ///
 /// ```no_run
 /// # use bevy::prelude::*;
@@ -214,7 +220,6 @@ pub fn auto_track_transform_changes_system(
     }
 }
 
-
 /// System to checkpoint the WAL
 fn checkpoint_bevy_system(
     db: Res<PersistenceDb>,
@@ -223,18 +228,22 @@ fn checkpoint_bevy_system(
     mut metrics: ResMut<PersistenceMetrics>,
     mut health: ResMut<PersistenceHealth>,
 ) {
-    match checkpoint_system(db.deref(), config.deref(), timer.deref_mut(), metrics.deref_mut()) {
-        Ok(_) => {
+    match checkpoint_system(
+        db.deref(),
+        config.deref(),
+        timer.deref_mut(),
+        metrics.deref_mut(),
+    ) {
+        | Ok(_) => {
             health.record_checkpoint_success();
-        }
-        Err(e) => {
+        },
+        | Err(e) => {
             health.record_checkpoint_failure();
             error!(
                 "Failed to checkpoint WAL (attempt {}): {}",
-                health.consecutive_checkpoint_failures,
-                e
+                health.consecutive_checkpoint_failures, e
             );
-        }
+        },
     }
 }
 

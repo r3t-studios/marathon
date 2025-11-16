@@ -1,17 +1,17 @@
+use std::sync::Arc;
+
 use bevy::prelude::*;
 use parking_lot::Mutex;
-use std::sync::Arc;
 
 use crate::components::*;
 
 /// System: Poll the gossip init task and insert resources when complete
-pub fn poll_gossip_init(
-    mut commands: Commands,
-    mut init_task: Option<ResMut<GossipInitTask>>,
-) {
+pub fn poll_gossip_init(mut commands: Commands, mut init_task: Option<ResMut<GossipInitTask>>) {
     if let Some(mut task) = init_task {
         // Check if the task is finished (non-blocking)
-        if let Some(result) = bevy::tasks::block_on(bevy::tasks::futures_lite::future::poll_once(&mut task.0)) {
+        if let Some(result) =
+            bevy::tasks::block_on(bevy::tasks::futures_lite::future::poll_once(&mut task.0))
+        {
             if let Some((endpoint, gossip, router, sender, receiver)) = result {
                 println!("Inserting gossip resources");
 
@@ -72,17 +72,19 @@ pub fn publish_to_gossip(
 
         // Serialize the message
         match serialize_sync_message(&sync_message) {
-            Ok(bytes) => {
+            | Ok(bytes) => {
                 // TODO: Publish to gossip
                 // For now, just log that we would publish
                 println!("Would publish {} bytes to gossip", bytes.len());
 
-                // Note: Direct async broadcasting from Bevy systems is tricky due to Sync requirements
-                // We'll need to use a different approach, possibly with channels or a dedicated task
-            }
-            Err(e) => {
+                // Note: Direct async broadcasting from Bevy systems is tricky
+                // due to Sync requirements We'll need to use a
+                // different approach, possibly with channels or a dedicated
+                // task
+            },
+            | Err(e) => {
                 eprintln!("Failed to serialize sync message: {}", e);
-            }
+            },
         }
     }
 }
@@ -98,19 +100,18 @@ pub fn receive_from_gossip(
     }
 
     // TODO: Implement proper async message reception
-    // This will require spawning a long-running task that listens for gossip events
-    // and sends them as Bevy messages. For now, this is a placeholder.
+    // This will require spawning a long-running task that listens for gossip
+    // events and sends them as Bevy messages. For now, this is a
+    // placeholder.
 }
 
 /// System: Save received gossip messages to SQLite
-pub fn save_gossip_messages(
-    mut events: MessageReader<GossipMessageReceived>,
-    _db: Res<Database>,
-) {
+pub fn save_gossip_messages(mut events: MessageReader<GossipMessageReceived>, _db: Res<Database>) {
     for event in events.read() {
-        println!("Received message {} from gossip (published by {})",
-            event.sync_message.message.rowid,
-            event.sync_message.publisher_node_id);
+        println!(
+            "Received message {} from gossip (published by {})",
+            event.sync_message.message.rowid, event.sync_message.publisher_node_id
+        );
         // TODO: Save to SQLite if we don't already have it
     }
 }

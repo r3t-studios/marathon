@@ -1,4 +1,7 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{
+    Connection,
+    Result,
+};
 use tracing::info;
 
 pub fn initialize_database(conn: &Connection) -> Result<()> {
@@ -9,14 +12,17 @@ pub fn initialize_database(conn: &Connection) -> Result<()> {
 
     // Try to load the vector extension (non-fatal if it fails for now)
     match unsafe { conn.load_extension_enable() } {
-        Ok(_) => {
+        | Ok(_) => {
             match unsafe { conn.load_extension(vec_path, None::<&str>) } {
-                Ok(_) => info!("Loaded sqlite-vec extension"),
-                Err(e) => info!("Could not load sqlite-vec extension: {}. Vector operations will not be available.", e),
+                | Ok(_) => info!("Loaded sqlite-vec extension"),
+                | Err(e) => info!(
+                    "Could not load sqlite-vec extension: {}. Vector operations will not be available.",
+                    e
+                ),
             }
             let _ = unsafe { conn.load_extension_disable() };
-        }
-        Err(e) => info!("Extension loading not enabled: {}", e),
+        },
+        | Err(e) => info!("Extension loading not enabled: {}", e),
     }
 
     // Create messages table
@@ -172,10 +178,7 @@ pub fn initialize_database(conn: &Connection) -> Result<()> {
 
 /// Helper function to serialize f32 vector to bytes for storage
 pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
-    embedding
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect()
+    embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 /// Helper function to deserialize bytes back to f32 vector

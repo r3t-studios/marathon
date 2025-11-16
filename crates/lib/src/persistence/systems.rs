@@ -1,16 +1,31 @@
 //! Bevy systems for the persistence layer
 //!
-//! This module provides systems that integrate the persistence layer with Bevy's ECS.
-//! These systems handle dirty tracking, write buffering, and flushing to SQLite.
+//! This module provides systems that integrate the persistence layer with
+//! Bevy's ECS. These systems handle dirty tracking, write buffering, and
+//! flushing to SQLite.
 
-use crate::persistence::*;
-use crate::persistence::error::Result;
-use bevy::prelude::*;
-use bevy::tasks::{IoTaskPool, Task};
+use std::{
+    sync::{
+        Arc,
+        Mutex,
+    },
+    time::Instant,
+};
+
+use bevy::{
+    prelude::*,
+    tasks::{
+        IoTaskPool,
+        Task,
+    },
+};
 use futures_lite::future;
 use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+
+use crate::persistence::{
+    error::Result,
+    *,
+};
 
 /// Resource wrapping the SQLite connection
 #[derive(Clone, bevy::prelude::Resource)]
@@ -48,8 +63,9 @@ impl PersistenceDb {
     /// - `Ok(MutexGuard<Connection>)`: Locked connection ready for use
     /// - `Err(PersistenceError)`: If mutex is poisoned
     pub fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
-        self.conn.lock()
-            .map_err(|e| PersistenceError::Other(format!("Database connection mutex poisoned: {}", e)))
+        self.conn.lock().map_err(|e| {
+            PersistenceError::Other(format!("Database connection mutex poisoned: {}", e))
+        })
     }
 }
 
@@ -85,9 +101,9 @@ pub struct FlushResult {
 fn calculate_bytes_written(ops: &[PersistenceOp]) -> u64 {
     ops.iter()
         .map(|op| match op {
-            PersistenceOp::UpsertComponent { data, .. } => data.len() as u64,
-            PersistenceOp::LogOperation { operation, .. } => operation.len() as u64,
-            _ => 0,
+            | PersistenceOp::UpsertComponent { data, .. } => data.len() as u64,
+            | PersistenceOp::LogOperation { operation, .. } => operation.len() as u64,
+            | _ => 0,
         })
         .sum()
 }
@@ -120,10 +136,7 @@ fn perform_flush_sync(
 /// Helper function to perform a flush asynchronously (for normal operations)
 ///
 /// This runs on the I/O task pool to avoid blocking the main thread
-fn perform_flush_async(
-    ops: Vec<PersistenceOp>,
-    db: PersistenceDb,
-) -> Result<FlushResult> {
+fn perform_flush_async(ops: Vec<PersistenceOp>, db: PersistenceDb) -> Result<FlushResult> {
     if ops.is_empty() {
         return Ok(FlushResult {
             operations_count: 0,
@@ -151,10 +164,12 @@ fn perform_flush_async(
 
 /// System to flush the write buffer to SQLite asynchronously
 ///
-/// This system runs on a schedule based on the configuration and battery status.
-/// It spawns async tasks to avoid blocking the main thread and handles errors gracefully.
+/// This system runs on a schedule based on the configuration and battery
+/// status. It spawns async tasks to avoid blocking the main thread and handles
+/// errors gracefully.
 ///
-/// The system also polls pending flush tasks and updates metrics when they complete.
+/// The system also polls pending flush tasks and updates metrics when they
+/// complete.
 pub fn flush_system(
     mut write_buffer: ResMut<WriteBufferResource>,
     db: Res<PersistenceDb>,
@@ -170,7 +185,7 @@ pub fn flush_system(
     pending_tasks.tasks.retain_mut(|task| {
         if let Some(result) = future::block_on(future::poll_once(task)) {
             match result {
-                Ok(flush_result) => {
+                | Ok(flush_result) => {
                     let previous_failures = health.consecutive_flush_failures;
                     health.record_flush_success();
 
@@ -183,12 +198,10 @@ pub fn flush_system(
 
                     // Emit recovery event if we recovered from failures
                     if previous_failures > 0 {
-                        recovery_events.write(PersistenceRecoveryEvent {
-                            previous_failures,
-                        });
+                        recovery_events.write(PersistenceRecoveryEvent { previous_failures });
                     }
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     health.record_flush_failure();
 
                     let error_msg = format!("{}", e);
@@ -205,7 +218,7 @@ pub fn flush_system(
                         consecutive_failures: health.consecutive_flush_failures,
                         circuit_breaker_open: health.circuit_breaker_open,
                     });
-                }
+                },
             }
             false // Remove completed task
         } else {
@@ -235,9 +248,7 @@ pub fn flush_system(
     let task_pool = IoTaskPool::get();
     let db_clone = db.clone();
 
-    let task = task_pool.spawn(async move {
-        perform_flush_async(ops, db_clone.clone())
-    });
+    let task = task_pool.spawn(async move { perform_flush_async(ops, db_clone.clone()) });
 
     pending_tasks.tasks.push(task);
 
@@ -247,7 +258,8 @@ pub fn flush_system(
 
 /// System to checkpoint the WAL file
 ///
-/// This runs less frequently than flush_system to merge the WAL into the main database.
+/// This runs less frequently than flush_system to merge the WAL into the main
+/// database.
 pub fn checkpoint_system(
     db: &PersistenceDb,
     config: &PersistenceConfig,
@@ -308,24 +320,30 @@ pub fn shutdown_system(
     // CRITICAL: Wait for all pending async flushes to complete
     // This prevents data loss from in-flight operations
     if let Some(pending) = pending_tasks {
-        info!("Waiting for {} pending flush tasks to complete before shutdown", pending.tasks.len());
+        info!(
+            "Waiting for {} pending flush tasks to complete before shutdown",
+            pending.tasks.len()
+        );
 
         for task in pending.tasks.drain(..) {
             // Block on each pending task to ensure completion
             match future::block_on(task) {
-                Ok(flush_result) => {
+                | Ok(flush_result) => {
                     // Update metrics for completed flush
                     metrics.record_flush(
                         flush_result.operations_count,
                         flush_result.duration,
                         flush_result.bytes_written,
                     );
-                    debug!("Pending flush completed: {} operations", flush_result.operations_count);
-                }
-                Err(e) => {
+                    debug!(
+                        "Pending flush completed: {} operations",
+                        flush_result.operations_count
+                    );
+                },
+                | Err(e) => {
                     error!("Pending flush failed during shutdown: {}", e);
                     // Continue with shutdown even if a task failed
-                }
+                },
             }
         }
 

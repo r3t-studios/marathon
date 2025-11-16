@@ -1,13 +1,30 @@
-use crate::db;
-use anyhow::{Context, Result};
+use std::{
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
+
+use anyhow::{
+    Context,
+    Result,
+};
 use chrono::Utc;
 use rusqlite::Connection;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{mpsc, Mutex};
-use tokio::time;
-use tracing::{debug, error, info, warn};
+use tokio::{
+    sync::{
+        Mutex,
+        mpsc,
+    },
+    time,
+};
+use tracing::{
+    debug,
+    error,
+    info,
+    warn,
+};
+
+use crate::db;
 
 pub struct ChatPollerService {
     chat_db_path: String,
@@ -33,12 +50,15 @@ impl ChatPollerService {
 
     pub async fn run(&self) -> Result<()> {
         info!("Starting chat poller service");
-        info!("Polling {} every {:?}", self.chat_db_path, self.poll_interval);
+        info!(
+            "Polling {} every {:?}",
+            self.chat_db_path, self.poll_interval
+        );
 
         // Get last processed rowid from database
         let us_db = self.us_db.lock().await;
-        let mut last_rowid = db::get_last_processed_rowid(&us_db)
-            .context("Failed to get last processed rowid")?;
+        let mut last_rowid =
+            db::get_last_processed_rowid(&us_db).context("Failed to get last processed rowid")?;
         drop(us_db);
 
         info!("Starting from rowid: {}", last_rowid);
@@ -49,7 +69,7 @@ impl ChatPollerService {
             interval.tick().await;
 
             match self.poll_messages(last_rowid).await {
-                Ok(new_messages) => {
+                | Ok(new_messages) => {
                     if !new_messages.is_empty() {
                         info!("Found {} new messages", new_messages.len());
 
@@ -74,10 +94,10 @@ impl ChatPollerService {
                     } else {
                         debug!("No new messages");
                     }
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     error!("Error polling messages: {}", e);
-                }
+                },
             }
         }
     }
@@ -85,12 +105,14 @@ impl ChatPollerService {
     async fn poll_messages(&self, last_rowid: i64) -> Result<Vec<lib::Message>> {
         // Check if chat.db exists
         if !Path::new(&self.chat_db_path).exists() {
-            return Err(anyhow::anyhow!("chat.db not found at {}", self.chat_db_path));
+            return Err(anyhow::anyhow!(
+                "chat.db not found at {}",
+                self.chat_db_path
+            ));
         }
 
         // Open chat.db (read-only)
-        let chat_db = lib::ChatDb::open(&self.chat_db_path)
-            .context("Failed to open chat.db")?;
+        let chat_db = lib::ChatDb::open(&self.chat_db_path).context("Failed to open chat.db")?;
 
         // Get messages with rowid > last_rowid
         // We'll use the existing get_our_messages but need to filter by rowid

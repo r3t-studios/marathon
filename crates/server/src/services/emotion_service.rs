@@ -1,9 +1,18 @@
-use crate::db;
+use std::sync::Arc;
+
 use anyhow::Result;
 use rusqlite::Connection;
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info, warn};
+use tokio::sync::{
+    Mutex,
+    mpsc,
+};
+use tracing::{
+    error,
+    info,
+    warn,
+};
+
+use crate::db;
 
 /// Service responsible for classifying emotions in messages
 pub struct EmotionService {
@@ -56,11 +65,11 @@ impl EmotionService {
         // Get message ID from our database
         let us_db = self.us_db.lock().await;
         let message_id = match db::get_message_id_by_chat_rowid(&us_db, msg.rowid)? {
-            Some(id) => id,
-            None => {
+            | Some(id) => id,
+            | None => {
                 warn!("Message {} not found in database, skipping", msg.rowid);
                 return Ok(());
-            }
+            },
         };
 
         // Check if emotion classification already exists
@@ -70,8 +79,8 @@ impl EmotionService {
 
         // Skip if message has no text
         let text = match &msg.text {
-            Some(t) if !t.is_empty() => t,
-            _ => return Ok(()),
+            | Some(t) if !t.is_empty() => t,
+            | _ => return Ok(()),
         };
 
         drop(us_db);
@@ -82,7 +91,13 @@ impl EmotionService {
 
         // Store emotion classification
         let us_db = self.us_db.lock().await;
-        db::insert_emotion(&us_db, message_id, &emotion, confidence, &self.model_version)?;
+        db::insert_emotion(
+            &us_db,
+            message_id,
+            &emotion,
+            confidence,
+            &self.model_version,
+        )?;
 
         // Randomly add to training set based on sample rate
         if rand::random::<f64>() < self.training_sample_rate {

@@ -1,5 +1,8 @@
-use lib::{ChatDb, Result};
 use chrono::Datelike;
+use lib::{
+    ChatDb,
+    Result,
+};
 
 /// Test that we can get messages from the Dutch phone number conversation
 #[test]
@@ -12,11 +15,14 @@ fn test_get_our_messages_default_range() -> Result<()> {
     println!("Found {} messages from January 2024 to now", messages.len());
 
     // Verify we got some messages
-    assert!(messages.len() > 0, "Should find messages in the conversation");
+    assert!(
+        messages.len() > 0,
+        "Should find messages in the conversation"
+    );
 
     // Verify messages are in chronological order (ASC)
     for i in 1..messages.len().min(10) {
-        if let (Some(prev_date), Some(curr_date)) = (messages[i-1].date, messages[i].date) {
+        if let (Some(prev_date), Some(curr_date)) = (messages[i - 1].date, messages[i].date) {
             assert!(
                 prev_date <= curr_date,
                 "Messages should be in ascending date order"
@@ -28,8 +34,12 @@ fn test_get_our_messages_default_range() -> Result<()> {
     for msg in messages.iter().take(10) {
         if let Some(date) = msg.date {
             assert!(date.year() >= 2024, "Messages should be from 2024 or later");
-            println!("Message date: {}, from_me: {}, text: {:?}",
-                     date, msg.is_from_me, msg.text.as_ref().map(|s| &s[..s.len().min(50)]));
+            println!(
+                "Message date: {}, from_me: {}, text: {:?}",
+                date,
+                msg.is_from_me,
+                msg.text.as_ref().map(|s| &s[..s.len().min(50)])
+            );
         }
     }
 
@@ -39,7 +49,10 @@ fn test_get_our_messages_default_range() -> Result<()> {
 /// Test that we can get messages with a custom date range
 #[test]
 fn test_get_our_messages_custom_range() -> Result<()> {
-    use chrono::{TimeZone, Utc};
+    use chrono::{
+        TimeZone,
+        Utc,
+    };
 
     let db = ChatDb::open("chat.db")?;
 
@@ -57,7 +70,9 @@ fn test_get_our_messages_custom_range() -> Result<()> {
             assert!(
                 date >= start && date <= end,
                 "Message date {} should be between {} and {}",
-                date, start, end
+                date,
+                start,
+                end
             );
         }
     }
@@ -86,11 +101,25 @@ fn test_conversation_summary() -> Result<()> {
     for (i, msg) in messages.iter().take(5).enumerate() {
         if let Some(date) = msg.date {
             let sender = if msg.is_from_me { "Me" } else { "Them" };
-            let text = msg.text.as_ref()
-                .map(|t| if t.len() > 60 { format!("{}...", &t[..60]) } else { t.clone() })
+            let text = msg
+                .text
+                .as_ref()
+                .map(|t| {
+                    if t.len() > 60 {
+                        format!("{}...", &t[..60])
+                    } else {
+                        t.clone()
+                    }
+                })
                 .unwrap_or_else(|| "[No text]".to_string());
 
-            println!("{}. {} ({}): {}", i + 1, date.format("%Y-%m-%d %H:%M"), sender, text);
+            println!(
+                "{}. {} ({}): {}",
+                i + 1,
+                date.format("%Y-%m-%d %H:%M"),
+                sender,
+                text
+            );
         }
     }
 

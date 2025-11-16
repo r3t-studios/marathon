@@ -1,8 +1,13 @@
 //! Configuration for the persistence layer
 
-use crate::persistence::error::Result;
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
+use crate::persistence::error::Result;
 
 /// Default critical flush delay in milliseconds
 const DEFAULT_CRITICAL_FLUSH_DELAY_MS: u64 = 1000;

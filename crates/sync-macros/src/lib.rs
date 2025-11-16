@@ -1,6 +1,16 @@
 use proc_macro::TokenStream;
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Type, ItemStruct};
+use quote::{
+    format_ident,
+    quote,
+};
+use syn::{
+    Data,
+    DeriveInput,
+    Fields,
+    ItemStruct,
+    Type,
+    parse_macro_input,
+};
 
 /// Attribute macro for transparent CRDT sync
 ///
@@ -10,17 +20,17 @@ use syn::{parse_macro_input, DeriveInput, Data, Fields, Type, ItemStruct};
 /// ```
 /// #[synced]
 /// struct EmotionGradientConfig {
-///     canvas_width: f32,        // Becomes SyncedValue<f32> internally
-///     canvas_height: f32,       // Auto-generates getters/setters
+///     canvas_width: f32,  // Becomes SyncedValue<f32> internally
+///     canvas_height: f32, // Auto-generates getters/setters
 ///
 ///     #[sync(skip)]
-///     node_id: String,          // Not synced
+///     node_id: String, // Not synced
 /// }
 ///
 /// // Use it like a normal struct:
 /// let mut config = EmotionGradientConfig::new("node1".into());
-/// config.set_canvas_width(1024.0);  // Auto-generates sync operation
-/// println!("Width: {}", config.canvas_width());  // Transparent access
+/// config.set_canvas_width(1024.0); // Auto-generates sync operation
+/// println!("Width: {}", config.canvas_width()); // Transparent access
 /// ```
 #[proc_macro_attribute]
 pub fn synced(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -30,8 +40,8 @@ pub fn synced(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let op_enum_name = format_ident!("{}Op", name);
 
     let fields = match &input.fields {
-        Fields::Named(fields) => &fields.named,
-        _ => panic!("synced only supports structs with named fields"),
+        | Fields::Named(fields) => &fields.named,
+        | _ => panic!("synced only supports structs with named fields"),
     };
 
     let mut internal_fields = Vec::new();
@@ -50,9 +60,8 @@ pub fn synced(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
         // Check if field should be skipped
         let should_skip = field.attrs.iter().any(|attr| {
-            attr.path().is_ident("sync")
-                && attr
-                    .parse_args::<syn::Ident>()
+            attr.path().is_ident("sync") &&
+                attr.parse_args::<syn::Ident>()
                     .map(|i| i == "skip")
                     .unwrap_or(false)
         });
@@ -87,11 +96,7 @@ pub fn synced(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 .to_string()
                 .chars()
                 .enumerate()
-                .map(|(i, c)| if i == 0 {
-                    c.to_ascii_uppercase()
-                } else {
-                    c
-                })
+                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
                 .collect::<String>()
         );
 
@@ -209,11 +214,11 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     let op_enum_name = format_ident!("{}Op", name);
 
     let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            _ => panic!("Synced only supports structs with named fields"),
+        | Data::Struct(data) => match &data.fields {
+            | Fields::Named(fields) => &fields.named,
+            | _ => panic!("Synced only supports structs with named fields"),
         },
-        _ => panic!("Synced only supports structs"),
+        | _ => panic!("Synced only supports structs"),
     };
 
     let mut field_ops = Vec::new();
@@ -226,20 +231,21 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
         let field_type = &field.ty;
 
         // Check if field should be skipped
-        let should_skip = field.attrs.iter()
-            .any(|attr| {
-                attr.path().is_ident("sync") &&
+        let should_skip = field.attrs.iter().any(|attr| {
+            attr.path().is_ident("sync") &&
                 attr.parse_args::<syn::Ident>()
                     .map(|i| i == "skip")
                     .unwrap_or(false)
-            });
+        });
 
         if should_skip {
             continue;
         }
 
-        let op_variant = format_ident!("Set{}",
-            field_name.to_string()
+        let op_variant = format_ident!(
+            "Set{}",
+            field_name
+                .to_string()
                 .chars()
                 .enumerate()
                 .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
@@ -252,7 +258,7 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
         let crdt_strategy = get_crdt_strategy(field_type);
 
         match crdt_strategy.as_str() {
-            "lww" => {
+            | "lww" => {
                 // LWW for simple types
                 field_ops.push(quote! {
                     #op_variant {
@@ -283,10 +289,10 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
                 merge_code.push(quote! {
                     self.#field_name.merge(&other.#field_name);
                 });
-            }
-            _ => {
+            },
+            | _ => {
                 // Default to LWW
-            }
+            },
         }
     }
 

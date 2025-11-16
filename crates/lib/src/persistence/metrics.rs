@@ -142,19 +142,19 @@ pub enum HealthWarning {
 impl std::fmt::Display for HealthWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HealthWarning::SlowFlush(duration) => {
+            | HealthWarning::SlowFlush(duration) => {
+                write!(f, "Flush duration ({:?}) exceeds 50ms threshold", duration)
+            },
+            | HealthWarning::LargeWal(size) => {
+                write!(f, "WAL size ({} bytes) exceeds 5MB threshold", size)
+            },
+            | HealthWarning::HighCrashRate(rate) => {
                 write!(
                     f,
-                    "Flush duration ({:?}) exceeds 50ms threshold",
-                    duration
+                    "Crash recovery rate ({:.1}%) exceeds 10% threshold",
+                    rate * 100.0
                 )
-            }
-            HealthWarning::LargeWal(size) => {
-                write!(f, "WAL size ({} bytes) exceeds 5MB threshold", size)
-            }
-            HealthWarning::HighCrashRate(rate) => {
-                write!(f, "Crash recovery rate ({:.1}%) exceeds 10% threshold", rate * 100.0)
-            }
+            },
         }
     }
 }

@@ -1,9 +1,16 @@
 use anyhow::Result;
-use iroh::protocol::Router;
-use iroh::Endpoint;
-use iroh_gossip::api::{GossipReceiver, GossipSender};
-use iroh_gossip::net::Gossip;
-use iroh_gossip::proto::TopicId;
+use iroh::{
+    Endpoint,
+    protocol::Router,
+};
+use iroh_gossip::{
+    api::{
+        GossipReceiver,
+        GossipSender,
+    },
+    net::Gossip,
+    proto::TopicId,
+};
 
 /// Initialize Iroh endpoint and gossip for the given topic
 pub async fn init_iroh_gossip(

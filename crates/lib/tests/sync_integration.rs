@@ -1,7 +1,19 @@
-use lib::sync::{synced, SyncMessage, Syncable};
-use iroh::{Endpoint, protocol::{Router, ProtocolHandler, AcceptError}};
-use anyhow::Result;
 use std::sync::Arc;
+
+use anyhow::Result;
+use iroh::{
+    Endpoint,
+    protocol::{
+        AcceptError,
+        ProtocolHandler,
+        Router,
+    },
+};
+use lib::sync::{
+    SyncMessage,
+    Syncable,
+    synced,
+};
 use tokio::sync::Mutex;
 
 /// Test configuration that can be synced
@@ -28,20 +40,25 @@ impl ProtocolHandler for SyncProtocol {
         println!("Accepting connection from: {}", connection.remote_id());
 
         // Accept the bidirectional stream
-        let (mut send, mut recv) = connection.accept_bi().await
+        let (mut send, mut recv) = connection
+            .accept_bi()
+            .await
             .map_err(AcceptError::from_err)?;
 
         println!("Stream accepted, reading message...");
 
         // Read the sync message
-        let bytes = recv.read_to_end(1024 * 1024).await
+        let bytes = recv
+            .read_to_end(1024 * 1024)
+            .await
             .map_err(AcceptError::from_err)?;
 
         println!("Received {} bytes", bytes.len());
 
         // Deserialize and apply
-        let msg = SyncMessage::<TestConfigOp>::from_bytes(&bytes)
-            .map_err(|e| AcceptError::from_err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+        let msg = SyncMessage::<TestConfigOp>::from_bytes(&bytes).map_err(|e| {
+            AcceptError::from_err(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })?;
 
         println!("Applying operation from node: {}", msg.node_id);
 
@@ -51,8 +68,7 @@ impl ProtocolHandler for SyncProtocol {
         println!("Operation applied successfully");
 
         // Close the stream
-        send.finish()
-            .map_err(AcceptError::from_err)?;
+        send.finish().map_err(AcceptError::from_err)?;
 
         Ok(())
     }
@@ -76,24 +92,24 @@ async fn test_sync_between_two_nodes() -> Result<()> {
     println!("Node 2: {}", node2_id);
 
     // Create synced configs on both nodes
-    let mut config1 = TestConfig::new(
-        42,
-        "initial".to_string(),
-        node1_id.clone(),
-    );
+    let mut config1 = TestConfig::new(42, "initial".to_string(), node1_id.clone());
 
-    let config2 = TestConfig::new(
-        42,
-        "initial".to_string(),
-        node2_id.clone(),
-    );
+    let config2 = TestConfig::new(42, "initial".to_string(), node2_id.clone());
     let config2_shared = Arc::new(Mutex::new(config2));
 
     println!("\nInitial state:");
-    println!("  Node 1: value={}, name={}", config1.value(), config1.name());
+    println!(
+        "  Node 1: value={}, name={}",
+        config1.value(),
+        config1.name()
+    );
     {
         let config2 = config2_shared.lock().await;
-        println!("  Node 2: value={}, name={}", config2.value(), config2.name());
+        println!(
+            "  Node 2: value={}, name={}",
+            config2.value(),
+            config2.name()
+        );
     }
 
     // Set up router on node2 to accept incoming connections
@@ -101,9 +117,7 @@ async fn test_sync_between_two_nodes() -> Result<()> {
     let protocol = SyncProtocol {
         config: config2_shared.clone(),
     };
-    let router = Router::builder(node2)
-        .accept(SYNC_ALPN, protocol)
-        .spawn();
+    let router = Router::builder(node2).accept(SYNC_ALPN, protocol).spawn();
 
     router.endpoint().online().await;
     println!("✓ Node2 router ready");
@@ -136,10 +150,18 @@ async fn test_sync_between_two_nodes() -> Result<()> {
 
     // Verify both configs have the same value
     println!("\nFinal state:");
-    println!("  Node 1: value={}, name={}", config1.value(), config1.name());
+    println!(
+        "  Node 1: value={}, name={}",
+        config1.value(),
+        config1.name()
+    );
     {
         let config2 = config2_shared.lock().await;
-        println!("  Node 2: value={}, name={}", config2.value(), config2.name());
+        println!(
+            "  Node 2: value={}, name={}",
+            config2.value(),
+            config2.name()
+        );
 
         assert_eq!(*config1.value(), 100);
         assert_eq!(*config2.value(), 100);

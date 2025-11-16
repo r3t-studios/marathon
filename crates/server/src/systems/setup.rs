@@ -1,5 +1,7 @@
-use bevy::prelude::*;
-use bevy::tasks::AsyncComputeTaskPool;
+use bevy::{
+    prelude::*,
+    tasks::AsyncComputeTaskPool,
+};
 
 use crate::components::*;
 

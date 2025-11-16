@@ -1,6 +1,7 @@
 //! Data access layer for iMessage chat.db
 //!
-//! This library provides a read-only interface to query messages from a specific conversation.
+//! This library provides a read-only interface to query messages from a
+//! specific conversation.
 //!
 //! # Safety
 //!
@@ -20,12 +21,18 @@
 //! # Ok::<(), lib::ChatDbError>(())
 //! ```
 
+mod db;
 mod error;
 mod models;
-mod db;
-pub mod sync;
 pub mod persistence;
+pub mod sync;
 
-pub use error::{ChatDbError, Result};
-pub use models::{Message, Chat};
 pub use db::ChatDb;
+pub use error::{
+    ChatDbError,
+    Result,
+};
+pub use models::{
+    Chat,
+    Message,
+};

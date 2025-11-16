@@ -8,20 +8,24 @@ mod models;
 mod services;
 mod systems;
 
-use anyhow::{Context, Result};
+use std::{
+    path::Path,
+    sync::Arc,
+};
+
+use anyhow::{
+    Context,
+    Result,
+};
 use bevy::prelude::*;
-use config::Config;
-use iroh_gossip::proto::TopicId;
-use parking_lot::Mutex;
-use rusqlite::Connection;
-use std::path::Path;
-use std::sync::Arc;
-
-// Re-export init function
-pub use iroh_sync::init_iroh_gossip;
-
 // Import components and systems
 use components::*;
+use config::Config;
+use iroh_gossip::proto::TopicId;
+// Re-export init function
+pub use iroh_sync::init_iroh_gossip;
+use parking_lot::Mutex;
+use rusqlite::Connection;
 use systems::*;
 
 fn main() {
@@ -29,11 +33,11 @@ fn main() {
 
     // Load configuration and initialize database
     let (config, us_db) = match initialize_app() {
-        Ok(data) => data,
-        Err(e) => {
+        | Ok(data) => data,
+        | Err(e) => {
             eprintln!("Failed to initialize app: {}", e);
             return;
-        }
+        },
     };
 
     // Create a topic ID for gossip (use a fixed topic for now)
@@ -85,8 +89,7 @@ fn initialize_app() -> Result<(Config, Arc<Mutex<Connection>>)> {
 
     // Initialize database
     println!("Initializing database at {}", config.database.path);
-    let conn =
-        Connection::open(&config.database.path).context("Failed to open database")?;
+    let conn = Connection::open(&config.database.path).context("Failed to open database")?;
 
     db::initialize_database(&conn).context("Failed to initialize database schema")?;
 
