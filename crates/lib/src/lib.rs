@@ -24,6 +24,7 @@ mod error;
 mod models;
 mod db;
 pub mod sync;
+pub mod persistence;
 
 pub use error::{ChatDbError, Result};
 pub use models::{Message, Chat};
