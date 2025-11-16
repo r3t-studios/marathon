@@ -54,7 +54,14 @@ impl<T: Clone> SyncedValue<T> {
     }
 
     pub fn merge(&mut self, other: &Self) {
-        self.apply_lww(other.value.clone(), other.timestamp, other.node_id.clone());
+        // Only clone if we're actually going to use the values (when other is newer)
+        if other.timestamp > self.timestamp
+            || (other.timestamp == self.timestamp && other.node_id > self.node_id)
+        {
+            self.value = other.value.clone();
+            self.timestamp = other.timestamp;
+            self.node_id = other.node_id.clone();
+        }
     }
 }
 
