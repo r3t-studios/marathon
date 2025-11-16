@@ -24,6 +24,7 @@
 mod db;
 mod error;
 mod models;
+pub mod networking;
 pub mod persistence;
 pub mod sync;
 
