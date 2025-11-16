@@ -1,7 +1,22 @@
-use crate::db::schema::{deserialize_embedding, serialize_embedding};
-use crate::models::*;
-use chrono::{TimeZone, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Result, Row};
+use chrono::{
+    TimeZone,
+    Utc,
+};
+use rusqlite::{
+    Connection,
+    OptionalExtension,
+    Result,
+    Row,
+    params,
+};
+
+use crate::{
+    db::schema::{
+        deserialize_embedding,
+        serialize_embedding,
+    },
+    models::*,
+};
 
 /// Insert a new message into the database
 pub fn insert_message(conn: &Connection, msg: &lib::Message) -> Result<i64> {
@@ -71,7 +86,10 @@ pub fn insert_message_embedding(
 }
 
 /// Get message embedding
-pub fn get_message_embedding(conn: &Connection, message_id: i64) -> Result<Option<MessageEmbedding>> {
+pub fn get_message_embedding(
+    conn: &Connection,
+    message_id: i64,
+) -> Result<Option<MessageEmbedding>> {
     conn.query_row(
         "SELECT id, message_id, embedding, model_name, created_at
          FROM message_embeddings WHERE message_id = ?1",
@@ -203,7 +221,7 @@ pub fn list_emotions(
 ) -> Result<Vec<Emotion>> {
     let mut query = String::from(
         "SELECT id, message_id, emotion, confidence, model_version, created_at, updated_at
-         FROM emotions WHERE 1=1"
+         FROM emotions WHERE 1=1",
     );
 
     if emotion_filter.is_some() {

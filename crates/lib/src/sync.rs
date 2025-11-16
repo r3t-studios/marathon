@@ -1,24 +1,37 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::ops::{Deref, DerefMut};
+use std::ops::{
+    Deref,
+    DerefMut,
+};
 
-// Re-export the macros
-pub use sync_macros::{synced, Synced};
-
+use chrono::{
+    DateTime,
+    Utc,
+};
 // Re-export common CRDT types from the crdts library
 pub use crdts::{
+    CmRDT,
+    CvRDT,
     ctx::ReadCtx,
     lwwreg::LWWReg,
     map::Map,
     orswot::Orswot,
-    CmRDT, CvRDT,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+// Re-export the macros
+pub use sync_macros::{
+    Synced,
+    synced,
 };
 
 pub type NodeId = String;
 
 /// Transparent wrapper for synced values
 ///
-/// This wraps any value with LWW semantics but allows you to use it like a normal value
+/// This wraps any value with LWW semantics but allows you to use it like a
+/// normal value
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncedValue<T: Clone> {
     value: T,
@@ -55,8 +68,8 @@ impl<T: Clone> SyncedValue<T> {
 
     pub fn merge(&mut self, other: &Self) {
         // Only clone if we're actually going to use the values (when other is newer)
-        if other.timestamp > self.timestamp
-            || (other.timestamp == self.timestamp && other.node_id > self.node_id)
+        if other.timestamp > self.timestamp ||
+            (other.timestamp == self.timestamp && other.node_id > self.node_id)
         {
             self.value = other.value.clone();
             self.timestamp = other.timestamp;
@@ -95,7 +108,10 @@ pub struct SyncMessage<T> {
 
 impl<T: Serialize> SyncMessage<T> {
     pub fn new(node_id: NodeId, operation: T) -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::atomic::{
+            AtomicU64,
+            Ordering,
+        };
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let seq = COUNTER.fetch_add(1, Ordering::SeqCst);
 
@@ -133,7 +149,6 @@ pub trait Syncable: Sized {
         SyncMessage::new(self.node_id().clone(), op)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

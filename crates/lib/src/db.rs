@@ -1,6 +1,14 @@
-use crate::error::Result;
-use crate::models::*;
-use rusqlite::{Connection, OpenFlags, Row, params};
+use rusqlite::{
+    Connection,
+    OpenFlags,
+    Row,
+    params,
+};
+
+use crate::{
+    error::Result,
+    models::*,
+};
 
 pub struct ChatDb {
     conn: Connection,
@@ -27,7 +35,10 @@ impl ChatDb {
         start_date: Option<chrono::DateTime<chrono::Utc>>,
         end_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Vec<Message>> {
-        use chrono::{TimeZone, Utc};
+        use chrono::{
+            TimeZone,
+            Utc,
+        };
 
         // Default date range: January 1, 2024 to now
         let start =
@@ -84,7 +95,7 @@ impl ChatDb {
              WHERE h.id = ?
              GROUP BY c.ROWID
              ORDER BY msg_count DESC
-             LIMIT 1"
+             LIMIT 1",
         )?;
 
         let chat = stmt.query_row(params![phone_number], |row| {
@@ -98,7 +109,9 @@ impl ChatDb {
                 room_name: row.get(6)?,
                 is_archived: row.get::<_, i64>(7)? != 0,
                 is_filtered: row.get::<_, i64>(8)? != 0,
-                last_read_message_timestamp: row.get::<_, Option<i64>>(9)?.map(apple_timestamp_to_datetime),
+                last_read_message_timestamp: row
+                    .get::<_, Option<i64>>(9)?
+                    .map(apple_timestamp_to_datetime),
             })
         })?;
 

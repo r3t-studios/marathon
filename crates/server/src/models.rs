@@ -1,5 +1,11 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Represents a message stored in our database
 #[derive(Debug, Clone, Serialize, Deserialize)]

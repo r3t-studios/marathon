@@ -42,16 +42,16 @@ pub enum PersistenceError {
 impl fmt::Display for PersistenceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Database(err) => write!(f, "Database error: {}", err),
-            Self::Serialization(err) => write!(f, "Serialization error: {}", err),
-            Self::Deserialization(msg) => write!(f, "Deserialization error: {}", msg),
-            Self::Config(msg) => write!(f, "Configuration error: {}", msg),
-            Self::Io(err) => write!(f, "I/O error: {}", err),
-            Self::TypeNotRegistered(type_name) => {
+            | Self::Database(err) => write!(f, "Database error: {}", err),
+            | Self::Serialization(err) => write!(f, "Serialization error: {}", err),
+            | Self::Deserialization(msg) => write!(f, "Deserialization error: {}", msg),
+            | Self::Config(msg) => write!(f, "Configuration error: {}", msg),
+            | Self::Io(err) => write!(f, "I/O error: {}", err),
+            | Self::TypeNotRegistered(type_name) => {
                 write!(f, "Type not registered in type registry: {}", type_name)
-            }
-            Self::NotFound(msg) => write!(f, "Not found: {}", msg),
-            Self::CircuitBreakerOpen {
+            },
+            | Self::NotFound(msg) => write!(f, "Not found: {}", msg),
+            | Self::CircuitBreakerOpen {
                 consecutive_failures,
                 retry_after_secs,
             } => write!(
@@ -59,7 +59,7 @@ impl fmt::Display for PersistenceError {
                 "Circuit breaker open after {} consecutive failures, retry after {} seconds",
                 consecutive_failures, retry_after_secs
             ),
-            Self::Other(msg) => write!(f, "{}", msg),
+            | Self::Other(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -67,10 +67,10 @@ impl fmt::Display for PersistenceError {
 impl std::error::Error for PersistenceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Database(err) => Some(err),
-            Self::Serialization(err) => Some(err),
-            Self::Io(err) => Some(err),
-            _ => None,
+            | Self::Database(err) => Some(err),
+            | Self::Serialization(err) => Some(err),
+            | Self::Io(err) => Some(err),
+            | _ => None,
         }
     }
 }

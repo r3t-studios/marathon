@@ -1,5 +1,11 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Represents a message in the iMessage database
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,7 +47,8 @@ pub struct Chat {
     pub last_read_message_timestamp: Option<DateTime<Utc>>,
 }
 
-/// Helper function to convert Apple's Cocoa timestamp (seconds since 2001-01-01) to DateTime
+/// Helper function to convert Apple's Cocoa timestamp (seconds since
+/// 2001-01-01) to DateTime
 pub fn apple_timestamp_to_datetime(timestamp: i64) -> DateTime<Utc> {
     // Apple's Cocoa timestamps are in nanoseconds since 2001-01-01 00:00:00 UTC
     // Convert to Unix timestamp (seconds since 1970-01-01 00:00:00 UTC)
@@ -50,7 +57,8 @@ pub fn apple_timestamp_to_datetime(timestamp: i64) -> DateTime<Utc> {
     let seconds = timestamp / 1_000_000_000 + APPLE_EPOCH_OFFSET;
     let nanos = (timestamp % 1_000_000_000) as u32;
 
-    DateTime::from_timestamp(seconds, nanos).unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap())
+    DateTime::from_timestamp(seconds, nanos)
+        .unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap())
 }
 
 /// Helper function to convert DateTime to Apple's Cocoa timestamp
@@ -65,8 +73,13 @@ pub fn datetime_to_apple_timestamp(dt: DateTime<Utc>) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{
+        Datelike,
+        TimeZone,
+        Timelike,
+    };
+
     use super::*;
-    use chrono::{Datelike, TimeZone, Timelike};
 
     #[test]
     fn test_apple_timestamp_to_datetime_zero() {

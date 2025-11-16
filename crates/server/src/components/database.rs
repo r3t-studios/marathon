@@ -1,7 +1,8 @@
+use std::sync::Arc;
+
 use bevy::prelude::*;
 use parking_lot::Mutex;
 use rusqlite::Connection;
-use std::sync::Arc;
 
 use crate::config::Config;
 

@@ -1,13 +1,26 @@
 //! Core types for the persistence layer
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use std::{
+    collections::{
+        HashMap,
+        HashSet,
+    },
+    time::Instant,
+};
+
 use bevy::prelude::Resource;
+use chrono::{
+    DateTime,
+    Utc,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 /// Maximum size for a single component in bytes (10MB)
-/// Components larger than this may indicate serialization issues or unbounded data growth
+/// Components larger than this may indicate serialization issues or unbounded
+/// data growth
 const MAX_COMPONENT_SIZE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Critical flush deadline in milliseconds (1 second for tier-1 operations)
@@ -23,7 +36,8 @@ pub type NodeId = String;
 ///
 /// Determines how quickly an operation should be flushed to disk:
 /// - **Normal**: Regular batched flushing (5-60s intervals based on battery)
-/// - **Critical**: Flush within 1 second (tier-1 operations like user actions, CRDT ops)
+/// - **Critical**: Flush within 1 second (tier-1 operations like user actions,
+///   CRDT ops)
 /// - **Immediate**: Flush immediately (shutdown, background suspension)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FlushPriority {
@@ -85,10 +99,7 @@ impl DirtyEntities {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PersistenceOp {
     /// Insert or update an entity's existence
-    UpsertEntity {
-        id: EntityId,
-        data: EntityData,
-    },
+    UpsertEntity { id: EntityId, data: EntityData },
 
     /// Insert or update a component on an entity
     UpsertComponent {
@@ -105,15 +116,10 @@ pub enum PersistenceOp {
     },
 
     /// Update vector clock for causality tracking
-    UpdateVectorClock {
-        node_id: NodeId,
-        counter: u64,
-    },
+    UpdateVectorClock { node_id: NodeId, counter: u64 },
 
     /// Delete an entity
-    DeleteEntity {
-        id: EntityId,
-    },
+    DeleteEntity { id: EntityId },
 
     /// Delete a component from an entity
     DeleteComponent {
@@ -125,17 +131,18 @@ pub enum PersistenceOp {
 impl PersistenceOp {
     /// Get the default priority for this operation type
     ///
-    /// CRDT operations (LogOperation, UpdateVectorClock) are critical tier-1 operations
-    /// that should be flushed within 1 second to maintain causality across nodes.
-    /// Other operations use normal priority by default.
+    /// CRDT operations (LogOperation, UpdateVectorClock) are critical tier-1
+    /// operations that should be flushed within 1 second to maintain
+    /// causality across nodes. Other operations use normal priority by
+    /// default.
     pub fn default_priority(&self) -> FlushPriority {
         match self {
             // CRDT operations are tier-1 (critical)
-            PersistenceOp::LogOperation { .. } | PersistenceOp::UpdateVectorClock { .. } => {
+            | PersistenceOp::LogOperation { .. } | PersistenceOp::UpdateVectorClock { .. } => {
                 FlushPriority::Critical
-            }
+            },
             // All other operations are normal priority by default
-            _ => FlushPriority::Normal,
+            | _ => FlushPriority::Normal,
         }
     }
 }
@@ -181,7 +188,8 @@ impl WriteBuffer {
 
     /// Add an operation to the write buffer with normal priority
     ///
-    /// This is a convenience method that calls `add_with_priority` with `FlushPriority::Normal`.
+    /// This is a convenience method that calls `add_with_priority` with
+    /// `FlushPriority::Normal`.
     ///
     /// # Panics
     /// Panics if component data exceeds MAX_COMPONENT_SIZE_BYTES (10MB)
@@ -191,8 +199,9 @@ impl WriteBuffer {
 
     /// Add an operation using its default priority
     ///
-    /// Uses `PersistenceOp::default_priority()` to determine priority automatically.
-    /// CRDT operations will be added as Critical, others as Normal.
+    /// Uses `PersistenceOp::default_priority()` to determine priority
+    /// automatically. CRDT operations will be added as Critical, others as
+    /// Normal.
     ///
     /// # Panics
     /// Panics if component data exceeds MAX_COMPONENT_SIZE_BYTES (10MB)
@@ -212,7 +221,11 @@ impl WriteBuffer {
     pub fn add_with_priority(&mut self, op: PersistenceOp, priority: FlushPriority) {
         // Validate component size to prevent unbounded memory growth
         match &op {
-            PersistenceOp::UpsertComponent { data, component_type, .. } => {
+            | PersistenceOp::UpsertComponent {
+                data,
+                component_type,
+                ..
+            } => {
                 if data.len() > MAX_COMPONENT_SIZE_BYTES {
                     panic!(
                         "Component {} size ({} bytes) exceeds maximum ({} bytes). \
@@ -222,8 +235,8 @@ impl WriteBuffer {
                         MAX_COMPONENT_SIZE_BYTES
                     );
                 }
-            }
-            PersistenceOp::LogOperation { operation, .. } => {
+            },
+            | PersistenceOp::LogOperation { operation, .. } => {
                 if operation.len() > MAX_COMPONENT_SIZE_BYTES {
                     panic!(
                         "Operation size ({} bytes) exceeds maximum ({} bytes)",
@@ -231,12 +244,16 @@ impl WriteBuffer {
                         MAX_COMPONENT_SIZE_BYTES
                     );
                 }
-            }
-            _ => {}
+            },
+            | _ => {},
         }
 
         match &op {
-            PersistenceOp::UpsertComponent { entity_id, component_type, .. } => {
+            | PersistenceOp::UpsertComponent {
+                entity_id,
+                component_type,
+                ..
+            } => {
                 // Remove any existing pending write for this entity+component
                 self.pending_operations.retain(|existing_op| {
                     !matches!(existing_op,
@@ -247,8 +264,8 @@ impl WriteBuffer {
                         } if e_id == entity_id && c_type == component_type
                     )
                 });
-            }
-            PersistenceOp::UpsertEntity { id, .. } => {
+            },
+            | PersistenceOp::UpsertEntity { id, .. } => {
                 // Remove any existing pending write for this entity
                 self.pending_operations.retain(|existing_op| {
                     !matches!(existing_op,
@@ -256,10 +273,10 @@ impl WriteBuffer {
                         if e_id == id
                     )
                 });
-            }
-            _ => {
+            },
+            | _ => {
                 // Other operations don't need coalescing
-            }
+            },
         }
 
         // Track priority for flush urgency
@@ -308,8 +325,8 @@ impl WriteBuffer {
         }
 
         // Normal flushing conditions
-        self.pending_operations.len() >= self.max_operations
-            || self.last_flush.elapsed() >= flush_interval
+        self.pending_operations.len() >= self.max_operations ||
+            self.last_flush.elapsed() >= flush_interval
     }
 
     /// Get the number of pending operations
@@ -370,7 +387,8 @@ impl BatteryStatus {
 
     /// Check if the device is in a battery-critical state
     ///
-    /// Returns true if battery is low (<20%) and not charging, or low power mode is enabled.
+    /// Returns true if battery is low (<20%) and not charging, or low power
+    /// mode is enabled.
     pub fn is_battery_critical(&self) -> bool {
         (self.level < 0.2 && !self.is_charging) || self.is_low_power_mode
     }
@@ -521,8 +539,9 @@ mod tests {
         assert!(!buffer.should_flush(std::time::Duration::from_secs(100)));
 
         // Simulate deadline passing by manually setting the time
-        buffer.first_critical_time =
-            Some(Instant::now() - std::time::Duration::from_millis(CRITICAL_FLUSH_DEADLINE_MS + 100));
+        buffer.first_critical_time = Some(
+            Instant::now() - std::time::Duration::from_millis(CRITICAL_FLUSH_DEADLINE_MS + 100),
+        );
 
         // Now should flush due to deadline
         assert!(buffer.should_flush(std::time::Duration::from_secs(100)));

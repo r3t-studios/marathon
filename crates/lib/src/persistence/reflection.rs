@@ -4,21 +4,33 @@
 //! using reflection, allowing the persistence layer to work with any component
 //! that implements Reflect.
 
-use bevy::prelude::*;
-use bevy::reflect::serde::{ReflectSerializer, ReflectDeserializer};
-use bevy::reflect::TypeRegistry;
-use crate::persistence::error::{PersistenceError, Result};
+use bevy::{
+    prelude::*,
+    reflect::{
+        TypeRegistry,
+        serde::{
+            ReflectDeserializer,
+            ReflectSerializer,
+        },
+    },
+};
+
+use crate::persistence::error::{
+    PersistenceError,
+    Result,
+};
 
 /// Marker component to indicate that an entity should be persisted
 ///
-/// Add this component to any entity that should have its state persisted to disk.
-/// The persistence system will automatically serialize all components on entities
-/// with this marker when they change.
+/// Add this component to any entity that should have its state persisted to
+/// disk. The persistence system will automatically serialize all components on
+/// entities with this marker when they change.
 ///
 /// # Triggering Persistence
 ///
-/// To trigger persistence after modifying components on an entity, access `Persisted`
-/// mutably through a query. Bevy's change detection will automatically mark it as changed:
+/// To trigger persistence after modifying components on an entity, access
+/// `Persisted` mutably through a query. Bevy's change detection will
+/// automatically mark it as changed:
 ///
 /// ```no_run
 /// # use bevy::prelude::*;
@@ -31,8 +43,8 @@ use crate::persistence::error::{PersistenceError, Result};
 /// }
 /// ```
 ///
-/// Alternatively, use `auto_track_transform_changes_system` for automatic persistence
-/// of Transform changes without manual queries.
+/// Alternatively, use `auto_track_transform_changes_system` for automatic
+/// persistence of Transform changes without manual queries.
 #[derive(Component, Reflect, Default)]
 #[reflect(Component)]
 pub struct Persisted {
@@ -103,7 +115,8 @@ pub fn serialize_component(
 ///
 /// # Returns
 /// - `Ok(Box<dyn PartialReflect>)`: Deserialized component (needs downcasting)
-/// - `Err`: If deserialization fails (e.g., type not registered, data corruption)
+/// - `Err`: If deserialization fails (e.g., type not registered, data
+///   corruption)
 ///
 /// # Examples
 /// ```no_run
@@ -137,7 +150,8 @@ pub fn deserialize_component(
 ///
 /// # Parameters
 /// - `entity`: Bevy entity to read the component from
-/// - `component_type`: Type path string (e.g., "bevy_transform::components::Transform")
+/// - `component_type`: Type path string (e.g.,
+///   "bevy_transform::components::Transform")
 /// - `world`: Bevy world containing the entity
 /// - `type_registry`: Bevy's type registry for reflection metadata
 ///
@@ -155,7 +169,7 @@ pub fn deserialize_component(
 ///     entity,
 ///     "bevy_transform::components::Transform",
 ///     world,
-///     &registry
+///     &registry,
 /// )?;
 /// # Some(())
 /// # }
@@ -192,7 +206,8 @@ pub fn serialize_component_from_entity(
 /// - `type_registry`: Bevy's type registry for reflection metadata
 ///
 /// # Returns
-/// Vector of tuples containing (component_type_path, serialized_data) for each component
+/// Vector of tuples containing (component_type_path, serialized_data) for each
+/// component
 pub fn serialize_all_components_from_entity(
     entity: Entity,
     world: &World,

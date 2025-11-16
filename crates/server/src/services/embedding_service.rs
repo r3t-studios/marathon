@@ -1,9 +1,18 @@
-use crate::db;
+use std::sync::Arc;
+
 use anyhow::Result;
 use rusqlite::Connection;
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info, warn};
+use tokio::sync::{
+    Mutex,
+    mpsc,
+};
+use tracing::{
+    error,
+    info,
+    warn,
+};
+
+use crate::db;
 
 /// Service responsible for generating embeddings for messages and words
 pub struct EmbeddingService {
@@ -47,11 +56,11 @@ impl EmbeddingService {
         // Get message ID from our database
         let us_db = self.us_db.lock().await;
         let message_id = match db::get_message_id_by_chat_rowid(&us_db, msg.rowid)? {
-            Some(id) => id,
-            None => {
+            | Some(id) => id,
+            | None => {
                 warn!("Message {} not found in database, skipping", msg.rowid);
                 return Ok(());
-            }
+            },
         };
 
         // Check if embedding already exists
@@ -61,8 +70,8 @@ impl EmbeddingService {
 
         // Skip if message has no text
         let text = match &msg.text {
-            Some(t) if !t.is_empty() => t,
-            _ => return Ok(()),
+            | Some(t) if !t.is_empty() => t,
+            | _ => return Ok(()),
         };
 
         drop(us_db);

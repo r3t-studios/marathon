@@ -18,8 +18,9 @@
 //! }
 //! ```
 
-use crate::persistence::*;
 use bevy::prelude::*;
+
+use crate::persistence::*;
 
 /// Application lifecycle events that require persistence handling
 ///
@@ -39,9 +40,11 @@ pub enum AppLifecycleEvent {
     /// 5 seconds to complete critical tasks before suspension.
     DidEnterBackground,
 
-    /// Application will enter foreground (iOS: `applicationWillEnterForeground`)
+    /// Application will enter foreground (iOS:
+    /// `applicationWillEnterForeground`)
     ///
-    /// Sent when the app is about to enter the foreground (user returning to app).
+    /// Sent when the app is about to enter the foreground (user returning to
+    /// app).
     WillEnterForeground,
 
     /// Application did become active (iOS: `applicationDidBecomeActive`)
@@ -51,7 +54,8 @@ pub enum AppLifecycleEvent {
 
     /// Application will terminate (iOS: `applicationWillTerminate`)
     ///
-    /// Sent when the app is about to terminate. Similar to shutdown but from OS.
+    /// Sent when the app is about to terminate. Similar to shutdown but from
+    /// OS.
     WillTerminate,
 }
 
@@ -69,7 +73,7 @@ pub fn lifecycle_event_system(
 ) {
     for event in events.read() {
         match event {
-            AppLifecycleEvent::WillResignActive => {
+            | AppLifecycleEvent::WillResignActive => {
                 // App is becoming inactive - perform immediate flush
                 info!("App will resign active - performing immediate flush");
 
@@ -79,9 +83,9 @@ pub fn lifecycle_event_system(
                 } else {
                     health.record_flush_success();
                 }
-            }
+            },
 
-            AppLifecycleEvent::DidEnterBackground => {
+            | AppLifecycleEvent::DidEnterBackground => {
                 // App entered background - perform immediate flush and checkpoint
                 info!("App entered background - performing immediate flush and checkpoint");
 
@@ -96,47 +100,50 @@ pub fn lifecycle_event_system(
                 // Also checkpoint the WAL to ensure durability
                 let start = std::time::Instant::now();
                 match db.lock() {
-                    Ok(mut conn) => {
-                        match checkpoint_wal(&mut conn, CheckpointMode::Passive) {
-                            Ok(_) => {
-                                let duration = start.elapsed();
-                                metrics.record_checkpoint(duration);
-                                health.record_checkpoint_success();
-                                info!("Background checkpoint completed successfully");
-                            }
-                            Err(e) => {
-                                error!("Failed to checkpoint on background: {}", e);
-                                health.record_checkpoint_failure();
-                            }
-                        }
-                    }
-                    Err(e) => {
+                    | Ok(mut conn) => match checkpoint_wal(&mut conn, CheckpointMode::Passive) {
+                        | Ok(_) => {
+                            let duration = start.elapsed();
+                            metrics.record_checkpoint(duration);
+                            health.record_checkpoint_success();
+                            info!("Background checkpoint completed successfully");
+                        },
+                        | Err(e) => {
+                            error!("Failed to checkpoint on background: {}", e);
+                            health.record_checkpoint_failure();
+                        },
+                    },
+                    | Err(e) => {
                         error!("Failed to acquire database lock for checkpoint: {}", e);
                         health.record_checkpoint_failure();
-                    }
+                    },
                 }
-            }
+            },
 
-            AppLifecycleEvent::WillTerminate => {
+            | AppLifecycleEvent::WillTerminate => {
                 // App will terminate - perform shutdown sequence
                 warn!("App will terminate - performing shutdown sequence");
 
-                if let Err(e) = shutdown_system(&mut write_buffer, &db, &mut metrics, Some(&mut pending_tasks)) {
+                if let Err(e) = shutdown_system(
+                    &mut write_buffer,
+                    &db,
+                    &mut metrics,
+                    Some(&mut pending_tasks),
+                ) {
                     error!("Failed to perform shutdown on terminate: {}", e);
                 } else {
                     info!("Clean shutdown completed on terminate");
                 }
-            }
+            },
 
-            AppLifecycleEvent::WillEnterForeground => {
+            | AppLifecycleEvent::WillEnterForeground => {
                 // App returning from background - no immediate action needed
                 info!("App will enter foreground");
-            }
+            },
 
-            AppLifecycleEvent::DidBecomeActive => {
+            | AppLifecycleEvent::DidBecomeActive => {
                 // App became active - no immediate action needed
                 info!("App did become active");
-            }
+            },
         }
     }
 }
@@ -149,10 +156,10 @@ mod tests {
     fn test_lifecycle_event_creation() {
         let event = AppLifecycleEvent::WillResignActive;
         match event {
-            AppLifecycleEvent::WillResignActive => {
+            | AppLifecycleEvent::WillResignActive => {
                 // Success
-            }
-            _ => panic!("Event type mismatch"),
+            },
+            | _ => panic!("Event type mismatch"),
         }
     }
 }

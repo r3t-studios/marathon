@@ -1,7 +1,16 @@
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
+use std::{
+    fs,
+    path::Path,
+};
+
+use anyhow::{
+    Context,
+    Result,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -45,8 +54,7 @@ impl Config {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path.as_ref())
             .context(format!("Failed to read config file: {:?}", path.as_ref()))?;
-        let config: Config = toml::from_str(&content)
-            .context("Failed to parse config file")?;
+        let config: Config = toml::from_str(&content).context("Failed to parse config file")?;
         Ok(config)
     }
 
@@ -68,15 +76,12 @@ impl Config {
                 hostname: "lonni-daemon".to_string(),
                 state_dir: "./tailscale-state".to_string(),
             },
-            grpc: GrpcConfig {
-                port: 50051,
-            },
+            grpc: GrpcConfig { port: 50051 },
         }
     }
 
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
+        let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
         fs::write(path.as_ref(), content)
             .context(format!("Failed to write config file: {:?}", path.as_ref()))?;
         Ok(())
