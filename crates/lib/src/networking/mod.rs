@@ -46,6 +46,7 @@ mod operations;
 mod orset;
 mod plugin;
 mod rga;
+mod sync_component;
 mod tombstones;
 mod vector_clock;
 
@@ -67,5 +68,6 @@ pub use operations::*;
 pub use orset::*;
 pub use plugin::*;
 pub use rga::*;
+pub use sync_component::*;
 pub use tombstones::*;
 pub use vector_clock::*;
