@@ -20,11 +20,8 @@ use serde::{
     Deserialize,
     Serialize,
 };
-// Re-export the macros
-pub use sync_macros::{
-    Synced,
-    synced,
-};
+// Re-export the Synced derive macro
+pub use sync_macros::Synced;
 
 pub type NodeId = String;
 

@@ -1,341 +1,179 @@
 use proc_macro::TokenStream;
-use quote::{
-    format_ident,
-    quote,
-};
+use quote::quote;
 use syn::{
-    Data,
-    DeriveInput,
-    Fields,
-    ItemStruct,
-    Type,
-    parse_macro_input,
+    parse_macro_input, DeriveInput,
 };
 
-/// Attribute macro for transparent CRDT sync
-///
-/// Transforms your struct to use CRDTs internally while keeping the API simple.
-///
-/// # Example
-/// ```
-/// #[synced]
-/// struct EmotionGradientConfig {
-///     canvas_width: f32,  // Becomes SyncedValue<f32> internally
-///     canvas_height: f32, // Auto-generates getters/setters
-///
-///     #[sync(skip)]
-///     node_id: String, // Not synced
-/// }
-///
-/// // Use it like a normal struct:
-/// let mut config = EmotionGradientConfig::new("node1".into());
-/// config.set_canvas_width(1024.0); // Auto-generates sync operation
-/// println!("Width: {}", config.canvas_width()); // Transparent access
-/// ```
-#[proc_macro_attribute]
-pub fn synced(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemStruct);
-    let name = &input.ident;
-    let vis = &input.vis;
-    let op_enum_name = format_ident!("{}Op", name);
-
-    let fields = match &input.fields {
-        | Fields::Named(fields) => &fields.named,
-        | _ => panic!("synced only supports structs with named fields"),
-    };
-
-    let mut internal_fields = Vec::new();
-    let mut field_getters = Vec::new();
-    let mut field_setters = Vec::new();
-    let mut op_variants = Vec::new();
-    let mut apply_arms = Vec::new();
-    let mut merge_code = Vec::new();
-    let mut new_params = Vec::new();
-    let mut new_init = Vec::new();
-
-    for field in fields {
-        let field_name = field.ident.as_ref().unwrap();
-        let field_vis = &field.vis;
-        let field_type = &field.ty;
-
-        // Check if field should be skipped
-        let should_skip = field.attrs.iter().any(|attr| {
-            attr.path().is_ident("sync") &&
-                attr.parse_args::<syn::Ident>()
-                    .map(|i| i == "skip")
-                    .unwrap_or(false)
-        });
-
-        if should_skip {
-            // Keep as-is, no wrapping
-            internal_fields.push(quote! {
-                #field_vis #field_name: #field_type
-            });
-            new_params.push(quote! { #field_name: #field_type });
-            new_init.push(quote! { #field_name });
-            continue;
-        }
-
-        // Wrap in SyncedValue
-        internal_fields.push(quote! {
-            #field_name: lib::sync::SyncedValue<#field_type>
-        });
-
-        // Generate getter
-        field_getters.push(quote! {
-            #field_vis fn #field_name(&self) -> &#field_type {
-                self.#field_name.get()
-            }
-        });
-
-        // Generate setter that returns operation
-        let setter_name = format_ident!("set_{}", field_name);
-        let op_variant = format_ident!(
-            "Set{}",
-            field_name
-                .to_string()
-                .chars()
-                .enumerate()
-                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
-                .collect::<String>()
-        );
-
-        field_setters.push(quote! {
-            #field_vis fn #setter_name(&mut self, value: #field_type) -> #op_enum_name {
-                let op = #op_enum_name::#op_variant {
-                    value: value.clone(),
-                    timestamp: chrono::Utc::now(),
-                    node_id: self.node_id().clone(),
-                };
-                self.#field_name.set(value, self.node_id().clone());
-                op
-            }
-        });
-
-        // Generate operation variant
-        op_variants.push(quote! {
-            #op_variant {
-                value: #field_type,
-                timestamp: chrono::DateTime<chrono::Utc>,
-                node_id: String,
-            }
-        });
-
-        // Generate apply arm
-        apply_arms.push(quote! {
-            #op_enum_name::#op_variant { value, timestamp, node_id } => {
-                self.#field_name.apply_lww(value.clone(), timestamp.clone(), node_id.clone());
-            }
-        });
-
-        // Generate merge code
-        merge_code.push(quote! {
-            self.#field_name.merge(&other.#field_name);
-        });
-
-        // Add to new() parameters
-        new_params.push(quote! { #field_name: #field_type });
-        new_init.push(quote! {
-            #field_name: lib::sync::SyncedValue::new(#field_name, node_id.clone())
-        });
-    }
-
-    let expanded = quote! {
-        /// Sync operations enum
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "type")]
-        #vis enum #op_enum_name {
-            #(#op_variants),*
-        }
-
-        impl #op_enum_name {
-            pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-                Ok(serde_json::to_vec(self)?)
-            }
-
-            pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-                Ok(serde_json::from_slice(bytes)?)
-            }
-        }
-
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        #vis struct #name {
-            #(#internal_fields),*
-        }
-
-        impl #name {
-            #vis fn new(#(#new_params),*) -> Self {
-                Self {
-                    #(#new_init),*
-                }
-            }
-
-            /// Transparent field accessors
-            #(#field_getters)*
-
-            /// Field setters that generate sync operations
-            #(#field_setters)*
-
-            /// Apply a sync operation from another node
-            #vis fn apply_op(&mut self, op: &#op_enum_name) {
-                match op {
-                    #(#apply_arms),*
-                }
-            }
-
-            /// Merge state from another instance
-            #vis fn merge(&mut self, other: &Self) {
-                #(#merge_code)*
-            }
-        }
-
-        impl lib::sync::Syncable for #name {
-            type Operation = #op_enum_name;
-
-            fn apply_sync_op(&mut self, op: &Self::Operation) {
-                self.apply_op(op);
-            }
-
-            fn node_id(&self) -> &lib::sync::NodeId {
-                // Assume there's a node_id field marked with #[sync(skip)]
-                &self.node_id
-            }
-        }
-    };
-
-    TokenStream::from(expanded)
+/// Sync strategy types
+#[derive(Debug, Clone, PartialEq)]
+enum SyncStrategy {
+    LastWriteWins,
+    Set,
+    Sequence,
+    Custom,
 }
 
-/// Old derive macro - kept for backwards compatibility
+impl SyncStrategy {
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "LastWriteWins" => Ok(SyncStrategy::LastWriteWins),
+            "Set" => Ok(SyncStrategy::Set),
+            "Sequence" => Ok(SyncStrategy::Sequence),
+            "Custom" => Ok(SyncStrategy::Custom),
+            _ => Err(format!(
+                "Unknown strategy '{}'. Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"",
+                s
+            )),
+        }
+    }
+
+    fn to_tokens(&self) -> proc_macro2::TokenStream {
+        match self {
+            SyncStrategy::LastWriteWins => quote! { lib::networking::SyncStrategy::LastWriteWins },
+            SyncStrategy::Set => quote! { lib::networking::SyncStrategy::Set },
+            SyncStrategy::Sequence => quote! { lib::networking::SyncStrategy::Sequence },
+            SyncStrategy::Custom => quote! { lib::networking::SyncStrategy::Custom },
+        }
+    }
+}
+
+/// Parsed sync attributes
+struct SyncAttributes {
+    version: u32,
+    strategy: SyncStrategy,
+    persist: bool,
+    lazy: bool,
+}
+
+impl SyncAttributes {
+    fn parse(input: &DeriveInput) -> Result<Self, syn::Error> {
+        let mut version: Option<u32> = None;
+        let mut strategy: Option<SyncStrategy> = None;
+        let mut persist = true; // default
+        let mut lazy = false; // default
+
+        // Find the #[sync(...)] attribute
+        for attr in &input.attrs {
+            if !attr.path().is_ident("sync") {
+                continue;
+            }
+
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("version") {
+                    let value: syn::LitInt = meta.value()?.parse()?;
+                    version = Some(value.base10_parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("strategy") {
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    let strategy_str = value.value();
+                    strategy = Some(
+                        SyncStrategy::from_str(&strategy_str)
+                            .map_err(|e| syn::Error::new_spanned(&value, e))?
+                    );
+                    Ok(())
+                } else if meta.path.is_ident("persist") {
+                    let value: syn::LitBool = meta.value()?.parse()?;
+                    persist = value.value;
+                    Ok(())
+                } else if meta.path.is_ident("lazy") {
+                    let value: syn::LitBool = meta.value()?.parse()?;
+                    lazy = value.value;
+                    Ok(())
+                } else {
+                    Err(meta.error("unrecognized sync attribute"))
+                }
+            })?;
+        }
+
+        // Require version and strategy
+        let version = version.ok_or_else(|| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "Missing required attribute `version`\n\
+                 \n\
+                 = help: Add #[sync(version = 1, strategy = \"...\")] to your struct\n\
+                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html"
+            )
+        })?;
+
+        let strategy = strategy.ok_or_else(|| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "Missing required attribute `strategy`\n\
+                 \n\
+                 = help: Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"\n\
+                 = help: Add #[sync(version = 1, strategy = \"LastWriteWins\")] to your struct\n\
+                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html"
+            )
+        })?;
+
+        Ok(SyncAttributes {
+            version,
+            strategy,
+            persist,
+            lazy,
+        })
+    }
+}
+
+/// RFC 0003 macro: Generate SyncComponent trait implementation
+///
+/// # Example
+/// ```ignore
+/// use bevy::prelude::*;
+/// use lib::networking::Synced;
+/// use sync_macros::Synced as SyncedDerive;
+///
+/// #[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize)]
+/// #[reflect(Component)]
+/// #[derive(SyncedDerive)]
+/// #[sync(version = 1, strategy = "LastWriteWins")]
+/// struct Health(f32);
+///
+/// // In a Bevy system:
+/// fn spawn_health(mut commands: Commands) {
+///     commands.spawn((Health(100.0), Synced));
+/// }
+/// ```
 #[proc_macro_derive(Synced, attributes(sync))]
 pub fn derive_synced(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
-    let op_enum_name = format_ident!("{}Op", name);
 
-    let fields = match &input.data {
-        | Data::Struct(data) => match &data.fields {
-            | Fields::Named(fields) => &fields.named,
-            | _ => panic!("Synced only supports structs with named fields"),
-        },
-        | _ => panic!("Synced only supports structs"),
+    // Parse attributes
+    let attrs = match SyncAttributes::parse(&input) {
+        Ok(attrs) => attrs,
+        Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
-    let mut field_ops = Vec::new();
-    let mut apply_arms = Vec::new();
-    let mut setter_methods = Vec::new();
-    let mut merge_code = Vec::new();
+    let name = &input.ident;
+    let version = attrs.version;
+    let strategy_tokens = attrs.strategy.to_tokens();
 
-    for field in fields {
-        let field_name = field.ident.as_ref().unwrap();
-        let field_type = &field.ty;
+    // Generate serialization method based on type
+    let serialize_impl = generate_serialize(&input);
+    let deserialize_impl = generate_deserialize(&input, name);
 
-        // Check if field should be skipped
-        let should_skip = field.attrs.iter().any(|attr| {
-            attr.path().is_ident("sync") &&
-                attr.parse_args::<syn::Ident>()
-                    .map(|i| i == "skip")
-                    .unwrap_or(false)
-        });
-
-        if should_skip {
-            continue;
-        }
-
-        let op_variant = format_ident!(
-            "Set{}",
-            field_name
-                .to_string()
-                .chars()
-                .enumerate()
-                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
-                .collect::<String>()
-        );
-
-        let setter_name = format_ident!("set_{}", field_name);
-
-        // Determine CRDT strategy based on type
-        let crdt_strategy = get_crdt_strategy(field_type);
-
-        match crdt_strategy.as_str() {
-            | "lww" => {
-                // LWW for simple types
-                field_ops.push(quote! {
-                    #op_variant {
-                        value: #field_type,
-                        timestamp: chrono::DateTime<chrono::Utc>,
-                        node_id: String,
-                    }
-                });
-
-                apply_arms.push(quote! {
-                    #op_enum_name::#op_variant { value, timestamp, node_id } => {
-                        self.#field_name.apply_lww(value.clone(), timestamp.clone(), node_id.clone());
-                    }
-                });
-
-                setter_methods.push(quote! {
-                    pub fn #setter_name(&mut self, value: #field_type) -> #op_enum_name {
-                        let op = #op_enum_name::#op_variant {
-                            value: value.clone(),
-                            timestamp: chrono::Utc::now(),
-                            node_id: self.node_id().clone(),
-                        };
-                        self.#field_name = lib::sync::SyncedValue::new(value, self.node_id().clone());
-                        op
-                    }
-                });
-
-                merge_code.push(quote! {
-                    self.#field_name.merge(&other.#field_name);
-                });
-            },
-            | _ => {
-                // Default to LWW
-            },
-        }
-    }
+    // Generate merge method based on strategy
+    let merge_impl = generate_merge(&input, &attrs.strategy);
 
     let expanded = quote! {
-        /// Auto-generated sync operations enum
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "type")]
-        pub enum #op_enum_name {
-            #(#field_ops),*
-        }
+        impl lib::networking::SyncComponent for #name {
+            const VERSION: u32 = #version;
+            const STRATEGY: lib::networking::SyncStrategy = #strategy_tokens;
 
-        impl #op_enum_name {
-            pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-                Ok(serde_json::to_vec(self)?)
+            #[inline]
+            fn serialize_sync(&self) -> anyhow::Result<Vec<u8>> {
+                #serialize_impl
             }
 
-            pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-                Ok(serde_json::from_slice(bytes)?)
-            }
-        }
-
-        impl #name {
-            /// Apply a sync operation from another node
-            pub fn apply_op(&mut self, op: &#op_enum_name) {
-                match op {
-                    #(#apply_arms),*
-                }
+            #[inline]
+            fn deserialize_sync(data: &[u8]) -> anyhow::Result<Self> {
+                #deserialize_impl
             }
 
-            /// Merge state from another instance
-            pub fn merge(&mut self, other: &Self) {
-                #(#merge_code)*
-            }
-
-            /// Auto-generated setter methods that create sync ops
-            #(#setter_methods)*
-        }
-
-        impl lib::sync::Syncable for #name {
-            type Operation = #op_enum_name;
-
-            fn apply_sync_op(&mut self, op: &Self::Operation) {
-                self.apply_op(op);
+            #[inline]
+            fn merge(&mut self, remote: Self, clock_cmp: lib::networking::ClockComparison) -> lib::networking::ComponentMergeDecision {
+                #merge_impl
             }
         }
     };
@@ -343,9 +181,190 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Determine CRDT strategy based on field type
-fn get_crdt_strategy(_ty: &Type) -> String {
-    // For now, default everything to LWW
-    // TODO: Detect HashMap -> use Map, Vec -> use ORSet, etc.
-    "lww".to_string()
+/// Generate specialized serialization code
+fn generate_serialize(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    // For now, use bincode for all types
+    // Later we can optimize for specific types (e.g., f32 -> to_le_bytes)
+    quote! {
+        bincode::serialize(self).map_err(|e| anyhow::anyhow!("Serialization failed: {}", e))
+    }
+}
+
+/// Generate specialized deserialization code
+fn generate_deserialize(_input: &DeriveInput, _name: &syn::Ident) -> proc_macro2::TokenStream {
+    quote! {
+        bincode::deserialize(data).map_err(|e| anyhow::anyhow!("Deserialization failed: {}", e))
+    }
+}
+
+/// Generate merge logic based on strategy
+fn generate_merge(input: &DeriveInput, strategy: &SyncStrategy) -> proc_macro2::TokenStream {
+    match strategy {
+        SyncStrategy::LastWriteWins => generate_lww_merge(input),
+        SyncStrategy::Set => generate_set_merge(input),
+        SyncStrategy::Sequence => generate_sequence_merge(input),
+        SyncStrategy::Custom => generate_custom_merge(input),
+    }
+}
+
+/// Generate Last-Write-Wins merge logic
+fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    quote! {
+        use tracing::info;
+
+        match clock_cmp {
+            lib::networking::ClockComparison::RemoteNewer => {
+                info!(
+                    component = std::any::type_name::<Self>(),
+                    ?clock_cmp,
+                    "Taking remote (newer)"
+                );
+                *self = remote;
+                lib::networking::ComponentMergeDecision::TookRemote
+            }
+            lib::networking::ClockComparison::LocalNewer => {
+                lib::networking::ComponentMergeDecision::KeptLocal
+            }
+            lib::networking::ClockComparison::Concurrent => {
+                // Tiebreaker: Compare serialized representations for deterministic choice
+                // In a real implementation, we'd use node_id, but for now use a simple hash
+                let local_hash = {
+                    let bytes = bincode::serialize(self).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+                let remote_hash = {
+                    let bytes = bincode::serialize(&remote).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+
+                if remote_hash > local_hash {
+                    info!(
+                        component = std::any::type_name::<Self>(),
+                        ?clock_cmp,
+                        "Taking remote (concurrent, tiebreaker)"
+                    );
+                    *self = remote;
+                    lib::networking::ComponentMergeDecision::TookRemote
+                } else {
+                    lib::networking::ComponentMergeDecision::KeptLocal
+                }
+            }
+        }
+    }
+}
+
+/// Generate OR-Set merge logic
+///
+/// For OR-Set strategy, the component must contain an OrSet<T> field.
+/// We merge by calling the OrSet's merge method which implements add-wins semantics.
+fn generate_set_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    quote! {
+        use tracing::info;
+
+        // For Set strategy, we always merge the sets
+        // The OrSet CRDT handles the conflict resolution with add-wins semantics
+        info!(
+            component = std::any::type_name::<Self>(),
+            "Merging OR-Set (add-wins semantics)"
+        );
+
+        // Assuming the component wraps an OrSet or has a field with merge()
+        // For now, we'll do a structural merge by replacing the whole value
+        // This is a simplified implementation - full implementation would require
+        // the component to expose merge() method or implement it directly
+
+        match clock_cmp {
+            lib::networking::ClockComparison::RemoteNewer => {
+                *self = remote;
+                lib::networking::ComponentMergeDecision::TookRemote
+            }
+            lib::networking::ClockComparison::LocalNewer => {
+                lib::networking::ComponentMergeDecision::KeptLocal
+            }
+            lib::networking::ClockComparison::Concurrent => {
+                // In a full implementation, we would merge the OrSet here
+                // For now, use LWW with tiebreaker as fallback
+                let local_hash = {
+                    let bytes = bincode::serialize(self).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+                let remote_hash = {
+                    let bytes = bincode::serialize(&remote).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+
+                if remote_hash > local_hash {
+                    *self = remote;
+                    lib::networking::ComponentMergeDecision::TookRemote
+                } else {
+                    lib::networking::ComponentMergeDecision::KeptLocal
+                }
+            }
+        }
+    }
+}
+
+/// Generate RGA/Sequence merge logic
+///
+/// For Sequence strategy, the component must contain an Rga<T> field.
+/// We merge by calling the Rga's merge method which maintains causal ordering.
+fn generate_sequence_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    quote! {
+        use tracing::info;
+
+        // For Sequence strategy, we always merge the sequences
+        // The RGA CRDT handles the conflict resolution with causal ordering
+        info!(
+            component = std::any::type_name::<Self>(),
+            "Merging RGA sequence (causal ordering)"
+        );
+
+        // Assuming the component wraps an Rga or has a field with merge()
+        // For now, we'll do a structural merge by replacing the whole value
+        // This is a simplified implementation - full implementation would require
+        // the component to expose merge() method or implement it directly
+
+        match clock_cmp {
+            lib::networking::ClockComparison::RemoteNewer => {
+                *self = remote;
+                lib::networking::ComponentMergeDecision::TookRemote
+            }
+            lib::networking::ClockComparison::LocalNewer => {
+                lib::networking::ComponentMergeDecision::KeptLocal
+            }
+            lib::networking::ClockComparison::Concurrent => {
+                // In a full implementation, we would merge the Rga here
+                // For now, use LWW with tiebreaker as fallback
+                let local_hash = {
+                    let bytes = bincode::serialize(self).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+                let remote_hash = {
+                    let bytes = bincode::serialize(&remote).unwrap_or_default();
+                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+                };
+
+                if remote_hash > local_hash {
+                    *self = remote;
+                    lib::networking::ComponentMergeDecision::TookRemote
+                } else {
+                    lib::networking::ComponentMergeDecision::KeptLocal
+                }
+            }
+        }
+    }
+}
+
+/// Generate custom merge logic placeholder
+fn generate_custom_merge(input: &DeriveInput) -> proc_macro2::TokenStream {
+    let name = &input.ident;
+    quote! {
+        compile_error!(
+            concat!(
+                "Custom strategy requires implementing ConflictResolver trait for ",
+                stringify!(#name)
+            )
+        );
+        lib::networking::ComponentMergeDecision::KeptLocal
+    }
 }

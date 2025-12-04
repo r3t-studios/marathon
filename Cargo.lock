@@ -7414,10 +7414,15 @@ dependencies = [
 name = "sync-macros"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "bevy",
+ "bincode",
  "lib",
  "proc-macro2",
  "quote",
+ "serde",
  "syn",
+ "tracing",
 ]
 
 [[package]]
