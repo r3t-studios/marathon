@@ -7,7 +7,6 @@ use bevy::prelude::*;
 
 use crate::networking::{
     change_detection::LastSyncVersions,
-    entity_map::NetworkEntityMap,
     gossip_bridge::GossipBridge,
     messages::{
         EntityDelta,
@@ -67,82 +66,133 @@ impl NodeVectorClock {
 /// App::new()
 ///     .add_systems(Update, generate_delta_system);
 /// ```
-pub fn generate_delta_system(
-    query: Query<(Entity, &NetworkedEntity), Changed<NetworkedEntity>>,
-    world: &World,
-    type_registry: Res<AppTypeRegistry>,
-    mut node_clock: ResMut<NodeVectorClock>,
-    mut last_versions: ResMut<LastSyncVersions>,
-    bridge: Option<Res<GossipBridge>>,
-    _entity_map: Res<NetworkEntityMap>,
-    mut operation_log: Option<ResMut<crate::networking::OperationLog>>,
-) {
-    // Early return if no gossip bridge
-    let Some(bridge) = bridge else {
+pub fn generate_delta_system(world: &mut World) {
+    // Check if bridge exists
+    if world.get_resource::<GossipBridge>().is_none() {
         return;
+    }
+
+    let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
+        let mut query = world.query_filtered::<(Entity, &NetworkedEntity), Changed<NetworkedEntity>>();
+        query.iter(world)
+            .map(|(entity, networked)| (entity, networked.network_id, networked.owner_node_id))
+            .collect()
     };
 
-    let registry = type_registry.read();
+    if changed_entities.is_empty() {
+        return;
+    }
 
-    for (entity, networked) in query.iter() {
-        // Check if we should sync this entity
-        let current_seq = node_clock.sequence();
-        if !last_versions.should_sync(networked.network_id, current_seq) {
-            continue;
-        }
+    debug!(
+        "generate_delta_system: Processing {} changed entities",
+        changed_entities.len()
+    );
 
-        // Increment our vector clock
-        node_clock.tick();
+    // Process each entity separately to avoid borrow conflicts
+    for (entity, network_id, _owner_node_id) in changed_entities {
+        // Phase 1: Check and update clocks, collect data
+        let mut system_state: bevy::ecs::system::SystemState<(
+            Res<GossipBridge>,
+            Res<AppTypeRegistry>,
+            ResMut<NodeVectorClock>,
+            ResMut<LastSyncVersions>,
+            Option<ResMut<crate::networking::OperationLog>>,
+        )> = bevy::ecs::system::SystemState::new(world);
 
-        // Build operations for all components
-        // TODO: Add BlobStore support in future phases
-        let operations = build_entity_operations(
-            entity,
-            world,
-            node_clock.node_id,
-            node_clock.clock.clone(),
-            &registry,
-            None, // blob_store - will be added in later phases
-        );
+        let (node_id, vector_clock, current_seq) = {
+            let (_, _, mut node_clock, last_versions, _) = system_state.get_mut(world);
+
+            // Check if we should sync this entity
+            let current_seq = node_clock.sequence();
+            if !last_versions.should_sync(network_id, current_seq) {
+                drop(last_versions);
+                drop(node_clock);
+                system_state.apply(world);
+                continue;
+            }
+
+            // Increment our vector clock
+            node_clock.tick();
+
+            (node_clock.node_id, node_clock.clock.clone(), current_seq)
+        };
+
+        // Phase 2: Build operations (needs world access without holding other borrows)
+        let operations = {
+            let type_registry = world.resource::<AppTypeRegistry>().read();
+            let ops = build_entity_operations(
+                entity,
+                world,
+                node_id,
+                vector_clock.clone(),
+                &type_registry,
+                None, // blob_store - will be added in later phases
+            );
+            drop(type_registry);
+            ops
+        };
 
         if operations.is_empty() {
+            system_state.apply(world);
             continue;
         }
 
-        // Create EntityDelta
-        let delta = EntityDelta::new(
-            networked.network_id,
-            node_clock.node_id,
-            node_clock.clock.clone(),
-            operations,
-        );
+        // Phase 3: Record, broadcast, and update
+        let delta = {
+            let (bridge, _, _, mut last_versions, mut operation_log) = system_state.get_mut(world);
 
-        // Record in operation log for anti-entropy
-        if let Some(ref mut log) = operation_log {
-            log.record_operation(delta.clone());
-        }
-
-        // Wrap in VersionedMessage
-        let message = VersionedMessage::new(SyncMessage::EntityDelta {
-            entity_id: delta.entity_id,
-            node_id: delta.node_id,
-            vector_clock: delta.vector_clock.clone(),
-            operations: delta.operations.clone(),
-        });
-
-        // Broadcast
-        if let Err(e) = bridge.send(message) {
-            error!("Failed to broadcast EntityDelta: {}", e);
-        } else {
-            debug!(
-                "Broadcast EntityDelta for entity {:?} with {} operations",
-                networked.network_id,
-                delta.operations.len()
+            // Create EntityDelta
+            let delta = EntityDelta::new(
+                network_id,
+                node_id,
+                vector_clock.clone(),
+                operations,
             );
 
-            // Update last sync version
-            last_versions.update(networked.network_id, current_seq);
+            // Record in operation log for anti-entropy
+            if let Some(ref mut log) = operation_log {
+                log.record_operation(delta.clone());
+            }
+
+            // Wrap in VersionedMessage
+            let message = VersionedMessage::new(SyncMessage::EntityDelta {
+                entity_id: delta.entity_id,
+                node_id: delta.node_id,
+                vector_clock: delta.vector_clock.clone(),
+                operations: delta.operations.clone(),
+            });
+
+            // Broadcast
+            if let Err(e) = bridge.send(message) {
+                error!("Failed to broadcast EntityDelta: {}", e);
+            } else {
+                debug!(
+                    "Broadcast EntityDelta for entity {:?} with {} operations",
+                    network_id,
+                    delta.operations.len()
+                );
+                last_versions.update(network_id, current_seq);
+            }
+
+            delta
+        };
+
+        // Phase 4: Update component vector clocks for local modifications
+        {
+            if let Some(mut component_clocks) = world.get_resource_mut::<crate::networking::ComponentVectorClocks>() {
+                for op in &delta.operations {
+                    if let crate::networking::ComponentOp::Set { component_type, vector_clock: op_clock, .. } = op {
+                        component_clocks.set(network_id, component_type.clone(), op_clock.clone(), node_id);
+                        debug!(
+                            "Updated local vector clock for {} on entity {:?} (node_id: {:?})",
+                            component_type, network_id, node_id
+                        );
+                    }
+                }
+            }
         }
+
+        system_state.apply(world);
     }
 }
 

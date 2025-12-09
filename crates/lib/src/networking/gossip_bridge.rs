@@ -62,9 +62,35 @@ impl GossipBridge {
         Ok(())
     }
 
-    /// Try to receive a message from the gossip network
+    /// Try to receive a message from the gossip network (from incoming queue)
     pub fn try_recv(&self) -> Option<VersionedMessage> {
         self.incoming.lock().ok()?.pop_front()
+    }
+
+    /// Drain all pending messages from the incoming queue atomically
+    ///
+    /// This acquires the lock once and drains all messages, preventing race conditions
+    /// where messages could arrive between individual try_recv() calls.
+    pub fn drain_incoming(&self) -> Vec<VersionedMessage> {
+        self.incoming
+            .lock()
+            .ok()
+            .map(|mut queue| queue.drain(..).collect())
+            .unwrap_or_default()
+    }
+
+    /// Try to get a message from the outgoing queue to send to gossip
+    pub fn try_recv_outgoing(&self) -> Option<VersionedMessage> {
+        self.outgoing.lock().ok()?.pop_front()
+    }
+
+    /// Push a message to the incoming queue (for testing/integration)
+    pub fn push_incoming(&self, message: VersionedMessage) -> Result<()> {
+        self.incoming
+            .lock()
+            .map_err(|e| NetworkingError::Gossip(format!("Failed to lock incoming queue: {}", e)))?
+            .push_back(message);
+        Ok(())
     }
 
     /// Get our node ID

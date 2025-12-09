@@ -9,12 +9,14 @@ use bevy::{
     reflect::{
         TypeRegistry,
         serde::{
-            ReflectDeserializer,
             ReflectSerializer,
+            TypedReflectDeserializer,
+            TypedReflectSerializer,
         },
     },
 };
-
+use bincode::Options as _;
+use serde::de::DeserializeSeed;
 use crate::persistence::error::{
     PersistenceError,
     Result,
@@ -101,7 +103,21 @@ pub fn serialize_component(
     type_registry: &TypeRegistry,
 ) -> Result<Vec<u8>> {
     let serializer = ReflectSerializer::new(component, type_registry);
-    bincode::serialize(&serializer).map_err(PersistenceError::from)
+    bincode::options().serialize(&serializer)
+        .map_err(PersistenceError::from)
+}
+
+/// Serialize a component when the type is known (more efficient for bincode)
+///
+/// This uses `TypedReflectSerializer` which doesn't include type path information,
+/// making it compatible with `TypedReflectDeserializer` for binary formats.
+pub fn serialize_component_typed(
+    component: &dyn Reflect,
+    type_registry: &TypeRegistry,
+) -> Result<Vec<u8>> {
+    let serializer = TypedReflectSerializer::new(component, type_registry);
+    bincode::options().serialize(&serializer)
+        .map_err(PersistenceError::from)
 }
 
 /// Deserialize a component using Bevy's reflection system
@@ -134,9 +150,30 @@ pub fn deserialize_component(
     type_registry: &TypeRegistry,
 ) -> Result<Box<dyn PartialReflect>> {
     let mut deserializer = bincode::Deserializer::from_slice(bytes, bincode::options());
-    let reflect_deserializer = ReflectDeserializer::new(type_registry);
+    let reflect_deserializer = bevy::reflect::serde::ReflectDeserializer::new(type_registry);
 
-    use serde::de::DeserializeSeed;
+    reflect_deserializer
+        .deserialize(&mut deserializer)
+        .map_err(|e| PersistenceError::Deserialization(e.to_string()))
+}
+
+/// Deserialize a component when the type is known
+///
+/// Uses `TypedReflectDeserializer` which is more efficient for binary formats like bincode
+/// when the component type is known at deserialization time.
+pub fn deserialize_component_typed(
+    bytes: &[u8],
+    component_type: &str,
+    type_registry: &TypeRegistry,
+) -> Result<Box<dyn PartialReflect>> {
+    let registration = type_registry.get_with_type_path(component_type)
+        .ok_or_else(|| PersistenceError::Deserialization(
+            format!("Type {} not registered", component_type)
+        ))?;
+
+    let mut deserializer = bincode::Deserializer::from_slice(bytes, bincode::options());
+    let reflect_deserializer = TypedReflectDeserializer::new(registration, type_registry);
+
     reflect_deserializer
         .deserialize(&mut deserializer)
         .map_err(|e| PersistenceError::Deserialization(e.to_string()))
@@ -235,8 +272,9 @@ pub fn serialize_all_components_from_entity(
 
         // Try to reflect this component from the entity
         if let Some(reflected) = reflect_component.reflect(entity_ref) {
-            // Serialize the component
-            if let Ok(data) = serialize_component(reflected, type_registry) {
+            // Serialize the component using typed serialization for consistency
+            // This matches the format expected by deserialize_component_typed
+            if let Ok(data) = serialize_component_typed(reflected, type_registry) {
                 components.push((type_path.to_string(), data));
             }
         }

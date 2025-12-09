@@ -71,3 +71,56 @@ pub use rga::*;
 pub use sync_component::*;
 pub use tombstones::*;
 pub use vector_clock::*;
+
+/// Spawn a networked entity with persistence enabled
+///
+/// Creates an entity with both NetworkedEntity and Persisted components,
+/// registers it in the NetworkEntityMap, and returns the entity ID.
+/// This is the single source of truth for creating networked entities
+/// that need to be synchronized and persisted across the network.
+///
+/// # Parameters
+/// - `world`: Bevy world to spawn entity in
+/// - `entity_id`: Network ID for the entity (UUID)
+/// - `node_id`: ID of the node that owns this entity
+///
+/// # Returns
+/// The spawned Bevy entity's ID
+///
+/// # Example
+/// ```no_run
+/// use bevy::prelude::*;
+/// use lib::networking::spawn_networked_entity;
+/// use uuid::Uuid;
+///
+/// fn my_system(world: &mut World) {
+///     let entity_id = Uuid::new_v4();
+///     let node_id = Uuid::new_v4();
+///     let entity = spawn_networked_entity(world, entity_id, node_id);
+///     // Entity is now registered and ready for sync/persistence
+/// }
+/// ```
+pub fn spawn_networked_entity(
+    world: &mut bevy::prelude::World,
+    entity_id: uuid::Uuid,
+    node_id: uuid::Uuid,
+) -> bevy::prelude::Entity {
+    use bevy::prelude::*;
+
+    // Spawn with both NetworkedEntity and Persisted components
+    let entity = world.spawn((
+        NetworkedEntity::with_id(entity_id, node_id),
+        crate::persistence::Persisted::with_id(entity_id),
+    )).id();
+
+    // Register in entity map
+    let mut entity_map = world.resource_mut::<NetworkEntityMap>();
+    entity_map.insert(entity_id, entity);
+
+    info!(
+        "Spawned new networked entity {:?} from node {}",
+        entity_id, node_id
+    );
+
+    entity
+}

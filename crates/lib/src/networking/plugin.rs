@@ -27,7 +27,10 @@
 use bevy::prelude::*;
 
 use crate::networking::{
-    change_detection::LastSyncVersions,
+    change_detection::{
+        auto_detect_transform_changes_system,
+        LastSyncVersions,
+    },
     delta_generation::{
         generate_delta_system,
         NodeVectorClock,
@@ -158,7 +161,8 @@ impl Plugin for NetworkingPlugin {
             .insert_resource(NetworkEntityMap::new())
             .insert_resource(LastSyncVersions::default())
             .insert_resource(OperationLog::new())
-            .insert_resource(TombstoneRegistry::new());
+            .insert_resource(TombstoneRegistry::new())
+            .insert_resource(crate::networking::ComponentVectorClocks::new());
 
         // PreUpdate systems - handle incoming messages first
         app.add_systems(
@@ -178,6 +182,8 @@ impl Plugin for NetworkingPlugin {
         app.add_systems(
             Update,
             (
+                // Track Transform changes and mark NetworkedTransform as changed
+                auto_detect_transform_changes_system,
                 // Handle local entity deletions
                 handle_local_deletions_system,
             ),
