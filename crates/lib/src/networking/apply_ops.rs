@@ -3,10 +3,10 @@
 //! This module handles incoming EntityDelta messages and applies them to the
 //! local Bevy world using CRDT merge semantics.
 
-use bevy::{
-    prelude::*,
-    reflect::TypeRegistry,
-};
+use std::collections::HashMap;
+
+use bevy::prelude::*;
+use uuid::Uuid;
 
 use crate::{
     networking::{
@@ -16,16 +16,51 @@ use crate::{
         },
         delta_generation::NodeVectorClock,
         entity_map::NetworkEntityMap,
+        merge::compare_operations_lww,
         messages::{
             ComponentData,
             EntityDelta,
             SyncMessage,
         },
         operations::ComponentOp,
-        NetworkedEntity,
+        VectorClock,
     },
-    persistence::reflection::deserialize_component,
+    persistence::reflection::deserialize_component_typed,
 };
+
+/// Resource to track the last vector clock and originating node for each component on each entity
+///
+/// This enables Last-Write-Wins conflict resolution by comparing incoming
+/// operations' vector clocks with the current component's vector clock.
+/// The node_id is used as a deterministic tiebreaker for concurrent operations.
+#[derive(Resource, Default)]
+pub struct ComponentVectorClocks {
+    /// Maps (entity_network_id, component_type) -> (vector_clock, originating_node_id)
+    clocks: HashMap<(Uuid, String), (VectorClock, Uuid)>,
+}
+
+impl ComponentVectorClocks {
+    pub fn new() -> Self {
+        Self {
+            clocks: HashMap::new(),
+        }
+    }
+
+    /// Get the current vector clock and node_id for a component
+    pub fn get(&self, entity_id: Uuid, component_type: &str) -> Option<&(VectorClock, Uuid)> {
+        self.clocks.get(&(entity_id, component_type.to_string()))
+    }
+
+    /// Update the vector clock and node_id for a component
+    pub fn set(&mut self, entity_id: Uuid, component_type: String, clock: VectorClock, node_id: Uuid) {
+        self.clocks.insert((entity_id, component_type), (clock, node_id));
+    }
+
+    /// Remove all clocks for an entity (when entity is deleted)
+    pub fn remove_entity(&mut self, entity_id: Uuid) {
+        self.clocks.retain(|(eid, _), _| *eid != entity_id);
+    }
+}
 
 /// Apply an EntityDelta message to the local world
 ///
@@ -38,39 +73,33 @@ use crate::{
 /// # Parameters
 ///
 /// - `delta`: The EntityDelta to apply
-/// - `commands`: Bevy Commands for spawning/modifying entities
-/// - `entity_map`: Map from network_id to Entity
-/// - `type_registry`: Bevy's type registry for deserialization
-/// - `node_clock`: Our node's vector clock (for causality tracking)
-/// - `blob_store`: Optional blob store for resolving large component references
-/// - `tombstone_registry`: Optional tombstone registry for deletion tracking
+/// - `world`: The Bevy world to apply changes to
 pub fn apply_entity_delta(
     delta: &EntityDelta,
-    commands: &mut Commands,
-    entity_map: &mut NetworkEntityMap,
-    type_registry: &TypeRegistry,
-    node_clock: &mut NodeVectorClock,
-    blob_store: Option<&BlobStore>,
-    mut tombstone_registry: Option<&mut crate::networking::TombstoneRegistry>,
+    world: &mut World,
 ) {
     // Validate and merge the remote vector clock
-    // Check for clock regression (shouldn't happen in correct implementations)
-    if delta.vector_clock.happened_before(&node_clock.clock) {
-        warn!(
-            "Received operation with clock from the past for entity {:?}. \
-             Remote clock happened before our clock. This may indicate clock issues.",
-            delta.entity_id
-        );
-    }
+    {
+        let mut node_clock = world.resource_mut::<NodeVectorClock>();
 
-    // Merge the remote vector clock into ours
-    node_clock.clock.merge(&delta.vector_clock);
+        // Check for clock regression (shouldn't happen in correct implementations)
+        if delta.vector_clock.happened_before(&node_clock.clock) {
+            warn!(
+                "Received operation with clock from the past for entity {:?}. \
+                 Remote clock happened before our clock. This may indicate clock issues.",
+                delta.entity_id
+            );
+        }
+
+        // Merge the remote vector clock into ours
+        node_clock.clock.merge(&delta.vector_clock);
+    }
 
     // Check if any operations are Delete operations
     for op in &delta.operations {
         if let crate::networking::ComponentOp::Delete { vector_clock } = op {
             // Record tombstone
-            if let Some(ref mut registry) = tombstone_registry {
+            if let Some(mut registry) = world.get_resource_mut::<crate::networking::TombstoneRegistry>() {
                 registry.record_deletion(
                     delta.entity_id,
                     delta.node_id,
@@ -78,8 +107,13 @@ pub fn apply_entity_delta(
                 );
 
                 // Despawn the entity if it exists locally
-                if let Some(entity) = entity_map.get_entity(delta.entity_id) {
-                    commands.entity(entity).despawn();
+                let entity_to_despawn = {
+                    let entity_map = world.resource::<NetworkEntityMap>();
+                    entity_map.get_entity(delta.entity_id)
+                };
+                if let Some(entity) = entity_to_despawn {
+                    world.despawn(entity);
+                    let mut entity_map = world.resource_mut::<NetworkEntityMap>();
                     entity_map.remove_by_network_id(delta.entity_id);
                     info!("Despawned entity {:?} due to Delete operation", delta.entity_id);
                 }
@@ -91,7 +125,7 @@ pub fn apply_entity_delta(
     }
 
     // Check if we should ignore this delta due to deletion
-    if let Some(ref registry) = tombstone_registry {
+    if let Some(registry) = world.get_resource::<crate::networking::TombstoneRegistry>() {
         if registry.should_ignore_operation(delta.entity_id, &delta.vector_clock) {
             debug!(
                 "Ignoring delta for deleted entity {:?}",
@@ -101,29 +135,30 @@ pub fn apply_entity_delta(
         }
     }
 
-    // Look up or create the entity
-    let entity = match entity_map.get_entity(delta.entity_id) {
-        Some(entity) => entity,
-        None => {
-            // Spawn new entity with NetworkedEntity component
-            let entity = commands
-                .spawn(NetworkedEntity::with_id(delta.entity_id, delta.node_id))
-                .id();
-
-            entity_map.insert(delta.entity_id, entity);
-            info!(
-                "Spawned new networked entity {:?} from node {}",
-                delta.entity_id, delta.node_id
-            );
-
+    let entity = {
+        let entity_map = world.resource::<NetworkEntityMap>();
+        if let Some(entity) = entity_map.get_entity(delta.entity_id) {
             entity
+        } else {
+            // Use shared helper to spawn networked entity with persistence
+            crate::networking::spawn_networked_entity(world, delta.entity_id, delta.node_id)
         }
     };
 
     // Apply each operation (skip Delete operations - handled above)
     for op in &delta.operations {
         if !op.is_delete() {
-            apply_component_op(entity, op, commands, type_registry, blob_store);
+            apply_component_op(entity, op, delta.node_id, world);
+        }
+    }
+
+    // Trigger persistence by marking Persisted as changed
+    // This ensures remote entities are persisted after sync
+    if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+        if let Some(mut persisted) = entity_mut.get_mut::<crate::persistence::Persisted>() {
+            // Accessing &mut triggers Bevy's change detection
+            let _ = &mut *persisted;
+            debug!("Triggered persistence for synced entity {:?}", delta.entity_id);
         }
     }
 }
@@ -135,17 +170,16 @@ pub fn apply_entity_delta(
 fn apply_component_op(
     entity: Entity,
     op: &ComponentOp,
-    commands: &mut Commands,
-    type_registry: &TypeRegistry,
-    blob_store: Option<&BlobStore>,
+    incoming_node_id: Uuid,
+    world: &mut World,
 ) {
     match op {
         | ComponentOp::Set {
             component_type,
             data,
-            vector_clock: _,
+            vector_clock,
         } => {
-            apply_set_operation(entity, component_type, data, commands, type_registry, blob_store);
+            apply_set_operation_with_lww(entity, component_type, data, vector_clock, incoming_node_id, world);
         }
         | ComponentOp::SetAdd { component_type, .. } => {
             // OR-Set add - Phase 10 provides OrSet<T> type
@@ -174,6 +208,120 @@ fn apply_component_op(
     }
 }
 
+/// Apply a Set operation with Last-Write-Wins conflict resolution
+///
+/// Compares the incoming vector clock with the stored clock for this component.
+/// Only applies the operation if the incoming clock wins the LWW comparison.
+/// Uses node_id as a deterministic tiebreaker for concurrent operations.
+fn apply_set_operation_with_lww(
+    entity: Entity,
+    component_type: &str,
+    data: &ComponentData,
+    incoming_clock: &VectorClock,
+    incoming_node_id: Uuid,
+    world: &mut World,
+) {
+    // Get the network ID for this entity
+    let entity_network_id = {
+        if let Ok(entity_ref) = world.get_entity(entity) {
+            if let Some(networked) = entity_ref.get::<crate::networking::NetworkedEntity>() {
+                networked.network_id
+            } else {
+                warn!("Entity {:?} has no NetworkedEntity component", entity);
+                return;
+            }
+        } else {
+            warn!("Entity {:?} not found", entity);
+            return;
+        }
+    };
+
+    // Check if we should apply this operation based on LWW
+    let should_apply = {
+        if let Some(component_clocks) = world.get_resource::<ComponentVectorClocks>() {
+            if let Some((current_clock, current_node_id)) = component_clocks.get(entity_network_id, component_type) {
+                // We have a current clock - do LWW comparison with real node IDs
+                let decision = compare_operations_lww(
+                    current_clock,
+                    *current_node_id,
+                    incoming_clock,
+                    incoming_node_id,
+                );
+
+                match decision {
+                    crate::networking::merge::MergeDecision::ApplyRemote => {
+                        debug!(
+                            "Applying remote Set for {} (remote is newer)",
+                            component_type
+                        );
+                        true
+                    }
+                    crate::networking::merge::MergeDecision::KeepLocal => {
+                        debug!(
+                            "Ignoring remote Set for {} (local is newer)",
+                            component_type
+                        );
+                        false
+                    }
+                    crate::networking::merge::MergeDecision::Concurrent => {
+                        // For concurrent operations, use node_id comparison as deterministic tiebreaker
+                        // This ensures all nodes make the same decision for concurrent updates
+                        if incoming_node_id > *current_node_id {
+                            debug!(
+                                "Applying remote Set for {} (concurrent, remote node_id {:?} > local {:?})",
+                                component_type, incoming_node_id, current_node_id
+                            );
+                            true
+                        } else {
+                            debug!(
+                                "Ignoring remote Set for {} (concurrent, local node_id {:?} >= remote {:?})",
+                                component_type, current_node_id, incoming_node_id
+                            );
+                            false
+                        }
+                    }
+                    crate::networking::merge::MergeDecision::Equal => {
+                        debug!("Ignoring remote Set for {} (clocks equal)", component_type);
+                        false
+                    }
+                }
+            } else {
+                // No current clock - this is the first time we're setting this component
+                debug!(
+                    "Applying remote Set for {} (no current clock)",
+                    component_type
+                );
+                true
+            }
+        } else {
+            // No ComponentVectorClocks resource - apply unconditionally
+            warn!("ComponentVectorClocks resource not found - applying Set without LWW check");
+            true
+        }
+    };
+
+    if !should_apply {
+        return;
+    }
+
+    // Apply the operation
+    apply_set_operation(entity, component_type, data, world);
+
+    // Update the stored vector clock with node_id
+    if let Some(mut component_clocks) = world.get_resource_mut::<ComponentVectorClocks>() {
+        component_clocks.set(
+            entity_network_id,
+            component_type.to_string(),
+            incoming_clock.clone(),
+            incoming_node_id,
+        );
+        debug!(
+            "Updated vector clock for {} on entity {:?} (node_id: {:?})",
+            component_type, entity_network_id, incoming_node_id
+        );
+    }
+}
+
 /// Apply a Set operation (Last-Write-Wins)
 ///
 /// Deserializes the component and inserts/updates it on the entity.
@@ -182,10 +330,13 @@ fn apply_set_operation(
     entity: Entity,
     component_type: &str,
     data: &ComponentData,
-    commands: &mut Commands,
-    type_registry: &TypeRegistry,
-    blob_store: Option<&BlobStore>,
+    world: &mut World,
 ) {
+    let type_registry = {
+        let registry_resource = world.resource::<AppTypeRegistry>();
+        registry_resource.read()
+    };
+    let blob_store = world.get_resource::<BlobStore>();
     // Get the actual data (resolve blob if needed)
     let data_bytes = match data {
         | ComponentData::Inline(bytes) => bytes.clone(),
@@ -211,19 +362,14 @@ fn apply_set_operation(
         }
     };
 
-    // Deserialize the component
-    let reflected = match deserialize_component(&data_bytes, type_registry) {
+    let reflected = match deserialize_component_typed(&data_bytes, component_type, &type_registry) {
         Ok(reflected) => reflected,
         Err(e) => {
-            error!(
-                "Failed to deserialize component {}: {}",
-                component_type, e
-            );
+            error!("Failed to deserialize component {}: {}", component_type, e);
             return;
         }
     };
 
-    // Get the type registration
     let registration = match type_registry.get_with_type_path(component_type) {
         Some(reg) => reg,
         None => {
@@ -232,40 +378,36 @@ fn apply_set_operation(
         }
     };
 
-    // Get ReflectComponent data
     let reflect_component = match registration.data::<ReflectComponent>() {
         Some(rc) => rc.clone(),
         None => {
-            error!(
-                "Component type {} does not have ReflectComponent data",
-                component_type
-            );
+            error!("Component type {} does not have ReflectComponent data", component_type);
             return;
         }
     };
 
-    // Clone what we need to avoid lifetime issues
-    let component_type_owned = component_type.to_string();
+    drop(type_registry);
 
-    // Insert or update the component
-    commands.queue(move |world: &mut World| {
-        // Get the type registry from the world and clone it
-        let type_registry_arc = {
-            let Some(type_registry_res) = world.get_resource::<AppTypeRegistry>() else {
-                error!("AppTypeRegistry not found in world");
-                return;
-            };
-            type_registry_res.clone()
-        };
+    let type_registry_arc = world.resource::<AppTypeRegistry>().clone();
+    let type_registry_guard = type_registry_arc.read();
 
-        // Now we can safely get mutable access to the world
-        let type_registry = type_registry_arc.read();
+    if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+        reflect_component.insert(&mut entity_mut, &*reflected, &type_registry_guard);
+        debug!("Applied Set operation for {}", component_type);
 
-        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-            reflect_component.insert(&mut entity_mut, &*reflected, &type_registry);
-            debug!("Applied Set operation for {}", component_type_owned);
+        // If we just inserted a Transform component, also add NetworkedTransform
+        // This ensures remote entities can have their Transform changes detected
+        if component_type == "bevy_transform::components::transform::Transform" {
+            if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                if entity_mut.get::<crate::networking::NetworkedTransform>().is_none() {
+                    entity_mut.insert(crate::networking::NetworkedTransform::default());
+                    debug!("Added NetworkedTransform to entity with Transform");
+                }
+            }
         }
-    });
+    } else {
+        error!("Entity {:?} not found when applying component {}", entity, component_type);
+    }
 }
 
 /// System to receive and apply incoming EntityDelta messages
@@ -282,21 +424,14 @@ fn apply_set_operation(
 /// App::new()
 ///     .add_systems(Update, receive_and_apply_deltas_system);
 /// ```
-pub fn receive_and_apply_deltas_system(
-    mut commands: Commands,
-    bridge: Option<Res<crate::networking::GossipBridge>>,
-    mut entity_map: ResMut<NetworkEntityMap>,
-    type_registry: Res<AppTypeRegistry>,
-    mut node_clock: ResMut<NodeVectorClock>,
-    blob_store: Option<Res<BlobStore>>,
-    mut tombstone_registry: Option<ResMut<crate::networking::TombstoneRegistry>>,
-) {
-    let Some(bridge) = bridge else {
+pub fn receive_and_apply_deltas_system(world: &mut World) {
+    // Check if bridge exists
+    if world.get_resource::<crate::networking::GossipBridge>().is_none() {
         return;
-    };
+    }
 
-    let registry = type_registry.read();
-    let blob_store_ref = blob_store.as_deref();
+    // Clone the bridge to avoid borrowing issues
+    let bridge = world.resource::<crate::networking::GossipBridge>().clone();
 
     // Poll for incoming messages
     while let Some(message) = bridge.try_recv() {
@@ -320,15 +455,7 @@ pub fn receive_and_apply_deltas_system(
                     delta.operations.len()
                 );
 
-                apply_entity_delta(
-                    &delta,
-                    &mut commands,
-                    &mut entity_map,
-                    &registry,
-                    &mut node_clock,
-                    blob_store_ref,
-                    tombstone_registry.as_deref_mut(),
-                );
+                apply_entity_delta(&delta, world);
             }
             | SyncMessage::JoinRequest { .. } => {
                 // Handled by handle_join_requests_system

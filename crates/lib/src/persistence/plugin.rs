@@ -167,29 +167,61 @@ fn persistence_startup_system(db: Res<PersistenceDb>, mut metrics: ResMut<Persis
 /// For automatic tracking without manual `mark_dirty()` calls, use the
 /// `auto_track_component_changes_system` which automatically detects changes
 /// to common components like Transform, GlobalTransform, etc.
-fn collect_dirty_entities_bevy_system(
-    mut dirty: ResMut<DirtyEntitiesResource>,
-    mut write_buffer: ResMut<WriteBufferResource>,
-    query: Query<(Entity, &Persisted), Changed<Persisted>>,
-    world: &World,
-    type_registry: Res<AppTypeRegistry>,
-) {
-    let registry = type_registry.read();
+fn collect_dirty_entities_bevy_system(world: &mut World) {
+    // Collect changed entities first
+    let changed_entities: Vec<(Entity, uuid::Uuid)> = {
+        let mut query = world.query_filtered::<(Entity, &Persisted), Changed<Persisted>>();
+        query.iter(world)
+            .map(|(entity, persisted)| (entity, persisted.network_id))
+            .collect()
+    };
 
-    // Track changed entities and serialize all their components
-    for (entity, persisted) in query.iter() {
+    if changed_entities.is_empty() {
+        return;
+    }
+
+    // Serialize components for each entity
+    for (entity, network_id) in changed_entities {
+        // First, ensure the entity exists in the database
+        {
+            let now = chrono::Utc::now();
+            let mut write_buffer = world.resource_mut::<WriteBufferResource>();
+            write_buffer.add(PersistenceOp::UpsertEntity {
+                id: network_id,
+                data: EntityData {
+                    id: network_id,
+                    created_at: now,
+                    updated_at: now,
+                    entity_type: "NetworkedEntity".to_string(),
+                },
+            });
+        }
+
         // Serialize all components on this entity (generic tracking)
-        let components = serialize_all_components_from_entity(entity, world, &registry);
+        let components = {
+            let type_registry = world.resource::<AppTypeRegistry>().read();
+            let comps = serialize_all_components_from_entity(entity, world, &type_registry);
+            drop(type_registry);
+            comps
+        };
 
         // Add operations for each component
         for (component_type, data) in components {
-            dirty.mark_dirty(persisted.network_id, &component_type);
+            // Get mutable access to dirty and mark it
+            {
+                let mut dirty = world.resource_mut::<DirtyEntitiesResource>();
+                dirty.mark_dirty(network_id, &component_type);
+            }
 
-            write_buffer.add(PersistenceOp::UpsertComponent {
-                entity_id: persisted.network_id,
-                component_type,
-                data,
-            });
+            // Get mutable access to write_buffer and add the operation
+            {
+                let mut write_buffer = world.resource_mut::<WriteBufferResource>();
+                write_buffer.add(PersistenceOp::UpsertComponent {
+                    entity_id: network_id,
+                    component_type,
+                    data,
+                });
+            }
         }
     }
 }

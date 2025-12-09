@@ -199,11 +199,15 @@ pub fn apply_full_state(
             continue;
         }
 
-        // Spawn entity with NetworkedEntity component
+        // Spawn entity with NetworkedEntity and Persisted components
+        // This ensures entities received via FullState are persisted locally
         let entity = commands
-            .spawn(NetworkedEntity::with_id(
-                entity_state.entity_id,
-                entity_state.owner_node_id,
+            .spawn((
+                NetworkedEntity::with_id(
+                    entity_state.entity_id,
+                    entity_state.owner_node_id,
+                ),
+                crate::persistence::Persisted::with_id(entity_state.entity_id),
             ))
             .id();
 

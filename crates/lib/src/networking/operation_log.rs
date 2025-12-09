@@ -307,21 +307,14 @@ pub fn handle_sync_requests_system(
 /// System to handle MissingDeltas messages
 ///
 /// When we receive MissingDeltas (in response to our SyncRequest), apply them.
-pub fn handle_missing_deltas_system(
-    mut commands: Commands,
-    bridge: Option<Res<GossipBridge>>,
-    mut entity_map: ResMut<crate::networking::NetworkEntityMap>,
-    type_registry: Res<AppTypeRegistry>,
-    mut node_clock: ResMut<NodeVectorClock>,
-    blob_store: Option<Res<crate::networking::BlobStore>>,
-    mut tombstone_registry: Option<ResMut<crate::networking::TombstoneRegistry>>,
-) {
-    let Some(bridge) = bridge else {
+pub fn handle_missing_deltas_system(world: &mut World) {
+    // Check if bridge exists
+    if world.get_resource::<GossipBridge>().is_none() {
         return;
-    };
+    }
 
-    let registry = type_registry.read();
-    let blob_store_ref = blob_store.as_deref();
+    // Clone the bridge to avoid borrowing issues
+    let bridge = world.resource::<GossipBridge>().clone();
 
     // Poll for MissingDeltas messages
     while let Some(message) = bridge.try_recv() {
@@ -336,15 +329,7 @@ pub fn handle_missing_deltas_system(
                         delta.entity_id
                     );
 
-                    crate::networking::apply_entity_delta(
-                        &delta,
-                        &mut commands,
-                        &mut entity_map,
-                        &registry,
-                        &mut node_clock,
-                        blob_store_ref,
-                        tombstone_registry.as_deref_mut(),
-                    );
+                    crate::networking::apply_entity_delta(&delta, world);
                 }
             }
             | _ => {

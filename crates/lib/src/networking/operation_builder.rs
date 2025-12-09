@@ -25,7 +25,7 @@ use crate::{
             VectorClock,
         },
     },
-    persistence::reflection::serialize_component,
+    persistence::reflection::serialize_component_typed,
 };
 
 /// Build a Set operation (LWW) from a component
@@ -55,7 +55,7 @@ pub fn build_set_operation(
     blob_store: Option<&BlobStore>,
 ) -> Result<ComponentOp> {
     // Serialize the component
-    let serialized = serialize_component(component, type_registry)?;
+    let serialized = serialize_component_typed(component, type_registry)?;
 
     // Create component data (inline or blob)
     let data = if let Some(store) = blob_store {
@@ -97,6 +97,8 @@ pub fn build_entity_operations(
     let mut operations = Vec::new();
     let entity_ref = world.entity(entity);
 
+    debug!("build_entity_operations: Building operations for entity {:?}", entity);
+
     // Iterate over all type registrations
     for registration in type_registry.iter() {
         // Skip if no ReflectComponent data
@@ -119,7 +121,7 @@ pub fn build_entity_operations(
         // Try to reflect this component from the entity
         if let Some(reflected) = reflect_component.reflect(entity_ref) {
             // Serialize the component
-            if let Ok(serialized) = serialize_component(reflected, type_registry) {
+            if let Ok(serialized) = serialize_component_typed(reflected, type_registry) {
                 // Create component data (inline or blob)
                 let data = if let Some(store) = blob_store {
                     if let Ok(component_data) = create_component_data(serialized, store) {
@@ -138,12 +140,19 @@ pub fn build_entity_operations(
                 operations.push(ComponentOp::Set {
                     component_type: type_path.to_string(),
                     data,
-                    vector_clock: clock,
+                    vector_clock: clock.clone(),
                 });
+
+                debug!("  ✓ Added Set operation for {}", type_path);
             }
         }
     }
 
+    debug!(
+        "build_entity_operations: Built {} operations for entity {:?}",
+        operations.len(),
+        entity
+    );
     operations
 }
 
@@ -173,7 +182,7 @@ pub fn build_transform_operation(
     blob_store: Option<&BlobStore>,
 ) -> Result<ComponentOp> {
     // Use reflection to serialize Transform
-    let serialized = serialize_component(transform.as_reflect(), type_registry)?;
+    let serialized = serialize_component_typed(transform.as_reflect(), type_registry)?;
 
     // Create component data (inline or blob)
     let data = if let Some(store) = blob_store {

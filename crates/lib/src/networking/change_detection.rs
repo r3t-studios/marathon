@@ -28,17 +28,28 @@ use crate::networking::{
 /// ```
 pub fn auto_detect_transform_changes_system(
     mut query: Query<
-        &mut NetworkedEntity,
+        (Entity, &mut NetworkedEntity, &Transform),
         (
             With<NetworkedTransform>,
             Or<(Changed<Transform>, Changed<GlobalTransform>)>,
         ),
     >,
 ) {
+    // Count how many changed entities we found
+    let count = query.iter().count();
+    if count > 0 {
+        debug!("auto_detect_transform_changes_system: Found {} entities with changed Transform", count);
+    }
+
     // Simply accessing &mut NetworkedEntity triggers Bevy's change detection
-    for mut _networked in query.iter_mut() {
+    for (_entity, mut networked, transform) in query.iter_mut() {
+        debug!(
+            "Marking NetworkedEntity {:?} as changed due to Transform change (pos: {:?})",
+            networked.network_id, transform.translation
+        );
         // No-op - the mutable access itself marks NetworkedEntity as changed
         // This will trigger the delta generation system
+        let _ = &mut *networked;
     }
 }
 
