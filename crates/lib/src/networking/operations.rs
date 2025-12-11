@@ -144,11 +144,11 @@ impl ComponentOp {
     /// Get the component type for this operation
     pub fn component_type(&self) -> Option<&str> {
         match self {
-            | ComponentOp::Set { component_type, .. }
-            | ComponentOp::SetAdd { component_type, .. }
-            | ComponentOp::SetRemove { component_type, .. }
-            | ComponentOp::SequenceInsert { component_type, .. }
-            | ComponentOp::SequenceDelete { component_type, .. } => Some(component_type),
+            | ComponentOp::Set { component_type, .. } |
+            ComponentOp::SetAdd { component_type, .. } |
+            ComponentOp::SetRemove { component_type, .. } |
+            ComponentOp::SequenceInsert { component_type, .. } |
+            ComponentOp::SequenceDelete { component_type, .. } => Some(component_type),
             | ComponentOp::Delete { .. } => None,
         }
     }
@@ -156,12 +156,12 @@ impl ComponentOp {
     /// Get the vector clock for this operation
     pub fn vector_clock(&self) -> &VectorClock {
         match self {
-            | ComponentOp::Set { vector_clock, .. }
-            | ComponentOp::SetAdd { vector_clock, .. }
-            | ComponentOp::SetRemove { vector_clock, .. }
-            | ComponentOp::SequenceInsert { vector_clock, .. }
-            | ComponentOp::SequenceDelete { vector_clock, .. }
-            | ComponentOp::Delete { vector_clock } => vector_clock,
+            | ComponentOp::Set { vector_clock, .. } |
+            ComponentOp::SetAdd { vector_clock, .. } |
+            ComponentOp::SetRemove { vector_clock, .. } |
+            ComponentOp::SequenceInsert { vector_clock, .. } |
+            ComponentOp::SequenceDelete { vector_clock, .. } |
+            ComponentOp::Delete { vector_clock } => vector_clock,
         }
     }
 
@@ -232,7 +232,11 @@ impl ComponentOpBuilder {
     }
 
     /// Build a SetRemove operation (OR-Set)
-    pub fn set_remove(mut self, component_type: String, removed_ids: Vec<uuid::Uuid>) -> ComponentOp {
+    pub fn set_remove(
+        mut self,
+        component_type: String,
+        removed_ids: Vec<uuid::Uuid>,
+    ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SetRemove {
             component_type,
@@ -259,7 +263,11 @@ impl ComponentOpBuilder {
     }
 
     /// Build a SequenceDelete operation (RGA)
-    pub fn sequence_delete(mut self, component_type: String, element_id: uuid::Uuid) -> ComponentOp {
+    pub fn sequence_delete(
+        mut self,
+        component_type: String,
+        element_id: uuid::Uuid,
+    ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SequenceDelete {
             component_type,
@@ -352,7 +360,10 @@ mod tests {
         let clock = VectorClock::new();
 
         let builder = ComponentOpBuilder::new(node_id, clock);
-        let op = builder.set("Transform".to_string(), ComponentData::Inline(vec![1, 2, 3]));
+        let op = builder.set(
+            "Transform".to_string(),
+            ComponentData::Inline(vec![1, 2, 3]),
+        );
 
         assert!(op.is_set());
         assert_eq!(op.vector_clock().get(node_id), 1);

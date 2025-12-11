@@ -1,7 +1,11 @@
 /// Basic tests for the Synced derive macro
 use bevy::prelude::*;
 use lib::networking::{
-    ClockComparison, ComponentMergeDecision, SyncComponent, SyncStrategy, Synced,
+    ClockComparison,
+    ComponentMergeDecision,
+    SyncComponent,
+    SyncStrategy,
+    Synced,
 };
 use sync_macros::Synced as SyncedDerive;
 
@@ -56,7 +60,7 @@ fn test_health_lww_merge_concurrent() {
     // Either TookRemote or KeptLocal depending on hash
     assert!(
         decision == ComponentMergeDecision::TookRemote ||
-        decision == ComponentMergeDecision::KeptLocal
+            decision == ComponentMergeDecision::KeptLocal
     );
 }
 

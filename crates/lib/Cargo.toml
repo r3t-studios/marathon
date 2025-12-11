@@ -19,6 +19,8 @@ bevy.workspace = true
 bincode = "1.3"
 futures-lite = "2.0"
 sha2 = "0.10"
+tokio.workspace = true
+blocking = "1.6"
 
 [dev-dependencies]
 tokio.workspace = true
@@ -26,3 +28,13 @@ iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
 futures-lite = "2.0"
 tempfile = "3"
+proptest = "1.4"
+criterion = "0.5"
+
+[[bench]]
+name = "write_buffer"
+harness = false
+
+[[bench]]
+name = "vector_clock"
+harness = false

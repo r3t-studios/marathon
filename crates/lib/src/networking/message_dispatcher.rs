@@ -10,6 +10,9 @@ use bevy::{
 };
 
 use crate::networking::{
+    GossipBridge,
+    NetworkedEntity,
+    TombstoneRegistry,
     apply_entity_delta,
     apply_full_state,
     blob_support::BlobStore,
@@ -18,9 +21,8 @@ use crate::networking::{
     entity_map::NetworkEntityMap,
     messages::SyncMessage,
     operation_log::OperationLog,
-    GossipBridge,
-    NetworkedEntity,
-    TombstoneRegistry,
+    plugin::SessionSecret,
+    validate_session_secret,
 };
 
 /// Central message dispatcher system
@@ -46,8 +48,7 @@ use crate::networking::{
 /// use bevy::prelude::*;
 /// use lib::networking::message_dispatcher_system;
 ///
-/// App::new()
-///     .add_systems(Update, message_dispatcher_system);
+/// App::new().add_systems(Update, message_dispatcher_system);
 /// ```
 pub fn message_dispatcher_system(world: &mut World) {
     // This is an exclusive system to avoid parameter conflicts with world access
@@ -57,7 +58,8 @@ pub fn message_dispatcher_system(world: &mut World) {
     }
 
     // Atomically drain all pending messages from the incoming queue
-    // This prevents race conditions where messages could arrive between individual try_recv() calls
+    // This prevents race conditions where messages could arrive between individual
+    // try_recv() calls
     let messages: Vec<crate::networking::VersionedMessage> = {
         let bridge = world.resource::<GossipBridge>();
         bridge.drain_incoming()
@@ -74,10 +76,7 @@ pub fn message_dispatcher_system(world: &mut World) {
 
 /// Helper function to dispatch a single message
 /// This is separate to allow proper borrowing of world resources
-fn dispatch_message(
-    world: &mut World,
-    message: crate::networking::VersionedMessage,
-) {
+fn dispatch_message(world: &mut World, message: crate::networking::VersionedMessage) {
     match message.message {
         // EntityDelta - apply remote operations
         | SyncMessage::EntityDelta {
@@ -100,7 +99,7 @@ fn dispatch_message(
             );
 
             apply_entity_delta(&delta, world);
-        }
+        },
 
         // JoinRequest - new peer joining
         | SyncMessage::JoinRequest {
@@ -109,9 +108,29 @@ fn dispatch_message(
         } => {
             info!("Received JoinRequest from node {}", node_id);
 
-            // TODO: Validate session_secret in Phase 13
-            if let Some(_secret) = session_secret {
-                debug!("Session secret validation not yet implemented");
+            // Validate session secret if configured
+            if let Some(expected) = world.get_resource::<SessionSecret>() {
+                match &session_secret {
+                    | Some(provided_secret) => {
+                        if let Err(e) =
+                            validate_session_secret(provided_secret, expected.as_bytes())
+                        {
+                            error!("JoinRequest from {} rejected: {}", node_id, e);
+                            return; // Stop processing this message
+                        }
+                        info!("Session secret validated for node {}", node_id);
+                    },
+                    | None => {
+                        warn!(
+                            "JoinRequest from {} missing required session secret, rejecting",
+                            node_id
+                        );
+                        return; // Reject requests without secret when one is configured
+                    },
+                }
+            } else if session_secret.is_some() {
+                // No session secret configured but peer provided one
+                debug!("Session secret provided but none configured, accepting");
             }
 
             // Build and send full state
@@ -143,7 +162,7 @@ fn dispatch_message(
                     info!("Sent FullState to node {}", node_id);
                 }
             }
-        }
+        },
 
         // FullState - receiving world state after join
         | SyncMessage::FullState {
@@ -163,7 +182,14 @@ fn dispatch_message(
             )> = SystemState::new(world);
 
             {
-                let (mut commands, mut entity_map, type_registry, mut node_clock, blob_store, mut tombstone_registry) = system_state.get_mut(world);
+                let (
+                    mut commands,
+                    mut entity_map,
+                    type_registry,
+                    mut node_clock,
+                    blob_store,
+                    mut tombstone_registry,
+                ) = system_state.get_mut(world);
                 let registry = type_registry.read();
 
                 apply_full_state(
@@ -180,7 +206,7 @@ fn dispatch_message(
             }
 
             system_state.apply(world);
-        }
+        },
 
         // SyncRequest - peer requesting missing operations
         | SyncMessage::SyncRequest {
@@ -213,7 +239,7 @@ fn dispatch_message(
             } else {
                 warn!("Received SyncRequest but OperationLog resource not available");
             }
-        }
+        },
 
         // MissingDeltas - receiving operations we requested
         | SyncMessage::MissingDeltas { deltas } => {
@@ -221,14 +247,11 @@ fn dispatch_message(
 
             // Apply each delta
             for delta in deltas {
-                debug!(
-                    "Applying missing delta for entity {:?}",
-                    delta.entity_id
-                );
+                debug!("Applying missing delta for entity {:?}", delta.entity_id);
 
                 apply_entity_delta(&delta, world);
             }
-        }
+        },
     }
 }
 
@@ -280,10 +303,10 @@ fn build_full_state_from_data(
             let type_path = registration.type_info().type_path();
 
             // Skip networked wrapper components
-            if type_path.ends_with("::NetworkedEntity")
-                || type_path.ends_with("::NetworkedTransform")
-                || type_path.ends_with("::NetworkedSelection")
-                || type_path.ends_with("::NetworkedDrawingPath")
+            if type_path.ends_with("::NetworkedEntity") ||
+                type_path.ends_with("::NetworkedTransform") ||
+                type_path.ends_with("::NetworkedSelection") ||
+                type_path.ends_with("::NetworkedDrawingPath")
             {
                 continue;
             }
@@ -295,8 +318,8 @@ fn build_full_state_from_data(
                     // Create component data (inline or blob)
                     let data = if let Some(store) = blob_store {
                         match create_component_data(serialized, store) {
-                            Ok(d) => d,
-                            Err(_) => continue,
+                            | Ok(d) => d,
+                            | Err(_) => continue,
                         }
                     } else {
                         crate::networking::ComponentData::Inline(serialized)

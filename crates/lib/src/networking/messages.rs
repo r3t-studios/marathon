@@ -144,7 +144,8 @@ pub struct EntityState {
 /// Contains the component type and its serialized data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentState {
-    /// Type path of the component (e.g., "bevy_transform::components::Transform")
+    /// Type path of the component (e.g.,
+    /// "bevy_transform::components::Transform")
     pub component_type: String,
 
     /// Serialized component data (bincode)

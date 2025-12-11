@@ -270,13 +270,9 @@ where
     pub fn values(&self) -> impl Iterator<Item = &T> {
         let ordered = self.get_ordered_elements();
         ordered.into_iter().filter_map(move |id| {
-            self.elements.get(&id).and_then(|e| {
-                if !e.is_deleted {
-                    Some(&e.value)
-                } else {
-                    None
-                }
-            })
+            self.elements
+                .get(&id)
+                .and_then(|e| if !e.is_deleted { Some(&e.value) } else { None })
         })
     }
 
@@ -344,9 +340,9 @@ where
 
     /// Garbage collect tombstones
     ///
-    /// Removes deleted elements that have no children (nothing inserted after them).
-    /// This is safe because if no element references a tombstone as its parent,
-    /// it can be removed without affecting the sequence.
+    /// Removes deleted elements that have no children (nothing inserted after
+    /// them). This is safe because if no element references a tombstone as
+    /// its parent, it can be removed without affecting the sequence.
     pub fn garbage_collect(&mut self) {
         // Find all IDs that are referenced as after_id
         let mut referenced_ids = std::collections::HashSet::new();
@@ -357,9 +353,8 @@ where
         }
 
         // Remove deleted elements that aren't referenced
-        self.elements.retain(|id, element| {
-            !element.is_deleted || referenced_ids.contains(id)
-        });
+        self.elements
+            .retain(|id, element| !element.is_deleted || referenced_ids.contains(id));
     }
 
     /// Get ordered list of element IDs
@@ -385,12 +380,12 @@ where
 
                 // Compare vector clocks
                 match elem_a.vector_clock.compare(&elem_b.vector_clock) {
-                    Ok(std::cmp::Ordering::Less) => std::cmp::Ordering::Less,
-                    Ok(std::cmp::Ordering::Greater) => std::cmp::Ordering::Greater,
-                    Ok(std::cmp::Ordering::Equal) | Err(_) => {
+                    | Ok(std::cmp::Ordering::Less) => std::cmp::Ordering::Less,
+                    | Ok(std::cmp::Ordering::Greater) => std::cmp::Ordering::Greater,
+                    | Ok(std::cmp::Ordering::Equal) | Err(_) => {
                         // If clocks are equal or concurrent, use node ID as tiebreaker
                         elem_a.inserting_node.cmp(&elem_b.inserting_node)
-                    }
+                    },
                 }
             });
         }
@@ -415,10 +410,7 @@ where
     /// Calculate the visible position of an element
     fn calculate_position(&self, element_id: uuid::Uuid) -> usize {
         let ordered = self.get_ordered_elements();
-        ordered
-            .iter()
-            .position(|id| id == &element_id)
-            .unwrap_or(0)
+        ordered.iter().position(|id| id == &element_id).unwrap_or(0)
     }
 }
 

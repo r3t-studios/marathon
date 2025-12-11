@@ -6,6 +6,7 @@
 use bevy::prelude::*;
 
 use crate::networking::{
+    NetworkedEntity,
     change_detection::LastSyncVersions,
     gossip_bridge::GossipBridge,
     messages::{
@@ -18,7 +19,6 @@ use crate::networking::{
         NodeId,
         VectorClock,
     },
-    NetworkedEntity,
 };
 
 /// Resource wrapping our node's vector clock
@@ -63,8 +63,7 @@ impl NodeVectorClock {
 /// use bevy::prelude::*;
 /// use lib::networking::generate_delta_system;
 ///
-/// App::new()
-///     .add_systems(Update, generate_delta_system);
+/// App::new().add_systems(Update, generate_delta_system);
 /// ```
 pub fn generate_delta_system(world: &mut World) {
     // Check if bridge exists
@@ -73,8 +72,10 @@ pub fn generate_delta_system(world: &mut World) {
     }
 
     let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
-        let mut query = world.query_filtered::<(Entity, &NetworkedEntity), Changed<NetworkedEntity>>();
-        query.iter(world)
+        let mut query =
+            world.query_filtered::<(Entity, &NetworkedEntity), Changed<NetworkedEntity>>();
+        query
+            .iter(world)
             .map(|(entity, networked)| (entity, networked.network_id, networked.owner_node_id))
             .collect()
     };
@@ -142,12 +143,7 @@ pub fn generate_delta_system(world: &mut World) {
             let (bridge, _, _, mut last_versions, mut operation_log) = system_state.get_mut(world);
 
             // Create EntityDelta
-            let delta = EntityDelta::new(
-                network_id,
-                node_id,
-                vector_clock.clone(),
-                operations,
-            );
+            let delta = EntityDelta::new(network_id, node_id, vector_clock.clone(), operations);
 
             // Record in operation log for anti-entropy
             if let Some(ref mut log) = operation_log {
@@ -179,10 +175,22 @@ pub fn generate_delta_system(world: &mut World) {
 
         // Phase 4: Update component vector clocks for local modifications
         {
-            if let Some(mut component_clocks) = world.get_resource_mut::<crate::networking::ComponentVectorClocks>() {
+            if let Some(mut component_clocks) =
+                world.get_resource_mut::<crate::networking::ComponentVectorClocks>()
+            {
                 for op in &delta.operations {
-                    if let crate::networking::ComponentOp::Set { component_type, vector_clock: op_clock, .. } = op {
-                        component_clocks.set(network_id, component_type.clone(), op_clock.clone(), node_id);
+                    if let crate::networking::ComponentOp::Set {
+                        component_type,
+                        vector_clock: op_clock,
+                        ..
+                    } = op
+                    {
+                        component_clocks.set(
+                            network_id,
+                            component_type.clone(),
+                            op_clock.clone(),
+                            node_id,
+                        );
                         debug!(
                             "Updated local vector clock for {} on entity {:?} (node_id: {:?})",
                             component_type, network_id, node_id

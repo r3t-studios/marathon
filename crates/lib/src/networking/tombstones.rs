@@ -15,7 +15,8 @@
 //! ## Resurrection Prevention
 //!
 //! If a peer creates an entity (Set operation) while another peer deletes it:
-//! - Use vector clock comparison: if delete happened-after create, deletion wins
+//! - Use vector clock comparison: if delete happened-after create, deletion
+//!   wins
 //! - If concurrent, deletion wins (delete bias for safety)
 //! - This prevents "zombie" entities from reappearing
 //!
@@ -29,12 +30,12 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::networking::{
+    GossipBridge,
+    NodeVectorClock,
     vector_clock::{
         NodeId,
         VectorClock,
     },
-    GossipBridge,
-    NodeVectorClock,
 };
 
 /// How long to keep tombstones before garbage collection (in seconds)
@@ -134,7 +135,8 @@ impl TombstoneRegistry {
     ///
     /// Returns true if:
     /// - The entity has a tombstone AND
-    /// - The operation's clock happened-before or is concurrent with the deletion
+    /// - The operation's clock happened-before or is concurrent with the
+    ///   deletion
     ///
     /// This prevents operations on deleted entities from being applied.
     pub fn should_ignore_operation(
@@ -150,7 +152,8 @@ impl TombstoneRegistry {
             // deletion_clock.happened_before(operation_clock) => don't ignore
 
             // If concurrent, deletion wins (delete bias) => ignore
-            // !operation_clock.happened_before(deletion_clock) && !deletion_clock.happened_before(operation_clock) => ignore
+            // !operation_clock.happened_before(deletion_clock) &&
+            // !deletion_clock.happened_before(operation_clock) => ignore
 
             // So we DON'T ignore only if deletion happened-before operation
             !tombstone.deletion_clock.happened_before(operation_clock)
@@ -168,9 +171,8 @@ impl TombstoneRegistry {
 
         let before_count = self.tombstones.len();
 
-        self.tombstones.retain(|_, tombstone| {
-            now.duration_since(tombstone.timestamp) < ttl
-        });
+        self.tombstones
+            .retain(|_, tombstone| now.duration_since(tombstone.timestamp) < ttl);
 
         let after_count = self.tombstones.len();
 
@@ -254,14 +256,13 @@ pub fn handle_local_deletions_system(
         }
 
         // Broadcast deletion
-        let message = crate::networking::VersionedMessage::new(
-            crate::networking::SyncMessage::EntityDelta {
+        let message =
+            crate::networking::VersionedMessage::new(crate::networking::SyncMessage::EntityDelta {
                 entity_id: delta.entity_id,
                 node_id: delta.node_id,
                 vector_clock: delta.vector_clock.clone(),
                 operations: delta.operations.clone(),
-            },
-        );
+            });
 
         if let Err(e) = bridge.send(message) {
             error!("Failed to broadcast Delete operation: {}", e);

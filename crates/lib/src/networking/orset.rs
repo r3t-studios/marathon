@@ -5,14 +5,20 @@
 //!
 //! ## OR-Set Semantics
 //!
-//! - **Add-wins**: If an element is concurrently added and removed, the add wins
-//! - **Observed-remove**: Removes only affect adds that have been observed (happened-before)
-//! - **Unique operation IDs**: Each add generates a unique ID to track add/remove pairs
+//! - **Add-wins**: If an element is concurrently added and removed, the add
+//!   wins
+//! - **Observed-remove**: Removes only affect adds that have been observed
+//!   (happened-before)
+//! - **Unique operation IDs**: Each add generates a unique ID to track
+//!   add/remove pairs
 //!
 //! ## Example
 //!
 //! ```
-//! use lib::networking::{OrSet, OrElement};
+//! use lib::networking::{
+//!     OrElement,
+//!     OrSet,
+//! };
 //! use uuid::Uuid;
 //!
 //! let node1 = Uuid::new_v4();
@@ -157,11 +163,12 @@ where
 
     /// Check if a value is present in the set
     ///
-    /// A value is present if it has at least one operation ID that's not tombstoned.
+    /// A value is present if it has at least one operation ID that's not
+    /// tombstoned.
     pub fn contains(&self, value: &T) -> bool {
-        self.elements.iter().any(|(id, (v, _))| {
-            v == value && !self.tombstones.contains(id)
-        })
+        self.elements
+            .iter()
+            .any(|(id, (v, _))| v == value && !self.tombstones.contains(id))
     }
 
     /// Get all present values
@@ -208,9 +215,7 @@ where
         let mut seen = HashSet::new();
         self.elements
             .iter()
-            .filter(|(id, (value, _))| {
-                !self.tombstones.contains(id) && seen.insert(value)
-            })
+            .filter(|(id, (value, _))| !self.tombstones.contains(id) && seen.insert(value))
             .count()
     }
 
@@ -249,7 +254,9 @@ where
     pub fn merge(&mut self, other: &OrSet<T>) {
         // Union elements
         for (id, (value, node)) in &other.elements {
-            self.elements.entry(*id).or_insert_with(|| (value.clone(), *node));
+            self.elements
+                .entry(*id)
+                .or_insert_with(|| (value.clone(), *node));
         }
 
         // Union tombstones

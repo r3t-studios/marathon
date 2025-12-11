@@ -35,6 +35,13 @@ pub enum PersistenceError {
         retry_after_secs: u64,
     },
 
+    /// Component data exceeds maximum size
+    ComponentTooLarge {
+        component_type: String,
+        size_bytes: usize,
+        max_bytes: usize,
+    },
+
     /// Other error
     Other(String),
 }
@@ -58,6 +65,16 @@ impl fmt::Display for PersistenceError {
                 f,
                 "Circuit breaker open after {} consecutive failures, retry after {} seconds",
                 consecutive_failures, retry_after_secs
+            ),
+            | Self::ComponentTooLarge {
+                component_type,
+                size_bytes,
+                max_bytes,
+            } => write!(
+                f,
+                "Component '{}' size ({} bytes) exceeds maximum ({} bytes). \
+                This may indicate unbounded data growth or serialization issues.",
+                component_type, size_bytes, max_bytes
             ),
             | Self::Other(msg) => write!(f, "{}", msg),
         }
