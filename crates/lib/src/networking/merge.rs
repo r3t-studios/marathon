@@ -45,7 +45,10 @@ pub enum MergeDecision {
 /// # Example
 ///
 /// ```
-/// use lib::networking::{VectorClock, compare_operations_lww};
+/// use lib::networking::{
+///     VectorClock,
+///     compare_operations_lww,
+/// };
 /// use uuid::Uuid;
 ///
 /// let node1 = Uuid::new_v4();
@@ -189,9 +192,7 @@ mod tests {
         let decision = compare_operations_lww(&clock1, node1, &clock2, node2);
 
         // Should use node ID as tiebreaker
-        assert!(
-            decision == MergeDecision::ApplyRemote || decision == MergeDecision::KeepLocal
-        );
+        assert!(decision == MergeDecision::ApplyRemote || decision == MergeDecision::KeepLocal);
     }
 
     #[test]

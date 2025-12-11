@@ -171,7 +171,8 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
     // Collect changed entities first
     let changed_entities: Vec<(Entity, uuid::Uuid)> = {
         let mut query = world.query_filtered::<(Entity, &Persisted), Changed<Persisted>>();
-        query.iter(world)
+        query
+            .iter(world)
             .map(|(entity, persisted)| (entity, persisted.network_id))
             .collect()
     };
@@ -186,7 +187,7 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
         {
             let now = chrono::Utc::now();
             let mut write_buffer = world.resource_mut::<WriteBufferResource>();
-            write_buffer.add(PersistenceOp::UpsertEntity {
+            if let Err(e) = write_buffer.add(PersistenceOp::UpsertEntity {
                 id: network_id,
                 data: EntityData {
                     id: network_id,
@@ -194,7 +195,13 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
                     updated_at: now,
                     entity_type: "NetworkedEntity".to_string(),
                 },
-            });
+            }) {
+                error!(
+                    "Failed to add UpsertEntity operation for {}: {}",
+                    network_id, e
+                );
+                return; // Skip this entity if we can't even add the entity op
+            }
         }
 
         // Serialize all components on this entity (generic tracking)
@@ -216,11 +223,17 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
             // Get mutable access to write_buffer and add the operation
             {
                 let mut write_buffer = world.resource_mut::<WriteBufferResource>();
-                write_buffer.add(PersistenceOp::UpsertComponent {
+                if let Err(e) = write_buffer.add(PersistenceOp::UpsertComponent {
                     entity_id: network_id,
-                    component_type,
+                    component_type: component_type.clone(),
                     data,
-                });
+                }) {
+                    error!(
+                        "Failed to add UpsertComponent operation for entity {} component {}: {}",
+                        network_id, component_type, e
+                    );
+                    // Continue with other components even if one fails
+                }
             }
         }
     }

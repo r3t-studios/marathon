@@ -17,6 +17,8 @@ use bevy::{
 };
 
 use crate::networking::{
+    GossipBridge,
+    NetworkedEntity,
     blob_support::BlobStore,
     delta_generation::NodeVectorClock,
     entity_map::NetworkEntityMap,
@@ -25,16 +27,13 @@ use crate::networking::{
         SyncMessage,
         VersionedMessage,
     },
-    GossipBridge,
-    NetworkedEntity,
 };
 
-/// Session secret for join authentication
-///
-/// In Phase 7, this is optional. Phase 13 will add full authentication.
-pub type SessionSecret = Vec<u8>;
-
 /// Build a JoinRequest message
+///
+/// # Arguments
+/// * `node_id` - The UUID of the node requesting to join
+/// * `session_secret` - Optional pre-shared secret for authentication
 ///
 /// # Example
 ///
@@ -45,7 +44,10 @@ pub type SessionSecret = Vec<u8>;
 /// let node_id = Uuid::new_v4();
 /// let request = build_join_request(node_id, None);
 /// ```
-pub fn build_join_request(node_id: uuid::Uuid, session_secret: Option<SessionSecret>) -> VersionedMessage {
+pub fn build_join_request(
+    node_id: uuid::Uuid,
+    session_secret: Option<Vec<u8>>,
+) -> VersionedMessage {
     VersionedMessage::new(SyncMessage::JoinRequest {
         node_id,
         session_secret,
@@ -99,10 +101,10 @@ pub fn build_full_state(
             let type_path = registration.type_info().type_path();
 
             // Skip networked wrapper components
-            if type_path.ends_with("::NetworkedEntity")
-                || type_path.ends_with("::NetworkedTransform")
-                || type_path.ends_with("::NetworkedSelection")
-                || type_path.ends_with("::NetworkedDrawingPath")
+            if type_path.ends_with("::NetworkedEntity") ||
+                type_path.ends_with("::NetworkedTransform") ||
+                type_path.ends_with("::NetworkedSelection") ||
+                type_path.ends_with("::NetworkedDrawingPath")
             {
                 continue;
             }
@@ -114,8 +116,8 @@ pub fn build_full_state(
                     // Create component data (inline or blob)
                     let data = if let Some(store) = blob_store {
                         match create_component_data(serialized, store) {
-                            Ok(d) => d,
-                            Err(_) => continue,
+                            | Ok(d) => d,
+                            | Err(_) => continue,
                         }
                     } else {
                         crate::networking::ComponentData::Inline(serialized)
@@ -203,10 +205,7 @@ pub fn apply_full_state(
         // This ensures entities received via FullState are persisted locally
         let entity = commands
             .spawn((
-                NetworkedEntity::with_id(
-                    entity_state.entity_id,
-                    entity_state.owner_node_id,
-                ),
+                NetworkedEntity::with_id(entity_state.entity_id, entity_state.owner_node_id),
                 crate::persistence::Persisted::with_id(entity_state.entity_id),
             ))
             .id();
@@ -224,14 +223,14 @@ pub fn apply_full_state(
                 | blob_ref @ crate::networking::ComponentData::BlobRef { .. } => {
                     if let Some(store) = blob_store {
                         match get_component_data(blob_ref, store) {
-                            Ok(bytes) => bytes,
-                            Err(e) => {
+                            | Ok(bytes) => bytes,
+                            | Err(e) => {
                                 error!(
                                     "Failed to retrieve blob for {}: {}",
                                     component_state.component_type, e
                                 );
                                 continue;
-                            }
+                            },
                         }
                     } else {
                         error!(
@@ -240,44 +239,44 @@ pub fn apply_full_state(
                         );
                         continue;
                     }
-                }
+                },
             };
 
             // Deserialize the component
             let reflected = match deserialize_component(&data_bytes, type_registry) {
-                Ok(r) => r,
-                Err(e) => {
+                | Ok(r) => r,
+                | Err(e) => {
                     error!(
                         "Failed to deserialize {}: {}",
                         component_state.component_type, e
                     );
                     continue;
-                }
+                },
             };
 
             // Get the type registration
-            let registration = match type_registry.get_with_type_path(&component_state.component_type)
-            {
-                Some(reg) => reg,
-                None => {
-                    error!(
-                        "Component type {} not registered",
-                        component_state.component_type
-                    );
-                    continue;
-                }
-            };
+            let registration =
+                match type_registry.get_with_type_path(&component_state.component_type) {
+                    | Some(reg) => reg,
+                    | None => {
+                        error!(
+                            "Component type {} not registered",
+                            component_state.component_type
+                        );
+                        continue;
+                    },
+                };
 
             // Get ReflectComponent data
             let reflect_component = match registration.data::<ReflectComponent>() {
-                Some(rc) => rc.clone(),
-                None => {
+                | Some(rc) => rc.clone(),
+                | None => {
                     error!(
                         "Component type {} does not have ReflectComponent data",
                         component_state.component_type
                     );
                     continue;
-                }
+                },
             };
 
             // Insert the component
@@ -302,8 +301,7 @@ pub fn apply_full_state(
 
         debug!(
             "Spawned entity {:?} from FullState with {} components",
-            entity_state.entity_id,
-            num_components
+            entity_state.entity_id, num_components
         );
     }
 
@@ -320,8 +318,7 @@ pub fn apply_full_state(
 /// use bevy::prelude::*;
 /// use lib::networking::handle_join_requests_system;
 ///
-/// App::new()
-///     .add_systems(Update, handle_join_requests_system);
+/// App::new().add_systems(Update, handle_join_requests_system);
 /// ```
 pub fn handle_join_requests_system(
     world: &World,
@@ -347,9 +344,32 @@ pub fn handle_join_requests_system(
             } => {
                 info!("Received JoinRequest from node {}", node_id);
 
-                // TODO: Validate session_secret in Phase 13
-                if let Some(_secret) = session_secret {
-                    debug!("Session secret validation not yet implemented");
+                // Validate session secret if configured
+                if let Some(expected) =
+                    world.get_resource::<crate::networking::plugin::SessionSecret>()
+                {
+                    match &session_secret {
+                        | Some(provided_secret) => {
+                            if let Err(e) = crate::networking::validate_session_secret(
+                                provided_secret,
+                                expected.as_bytes(),
+                            ) {
+                                error!("JoinRequest from {} rejected: {}", node_id, e);
+                                continue; // Skip this request, don't send FullState
+                            }
+                            info!("Session secret validated for node {}", node_id);
+                        },
+                        | None => {
+                            warn!(
+                                "JoinRequest from {} missing required session secret, rejecting",
+                                node_id
+                            );
+                            continue; // Reject requests without secret when one is configured
+                        },
+                    }
+                } else if session_secret.is_some() {
+                    // No session secret configured but peer provided one
+                    debug!("Session secret provided but none configured, accepting");
                 }
 
                 // Build full state
@@ -367,17 +387,19 @@ pub fn handle_join_requests_system(
                 } else {
                     info!("Sent FullState to node {}", node_id);
                 }
-            }
+            },
             | _ => {
-                // Not a JoinRequest, ignore (other systems handle other messages)
-            }
+                // Not a JoinRequest, ignore (other systems handle other
+                // messages)
+            },
         }
     }
 }
 
 /// System to handle FullState messages
 ///
-/// When we receive a FullState (after sending JoinRequest), apply it to our world.
+/// When we receive a FullState (after sending JoinRequest), apply it to our
+/// world.
 ///
 /// This system should run BEFORE receive_and_apply_deltas_system to ensure
 /// we're fully initialized before processing deltas.
@@ -416,10 +438,10 @@ pub fn handle_full_state_system(
                     blob_store_ref,
                     tombstone_registry.as_deref_mut(),
                 );
-            }
+            },
             | _ => {
                 // Not a FullState, ignore
-            }
+            },
         }
     }
 }
@@ -441,7 +463,7 @@ mod tests {
             } => {
                 assert_eq!(req_node_id, node_id);
                 assert!(session_secret.is_none());
-            }
+            },
             | _ => panic!("Expected JoinRequest"),
         }
     }
@@ -458,7 +480,7 @@ mod tests {
                 session_secret,
             } => {
                 assert_eq!(session_secret, Some(secret));
-            }
+            },
             | _ => panic!("Expected JoinRequest"),
         }
     }

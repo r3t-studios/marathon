@@ -215,7 +215,7 @@ pub fn flush_to_sqlite(ops: &[PersistenceOp], conn: &mut Connection) -> Result<u
                     "INSERT OR REPLACE INTO operation_log (node_id, sequence_number, operation, timestamp)
                      VALUES (?1, ?2, ?3, ?4)",
                     rusqlite::params![
-                        node_id,
+                        &node_id.to_string(), // Convert UUID to string for SQLite TEXT column
                         sequence,
                         operation,
                         current_timestamp(),
@@ -228,7 +228,7 @@ pub fn flush_to_sqlite(ops: &[PersistenceOp], conn: &mut Connection) -> Result<u
                 tx.execute(
                     "INSERT OR REPLACE INTO vector_clock (node_id, counter, updated_at)
                      VALUES (?1, ?2, ?3)",
-                    rusqlite::params![node_id, counter, current_timestamp()],
+                    rusqlite::params![&node_id.to_string(), counter, current_timestamp()], // Convert UUID to string
                 )?;
                 count += 1;
             },

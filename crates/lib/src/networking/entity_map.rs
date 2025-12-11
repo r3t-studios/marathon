@@ -22,13 +22,13 @@ use bevy::prelude::*;
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use lib::networking::{NetworkEntityMap, NetworkedEntity};
+/// use lib::networking::{
+///     NetworkEntityMap,
+///     NetworkedEntity,
+/// };
 /// use uuid::Uuid;
 ///
-/// fn example_system(
-///     mut map: ResMut<NetworkEntityMap>,
-///     query: Query<(Entity, &NetworkedEntity)>,
-/// ) {
+/// fn example_system(mut map: ResMut<NetworkEntityMap>, query: Query<(Entity, &NetworkedEntity)>) {
 ///     // Register networked entities
 ///     for (entity, networked) in query.iter() {
 ///         map.insert(networked.network_id, entity);
@@ -256,12 +256,14 @@ impl NetworkEntityMap {
 /// use bevy::prelude::*;
 /// use lib::networking::register_networked_entities_system;
 ///
-/// App::new()
-///     .add_systems(PostUpdate, register_networked_entities_system);
+/// App::new().add_systems(PostUpdate, register_networked_entities_system);
 /// ```
 pub fn register_networked_entities_system(
     mut map: ResMut<NetworkEntityMap>,
-    query: Query<(Entity, &crate::networking::NetworkedEntity), Added<crate::networking::NetworkedEntity>>,
+    query: Query<
+        (Entity, &crate::networking::NetworkedEntity),
+        Added<crate::networking::NetworkedEntity>,
+    >,
 ) {
     for (entity, networked) in query.iter() {
         map.insert(networked.network_id, entity);
@@ -278,8 +280,7 @@ pub fn register_networked_entities_system(
 /// use bevy::prelude::*;
 /// use lib::networking::cleanup_despawned_entities_system;
 ///
-/// App::new()
-///     .add_systems(PostUpdate, cleanup_despawned_entities_system);
+/// App::new().add_systems(PostUpdate, cleanup_despawned_entities_system);
 /// ```
 pub fn cleanup_despawned_entities_system(
     mut map: ResMut<NetworkEntityMap>,

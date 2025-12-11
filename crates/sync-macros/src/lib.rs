@@ -1,7 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, DeriveInput,
+    DeriveInput,
+    parse_macro_input,
 };
 
 /// Sync strategy types
@@ -16,11 +17,11 @@ enum SyncStrategy {
 impl SyncStrategy {
     fn from_str(s: &str) -> Result<Self, String> {
         match s {
-            "LastWriteWins" => Ok(SyncStrategy::LastWriteWins),
-            "Set" => Ok(SyncStrategy::Set),
-            "Sequence" => Ok(SyncStrategy::Sequence),
-            "Custom" => Ok(SyncStrategy::Custom),
-            _ => Err(format!(
+            | "LastWriteWins" => Ok(SyncStrategy::LastWriteWins),
+            | "Set" => Ok(SyncStrategy::Set),
+            | "Sequence" => Ok(SyncStrategy::Sequence),
+            | "Custom" => Ok(SyncStrategy::Custom),
+            | _ => Err(format!(
                 "Unknown strategy '{}'. Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"",
                 s
             )),
@@ -29,10 +30,12 @@ impl SyncStrategy {
 
     fn to_tokens(&self) -> proc_macro2::TokenStream {
         match self {
-            SyncStrategy::LastWriteWins => quote! { lib::networking::SyncStrategy::LastWriteWins },
-            SyncStrategy::Set => quote! { lib::networking::SyncStrategy::Set },
-            SyncStrategy::Sequence => quote! { lib::networking::SyncStrategy::Sequence },
-            SyncStrategy::Custom => quote! { lib::networking::SyncStrategy::Custom },
+            | SyncStrategy::LastWriteWins => {
+                quote! { lib::networking::SyncStrategy::LastWriteWins }
+            },
+            | SyncStrategy::Set => quote! { lib::networking::SyncStrategy::Set },
+            | SyncStrategy::Sequence => quote! { lib::networking::SyncStrategy::Sequence },
+            | SyncStrategy::Custom => quote! { lib::networking::SyncStrategy::Custom },
         }
     }
 }
@@ -68,7 +71,7 @@ impl SyncAttributes {
                     let strategy_str = value.value();
                     strategy = Some(
                         SyncStrategy::from_str(&strategy_str)
-                            .map_err(|e| syn::Error::new_spanned(&value, e))?
+                            .map_err(|e| syn::Error::new_spanned(&value, e))?,
                     );
                     Ok(())
                 } else if meta.path.is_ident("persist") {
@@ -92,7 +95,7 @@ impl SyncAttributes {
                 "Missing required attribute `version`\n\
                  \n\
                  = help: Add #[sync(version = 1, strategy = \"...\")] to your struct\n\
-                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html"
+                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
             )
         })?;
 
@@ -103,7 +106,7 @@ impl SyncAttributes {
                  \n\
                  = help: Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"\n\
                  = help: Add #[sync(version = 1, strategy = \"LastWriteWins\")] to your struct\n\
-                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html"
+                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
             )
         })?;
 
@@ -141,8 +144,8 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
 
     // Parse attributes
     let attrs = match SyncAttributes::parse(&input) {
-        Ok(attrs) => attrs,
-        Err(e) => return TokenStream::from(e.to_compile_error()),
+        | Ok(attrs) => attrs,
+        | Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
     let name = &input.ident;
@@ -200,15 +203,34 @@ fn generate_deserialize(_input: &DeriveInput, _name: &syn::Ident) -> proc_macro2
 /// Generate merge logic based on strategy
 fn generate_merge(input: &DeriveInput, strategy: &SyncStrategy) -> proc_macro2::TokenStream {
     match strategy {
-        SyncStrategy::LastWriteWins => generate_lww_merge(input),
-        SyncStrategy::Set => generate_set_merge(input),
-        SyncStrategy::Sequence => generate_sequence_merge(input),
-        SyncStrategy::Custom => generate_custom_merge(input),
+        | SyncStrategy::LastWriteWins => generate_lww_merge(input),
+        | SyncStrategy::Set => generate_set_merge(input),
+        | SyncStrategy::Sequence => generate_sequence_merge(input),
+        | SyncStrategy::Custom => generate_custom_merge(input),
+    }
+}
+
+/// Generate hash calculation code for tiebreaking in concurrent merges
+///
+/// Returns a TokenStream that computes hashes for both local and remote values
+/// and compares them for deterministic conflict resolution.
+fn generate_hash_tiebreaker() -> proc_macro2::TokenStream {
+    quote! {
+        let local_hash = {
+            let bytes = bincode::serialize(self).unwrap_or_default();
+            bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+        };
+        let remote_hash = {
+            let bytes = bincode::serialize(&remote).unwrap_or_default();
+            bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
+        };
     }
 }
 
 /// Generate Last-Write-Wins merge logic
 fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    let hash_tiebreaker = generate_hash_tiebreaker();
+
     quote! {
         use tracing::info;
 
@@ -228,14 +250,7 @@ fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
             lib::networking::ClockComparison::Concurrent => {
                 // Tiebreaker: Compare serialized representations for deterministic choice
                 // In a real implementation, we'd use node_id, but for now use a simple hash
-                let local_hash = {
-                    let bytes = bincode::serialize(self).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
-                let remote_hash = {
-                    let bytes = bincode::serialize(&remote).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
+                #hash_tiebreaker
 
                 if remote_hash > local_hash {
                     info!(
@@ -256,8 +271,11 @@ fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
 /// Generate OR-Set merge logic
 ///
 /// For OR-Set strategy, the component must contain an OrSet<T> field.
-/// We merge by calling the OrSet's merge method which implements add-wins semantics.
+/// We merge by calling the OrSet's merge method which implements add-wins
+/// semantics.
 fn generate_set_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    let hash_tiebreaker = generate_hash_tiebreaker();
+
     quote! {
         use tracing::info;
 
@@ -284,14 +302,7 @@ fn generate_set_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
             lib::networking::ClockComparison::Concurrent => {
                 // In a full implementation, we would merge the OrSet here
                 // For now, use LWW with tiebreaker as fallback
-                let local_hash = {
-                    let bytes = bincode::serialize(self).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
-                let remote_hash = {
-                    let bytes = bincode::serialize(&remote).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
+                #hash_tiebreaker
 
                 if remote_hash > local_hash {
                     *self = remote;
@@ -309,6 +320,8 @@ fn generate_set_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
 /// For Sequence strategy, the component must contain an Rga<T> field.
 /// We merge by calling the Rga's merge method which maintains causal ordering.
 fn generate_sequence_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
+    let hash_tiebreaker = generate_hash_tiebreaker();
+
     quote! {
         use tracing::info;
 
@@ -335,14 +348,7 @@ fn generate_sequence_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
             lib::networking::ClockComparison::Concurrent => {
                 // In a full implementation, we would merge the Rga here
                 // For now, use LWW with tiebreaker as fallback
-                let local_hash = {
-                    let bytes = bincode::serialize(self).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
-                let remote_hash = {
-                    let bytes = bincode::serialize(&remote).unwrap_or_default();
-                    bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
-                };
+                #hash_tiebreaker
 
                 if remote_hash > local_hash {
                     *self = remote;

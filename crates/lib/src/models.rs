@@ -7,6 +7,11 @@ use serde::{
     Serialize,
 };
 
+/// Seconds between Unix epoch (1970-01-01) and Apple epoch (2001-01-01)
+/// Apple's Cocoa timestamps use 2001-01-01 00:00:00 UTC as their reference
+/// point
+const APPLE_EPOCH_OFFSET: i64 = 978307200;
+
 /// Represents a message in the iMessage database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -52,8 +57,6 @@ pub struct Chat {
 pub fn apple_timestamp_to_datetime(timestamp: i64) -> DateTime<Utc> {
     // Apple's Cocoa timestamps are in nanoseconds since 2001-01-01 00:00:00 UTC
     // Convert to Unix timestamp (seconds since 1970-01-01 00:00:00 UTC)
-    const APPLE_EPOCH_OFFSET: i64 = 978307200; // Seconds between 1970-01-01 and 2001-01-01
-
     let seconds = timestamp / 1_000_000_000 + APPLE_EPOCH_OFFSET;
     let nanos = (timestamp % 1_000_000_000) as u32;
 
@@ -63,8 +66,6 @@ pub fn apple_timestamp_to_datetime(timestamp: i64) -> DateTime<Utc> {
 
 /// Helper function to convert DateTime to Apple's Cocoa timestamp
 pub fn datetime_to_apple_timestamp(dt: DateTime<Utc>) -> i64 {
-    const APPLE_EPOCH_OFFSET: i64 = 978307200;
-
     let unix_timestamp = dt.timestamp();
     let nanos = dt.timestamp_subsec_nanos() as i64;
 

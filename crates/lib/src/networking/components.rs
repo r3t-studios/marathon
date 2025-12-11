@@ -42,10 +42,7 @@ use crate::networking::vector_clock::NodeId;
 /// fn spawn_networked_entity(mut commands: Commands) {
 ///     let node_id = Uuid::new_v4();
 ///
-///     commands.spawn((
-///         NetworkedEntity::new(node_id),
-///         Transform::default(),
-///     ));
+///     commands.spawn((NetworkedEntity::new(node_id), Transform::default()));
 /// }
 /// ```
 #[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize)]
@@ -139,7 +136,10 @@ impl Default for NetworkedEntity {
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use lib::networking::{NetworkedEntity, NetworkedTransform};
+/// use lib::networking::{
+///     NetworkedEntity,
+///     NetworkedTransform,
+/// };
 /// use uuid::Uuid;
 ///
 /// fn spawn_synced_transform(mut commands: Commands) {
@@ -171,7 +171,10 @@ pub struct NetworkedTransform;
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use lib::networking::{NetworkedEntity, NetworkedSelection};
+/// use lib::networking::{
+///     NetworkedEntity,
+///     NetworkedSelection,
+/// };
 /// use uuid::Uuid;
 ///
 /// fn create_selection(mut commands: Commands) {
@@ -182,10 +185,7 @@ pub struct NetworkedTransform;
 ///     selection.selected_ids.insert(Uuid::new_v4());
 ///     selection.selected_ids.insert(Uuid::new_v4());
 ///
-///     commands.spawn((
-///         NetworkedEntity::new(node_id),
-///         selection,
-///     ));
+///     commands.spawn((NetworkedEntity::new(node_id), selection));
 /// }
 /// ```
 #[derive(Component, Reflect, Debug, Clone, Default)]
@@ -253,7 +253,10 @@ impl NetworkedSelection {
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use lib::networking::{NetworkedEntity, NetworkedDrawingPath};
+/// use lib::networking::{
+///     NetworkedDrawingPath,
+///     NetworkedEntity,
+/// };
 /// use uuid::Uuid;
 ///
 /// fn create_path(mut commands: Commands) {
@@ -265,10 +268,7 @@ impl NetworkedSelection {
 ///     path.points.push(Vec2::new(10.0, 10.0));
 ///     path.points.push(Vec2::new(20.0, 5.0));
 ///
-///     commands.spawn((
-///         NetworkedEntity::new(node_id),
-///         path,
-///     ));
+///     commands.spawn((NetworkedEntity::new(node_id), path));
 /// }
 /// ```
 #[derive(Component, Reflect, Debug, Clone, Default)]

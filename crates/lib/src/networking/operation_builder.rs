@@ -11,8 +11,8 @@ use bevy::{
 use crate::{
     networking::{
         blob_support::{
-            create_component_data,
             BlobStore,
+            create_component_data,
         },
         error::Result,
         messages::ComponentData,
@@ -72,7 +72,8 @@ pub fn build_set_operation(
 /// Build Set operations for all components on an entity
 ///
 /// This iterates over all components with reflection data and creates Set
-/// operations for each one. Automatically uses blob storage for large components.
+/// operations for each one. Automatically uses blob storage for large
+/// components.
 ///
 /// # Parameters
 ///
@@ -97,7 +98,10 @@ pub fn build_entity_operations(
     let mut operations = Vec::new();
     let entity_ref = world.entity(entity);
 
-    debug!("build_entity_operations: Building operations for entity {:?}", entity);
+    debug!(
+        "build_entity_operations: Building operations for entity {:?}",
+        entity
+    );
 
     // Iterate over all type registrations
     for registration in type_registry.iter() {
@@ -110,10 +114,10 @@ pub fn build_entity_operations(
         let type_path = registration.type_info().type_path();
 
         // Skip certain components
-        if type_path.ends_with("::NetworkedEntity")
-            || type_path.ends_with("::NetworkedTransform")
-            || type_path.ends_with("::NetworkedSelection")
-            || type_path.ends_with("::NetworkedDrawingPath")
+        if type_path.ends_with("::NetworkedEntity") ||
+            type_path.ends_with("::NetworkedTransform") ||
+            type_path.ends_with("::NetworkedSelection") ||
+            type_path.ends_with("::NetworkedDrawingPath")
         {
             continue;
         }
@@ -164,7 +168,10 @@ pub fn build_entity_operations(
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use lib::networking::{build_transform_operation, VectorClock};
+/// use lib::networking::{
+///     VectorClock,
+///     build_transform_operation,
+/// };
 /// use uuid::Uuid;
 ///
 /// # fn example(transform: &Transform, type_registry: &bevy::reflect::TypeRegistry) {
@@ -192,7 +199,10 @@ pub fn build_transform_operation(
     };
 
     let builder = ComponentOpBuilder::new(node_id, vector_clock);
-    Ok(builder.set("bevy_transform::components::transform::Transform".to_string(), data))
+    Ok(builder.set(
+        "bevy_transform::components::transform::Transform".to_string(),
+        data,
+    ))
 }
 
 #[cfg(test)]
@@ -208,7 +218,8 @@ mod tests {
         let node_id = uuid::Uuid::new_v4();
         let clock = VectorClock::new();
 
-        let op = build_transform_operation(&transform, node_id, clock, &type_registry, None).unwrap();
+        let op =
+            build_transform_operation(&transform, node_id, clock, &type_registry, None).unwrap();
 
         assert!(op.is_set());
         assert_eq!(
@@ -227,9 +238,7 @@ mod tests {
         type_registry.register::<Transform>();
 
         // Spawn entity with Transform
-        let entity = world
-            .spawn(Transform::from_xyz(1.0, 2.0, 3.0))
-            .id();
+        let entity = world.spawn(Transform::from_xyz(1.0, 2.0, 3.0)).id();
 
         let node_id = uuid::Uuid::new_v4();
         let clock = VectorClock::new();
@@ -250,11 +259,15 @@ mod tests {
         let node_id = uuid::Uuid::new_v4();
         let mut clock = VectorClock::new();
 
-        let op1 = build_transform_operation(&transform, node_id, clock.clone(), &type_registry, None).unwrap();
+        let op1 =
+            build_transform_operation(&transform, node_id, clock.clone(), &type_registry, None)
+                .unwrap();
         assert_eq!(op1.vector_clock().get(node_id), 1);
 
         clock.increment(node_id);
-        let op2 = build_transform_operation(&transform, node_id, clock.clone(), &type_registry, None).unwrap();
+        let op2 =
+            build_transform_operation(&transform, node_id, clock.clone(), &type_registry, None)
+                .unwrap();
         assert_eq!(op2.vector_clock().get(node_id), 2);
     }
 }

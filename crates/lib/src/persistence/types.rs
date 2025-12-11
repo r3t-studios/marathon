@@ -30,7 +30,7 @@ const CRITICAL_FLUSH_DEADLINE_MS: u64 = 1000;
 pub type EntityId = uuid::Uuid;
 
 /// Node identifier for CRDT operations
-pub type NodeId = String;
+pub type NodeId = uuid::Uuid;
 
 /// Priority level for persistence operations
 ///
@@ -162,6 +162,15 @@ pub struct WriteBuffer {
     /// Pending operations not yet committed to SQLite
     pub pending_operations: Vec<PersistenceOp>,
 
+    /// Index mapping (entity_id, component_type) to position in
+    /// pending_operations Enables O(1) deduplication for UpsertComponent
+    /// operations
+    component_index: std::collections::HashMap<(EntityId, String), usize>,
+
+    /// Index mapping entity_id to position in pending_operations
+    /// Enables O(1) deduplication for UpsertEntity operations
+    entity_index: std::collections::HashMap<EntityId, usize>,
+
     /// When the buffer was last flushed
     pub last_flush: Instant,
 
@@ -179,6 +188,8 @@ impl WriteBuffer {
     pub fn new(max_operations: usize) -> Self {
         Self {
             pending_operations: Vec::new(),
+            component_index: std::collections::HashMap::new(),
+            entity_index: std::collections::HashMap::new(),
             last_flush: Instant::now(),
             max_operations,
             highest_priority: FlushPriority::Normal,
@@ -191,10 +202,11 @@ impl WriteBuffer {
     /// This is a convenience method that calls `add_with_priority` with
     /// `FlushPriority::Normal`.
     ///
-    /// # Panics
-    /// Panics if component data exceeds MAX_COMPONENT_SIZE_BYTES (10MB)
-    pub fn add(&mut self, op: PersistenceOp) {
-        self.add_with_priority(op, FlushPriority::Normal);
+    /// # Errors
+    /// Returns `PersistenceError::ComponentTooLarge` if component data exceeds
+    /// MAX_COMPONENT_SIZE_BYTES (10MB)
+    pub fn add(&mut self, op: PersistenceOp) -> Result<(), crate::persistence::PersistenceError> {
+        self.add_with_priority(op, FlushPriority::Normal)
     }
 
     /// Add an operation using its default priority
@@ -203,11 +215,15 @@ impl WriteBuffer {
     /// automatically. CRDT operations will be added as Critical, others as
     /// Normal.
     ///
-    /// # Panics
-    /// Panics if component data exceeds MAX_COMPONENT_SIZE_BYTES (10MB)
-    pub fn add_with_default_priority(&mut self, op: PersistenceOp) {
+    /// # Errors
+    /// Returns `PersistenceError::ComponentTooLarge` if component data exceeds
+    /// MAX_COMPONENT_SIZE_BYTES (10MB)
+    pub fn add_with_default_priority(
+        &mut self,
+        op: PersistenceOp,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let priority = op.default_priority();
-        self.add_with_priority(op, priority);
+        self.add_with_priority(op, priority)
     }
 
     /// Add an operation to the write buffer with the specified priority
@@ -216,9 +232,14 @@ impl WriteBuffer {
     /// it will be replaced (keeping only the latest state). The priority
     /// is tracked separately to determine flush urgency.
     ///
-    /// # Panics
-    /// Panics if component data exceeds MAX_COMPONENT_SIZE_BYTES (10MB)
-    pub fn add_with_priority(&mut self, op: PersistenceOp, priority: FlushPriority) {
+    /// # Errors
+    /// Returns `PersistenceError::ComponentTooLarge` if component data exceeds
+    /// MAX_COMPONENT_SIZE_BYTES (10MB)
+    pub fn add_with_priority(
+        &mut self,
+        op: PersistenceOp,
+        priority: FlushPriority,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         // Validate component size to prevent unbounded memory growth
         match &op {
             | PersistenceOp::UpsertComponent {
@@ -227,22 +248,20 @@ impl WriteBuffer {
                 ..
             } => {
                 if data.len() > MAX_COMPONENT_SIZE_BYTES {
-                    panic!(
-                        "Component {} size ({} bytes) exceeds maximum ({} bytes). \
-                        This may indicate unbounded data growth or serialization issues.",
-                        component_type,
-                        data.len(),
-                        MAX_COMPONENT_SIZE_BYTES
-                    );
+                    return Err(crate::persistence::PersistenceError::ComponentTooLarge {
+                        component_type: component_type.clone(),
+                        size_bytes: data.len(),
+                        max_bytes: MAX_COMPONENT_SIZE_BYTES,
+                    });
                 }
             },
             | PersistenceOp::LogOperation { operation, .. } => {
                 if operation.len() > MAX_COMPONENT_SIZE_BYTES {
-                    panic!(
-                        "Operation size ({} bytes) exceeds maximum ({} bytes)",
-                        operation.len(),
-                        MAX_COMPONENT_SIZE_BYTES
-                    );
+                    return Err(crate::persistence::PersistenceError::ComponentTooLarge {
+                        component_type: "Operation".to_string(),
+                        size_bytes: operation.len(),
+                        max_bytes: MAX_COMPONENT_SIZE_BYTES,
+                    });
                 }
             },
             | _ => {},
@@ -254,25 +273,27 @@ impl WriteBuffer {
                 component_type,
                 ..
             } => {
-                // Remove any existing pending write for this entity+component
-                self.pending_operations.retain(|existing_op| {
-                    !matches!(existing_op,
-                        PersistenceOp::UpsertComponent {
-                            entity_id: e_id,
-                            component_type: c_type,
-                            ..
-                        } if e_id == entity_id && c_type == component_type
-                    )
-                });
+                // O(1) lookup: check if we already have this component
+                let key = (*entity_id, component_type.clone());
+                if let Some(&old_pos) = self.component_index.get(&key) {
+                    // Replace existing operation in-place
+                    self.pending_operations[old_pos] = op;
+                    return Ok(());
+                }
+                // New operation: add to index
+                let new_pos = self.pending_operations.len();
+                self.component_index.insert(key, new_pos);
             },
             | PersistenceOp::UpsertEntity { id, .. } => {
-                // Remove any existing pending write for this entity
-                self.pending_operations.retain(|existing_op| {
-                    !matches!(existing_op,
-                        PersistenceOp::UpsertEntity { id: e_id, .. }
-                        if e_id == id
-                    )
-                });
+                // O(1) lookup: check if we already have this entity
+                if let Some(&old_pos) = self.entity_index.get(id) {
+                    // Replace existing operation in-place
+                    self.pending_operations[old_pos] = op;
+                    return Ok(());
+                }
+                // New operation: add to index
+                let new_pos = self.pending_operations.len();
+                self.entity_index.insert(*id, new_pos);
             },
             | _ => {
                 // Other operations don't need coalescing
@@ -290,15 +311,22 @@ impl WriteBuffer {
         }
 
         self.pending_operations.push(op);
+        Ok(())
     }
 
     /// Take all pending operations and return them for flushing
     ///
-    /// This resets the priority tracking state.
+    /// This resets the priority tracking state and clears the deduplication
+    /// indices.
     pub fn take_operations(&mut self) -> Vec<PersistenceOp> {
         // Reset priority tracking when operations are taken
         self.highest_priority = FlushPriority::Normal;
         self.first_critical_time = None;
+
+        // Clear deduplication indices
+        self.component_index.clear();
+        self.entity_index.clear();
+
         std::mem::take(&mut self.pending_operations)
     }
 
@@ -437,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_buffer_coalescing() {
+    fn test_write_buffer_coalescing() -> Result<(), crate::persistence::PersistenceError> {
         let mut buffer = WriteBuffer::new(100);
         let entity_id = EntityId::new_v4();
 
@@ -446,7 +474,7 @@ mod tests {
             entity_id,
             component_type: "Transform".to_string(),
             data: vec![1, 2, 3],
-        });
+        })?;
         assert_eq!(buffer.len(), 1);
 
         // Add second version (should replace first)
@@ -454,7 +482,7 @@ mod tests {
             entity_id,
             component_type: "Transform".to_string(),
             data: vec![4, 5, 6],
-        });
+        })?;
         assert_eq!(buffer.len(), 1);
 
         // Verify only latest version exists
@@ -465,6 +493,7 @@ mod tests {
         } else {
             panic!("Expected UpsertComponent");
         }
+        Ok(())
     }
 
     #[test]
@@ -473,18 +502,22 @@ mod tests {
         let entity_id = EntityId::new_v4();
 
         // Add Transform
-        buffer.add(PersistenceOp::UpsertComponent {
-            entity_id,
-            component_type: "Transform".to_string(),
-            data: vec![1, 2, 3],
-        });
+        buffer
+            .add(PersistenceOp::UpsertComponent {
+                entity_id,
+                component_type: "Transform".to_string(),
+                data: vec![1, 2, 3],
+            })
+            .expect("Should successfully add Transform");
 
         // Add Velocity (different component, should not coalesce)
-        buffer.add(PersistenceOp::UpsertComponent {
-            entity_id,
-            component_type: "Velocity".to_string(),
-            data: vec![4, 5, 6],
-        });
+        buffer
+            .add(PersistenceOp::UpsertComponent {
+                entity_id,
+                component_type: "Velocity".to_string(),
+                data: vec![4, 5, 6],
+            })
+            .expect("Should successfully add Velocity");
 
         assert_eq!(buffer.len(), 2);
     }
@@ -495,18 +528,20 @@ mod tests {
         let entity_id = EntityId::new_v4();
 
         // Add operation with immediate priority
-        buffer.add_with_priority(
-            PersistenceOp::UpsertEntity {
-                id: entity_id,
-                data: EntityData {
+        buffer
+            .add_with_priority(
+                PersistenceOp::UpsertEntity {
                     id: entity_id,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                    entity_type: "TestEntity".to_string(),
+                    data: EntityData {
+                        id: entity_id,
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        entity_type: "TestEntity".to_string(),
+                    },
                 },
-            },
-            FlushPriority::Immediate,
-        );
+                FlushPriority::Immediate,
+            )
+            .expect("Should successfully add entity with immediate priority");
 
         // Should flush immediately regardless of interval
         assert!(buffer.should_flush(std::time::Duration::from_secs(100)));
@@ -514,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flush_priority_critical_deadline() {
+    fn test_flush_priority_critical_deadline() -> Result<(), crate::persistence::PersistenceError> {
         let mut buffer = WriteBuffer::new(100);
         let entity_id = EntityId::new_v4();
 
@@ -530,7 +565,7 @@ mod tests {
                 },
             },
             FlushPriority::Critical,
-        );
+        )?;
 
         assert_eq!(buffer.highest_priority, FlushPriority::Critical);
         assert!(buffer.first_critical_time.is_some());
@@ -545,10 +580,11 @@ mod tests {
 
         // Now should flush due to deadline
         assert!(buffer.should_flush(std::time::Duration::from_secs(100)));
+        Ok(())
     }
 
     #[test]
-    fn test_flush_priority_normal() {
+    fn test_flush_priority_normal() -> Result<(), crate::persistence::PersistenceError> {
         let mut buffer = WriteBuffer::new(100);
         let entity_id = EntityId::new_v4();
 
@@ -561,7 +597,7 @@ mod tests {
                 updated_at: chrono::Utc::now(),
                 entity_type: "TestEntity".to_string(),
             },
-        });
+        })?;
 
         assert_eq!(buffer.highest_priority, FlushPriority::Normal);
         assert!(buffer.first_critical_time.is_none());
@@ -574,10 +610,11 @@ mod tests {
 
         // Now should flush
         assert!(buffer.should_flush(std::time::Duration::from_secs(100)));
+        Ok(())
     }
 
     #[test]
-    fn test_priority_reset_on_take() {
+    fn test_priority_reset_on_take() -> Result<(), crate::persistence::PersistenceError> {
         let mut buffer = WriteBuffer::new(100);
         let entity_id = EntityId::new_v4();
 
@@ -593,7 +630,7 @@ mod tests {
                 },
             },
             FlushPriority::Critical,
-        );
+        )?;
 
         assert_eq!(buffer.highest_priority, FlushPriority::Critical);
         assert!(buffer.first_critical_time.is_some());
@@ -605,18 +642,21 @@ mod tests {
         // Priority should be reset
         assert_eq!(buffer.highest_priority, FlushPriority::Normal);
         assert!(buffer.first_critical_time.is_none());
+        Ok(())
     }
 
     #[test]
     fn test_default_priority_for_crdt_ops() {
+        let node_id = NodeId::new_v4();
+
         let log_op = PersistenceOp::LogOperation {
-            node_id: "node1".to_string(),
+            node_id,
             sequence: 1,
             operation: vec![1, 2, 3],
         };
 
         let vector_clock_op = PersistenceOp::UpdateVectorClock {
-            node_id: "node1".to_string(),
+            node_id,
             counter: 42,
         };
 
@@ -639,18 +679,208 @@ mod tests {
     }
 
     #[test]
+    fn test_index_consistency_after_operations() -> Result<(), crate::persistence::PersistenceError>
+    {
+        let mut buffer = WriteBuffer::new(100);
+        let entity_id = EntityId::new_v4();
+
+        // Add component multiple times - should only keep latest
+        for i in 0..10 {
+            buffer.add(PersistenceOp::UpsertComponent {
+                entity_id,
+                component_type: "Transform".to_string(),
+                data: vec![i],
+            })?;
+        }
+
+        // Buffer should only have 1 operation (latest)
+        assert_eq!(buffer.len(), 1);
+
+        // Verify it's the latest data
+        let ops = buffer.take_operations();
+        assert_eq!(ops.len(), 1);
+        if let PersistenceOp::UpsertComponent { data, .. } = &ops[0] {
+            assert_eq!(data, &vec![9]);
+        } else {
+            panic!("Expected UpsertComponent");
+        }
+
+        // After take, indices should be cleared and we can reuse
+        buffer.add(PersistenceOp::UpsertComponent {
+            entity_id,
+            component_type: "Transform".to_string(),
+            data: vec![100],
+        })?;
+
+        assert_eq!(buffer.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_handles_multiple_entities() -> Result<(), crate::persistence::PersistenceError> {
+        let mut buffer = WriteBuffer::new(100);
+        let entity1 = EntityId::new_v4();
+        let entity2 = EntityId::new_v4();
+
+        // Add same component type for different entities
+        buffer.add(PersistenceOp::UpsertComponent {
+            entity_id: entity1,
+            component_type: "Transform".to_string(),
+            data: vec![1],
+        })?;
+
+        buffer.add(PersistenceOp::UpsertComponent {
+            entity_id: entity2,
+            component_type: "Transform".to_string(),
+            data: vec![2],
+        })?;
+
+        // Should have 2 operations (different entities)
+        assert_eq!(buffer.len(), 2);
+
+        // Update first entity
+        buffer.add(PersistenceOp::UpsertComponent {
+            entity_id: entity1,
+            component_type: "Transform".to_string(),
+            data: vec![3],
+        })?;
+
+        // Still 2 operations (first was replaced in-place)
+        assert_eq!(buffer.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_add_with_default_priority() {
         let mut buffer = WriteBuffer::new(100);
+        let node_id = NodeId::new_v4();
 
         // Add CRDT operation using default priority
-        buffer.add_with_default_priority(PersistenceOp::LogOperation {
-            node_id: "node1".to_string(),
-            sequence: 1,
-            operation: vec![1, 2, 3],
-        });
+        buffer
+            .add_with_default_priority(PersistenceOp::LogOperation {
+                node_id,
+                sequence: 1,
+                operation: vec![1, 2, 3],
+            })
+            .unwrap();
 
         // Should be tracked as Critical
         assert_eq!(buffer.highest_priority, FlushPriority::Critical);
         assert!(buffer.first_critical_time.is_some());
+    }
+
+    #[test]
+    fn test_oversized_component_returns_error() {
+        let mut buffer = WriteBuffer::new(100);
+        let entity_id = EntityId::new_v4();
+
+        // Create 11MB component (exceeds 10MB limit)
+        let oversized_data = vec![0u8; 11 * 1024 * 1024];
+
+        let result = buffer.add(PersistenceOp::UpsertComponent {
+            entity_id,
+            component_type: "HugeComponent".to_string(),
+            data: oversized_data,
+        });
+
+        // Should return error, not panic
+        assert!(result.is_err());
+        match result {
+            | Err(crate::persistence::PersistenceError::ComponentTooLarge {
+                component_type,
+                size_bytes,
+                max_bytes,
+            }) => {
+                assert_eq!(component_type, "HugeComponent");
+                assert_eq!(size_bytes, 11 * 1024 * 1024);
+                assert_eq!(max_bytes, MAX_COMPONENT_SIZE_BYTES);
+            },
+            | _ => panic!("Expected ComponentTooLarge error"),
+        }
+
+        // Buffer should be unchanged
+        assert_eq!(buffer.len(), 0);
+    }
+
+    #[test]
+    fn test_max_size_component_succeeds() {
+        let mut buffer = WriteBuffer::new(100);
+        let entity_id = EntityId::new_v4();
+
+        // Create exactly 10MB component (at limit)
+        let max_data = vec![0u8; 10 * 1024 * 1024];
+
+        let result = buffer.add(PersistenceOp::UpsertComponent {
+            entity_id,
+            component_type: "MaxComponent".to_string(),
+            data: max_data,
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(buffer.len(), 1);
+    }
+
+    #[test]
+    fn test_oversized_operation_returns_error() {
+        let mut buffer = WriteBuffer::new(100);
+        let oversized_op = vec![0u8; 11 * 1024 * 1024];
+
+        let result = buffer.add(PersistenceOp::LogOperation {
+            node_id: uuid::Uuid::new_v4(),
+            sequence: 1,
+            operation: oversized_op,
+        });
+
+        assert!(result.is_err());
+        match result {
+            | Err(crate::persistence::PersistenceError::ComponentTooLarge {
+                component_type,
+                ..
+            }) => {
+                assert_eq!(component_type, "Operation");
+            },
+            | _ => panic!("Expected ComponentTooLarge error for Operation"),
+        }
+    }
+
+    #[test]
+    fn test_write_buffer_never_panics_property() {
+        // Property test: WriteBuffer should never panic on any size
+        let sizes = [
+            0,
+            1000,
+            1_000_000,
+            5_000_000,
+            10_000_000, // Exactly at limit
+            10_000_001, // Just over limit
+            11_000_000,
+            100_000_000,
+        ];
+
+        for size in sizes {
+            let mut buffer = WriteBuffer::new(100);
+            let data = vec![0u8; size];
+
+            let result = buffer.add(PersistenceOp::UpsertComponent {
+                entity_id: uuid::Uuid::new_v4(),
+                component_type: "TestComponent".to_string(),
+                data,
+            });
+
+            // Should never panic, always return Ok or Err
+            match result {
+                | Ok(_) => assert!(
+                    size <= MAX_COMPONENT_SIZE_BYTES,
+                    "Size {} should have failed",
+                    size
+                ),
+                | Err(_) => assert!(
+                    size > MAX_COMPONENT_SIZE_BYTES,
+                    "Size {} should have succeeded",
+                    size
+                ),
+            }
+        }
     }
 }

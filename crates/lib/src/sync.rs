@@ -1,7 +1,4 @@
-use std::ops::{
-    Deref,
-    DerefMut,
-};
+use std::ops::Deref;
 
 use chrono::{
     DateTime,
@@ -23,7 +20,7 @@ use serde::{
 // Re-export the Synced derive macro
 pub use sync_macros::Synced;
 
-pub type NodeId = String;
+pub type NodeId = uuid::Uuid;
 
 /// Transparent wrapper for synced values
 ///
@@ -70,23 +67,19 @@ impl<T: Clone> SyncedValue<T> {
         {
             self.value = other.value.clone();
             self.timestamp = other.timestamp;
-            self.node_id = other.node_id.clone();
+            self.node_id = other.node_id; // UUID is Copy, no need to clone
         }
     }
 }
 
-// Allow transparent access to the inner value
+// Allow transparent read-only access to the inner value
+// Note: DerefMut is intentionally NOT implemented to preserve LWW semantics
+// Use `.set()` method to update values, which properly updates timestamps
 impl<T: Clone> Deref for SyncedValue<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         &self.value
-    }
-}
-
-impl<T: Clone> DerefMut for SyncedValue<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
     }
 }
 
@@ -143,7 +136,7 @@ pub trait Syncable: Sized {
 
     /// Create a sync message for an operation
     fn create_sync_message(&self, op: Self::Operation) -> SyncMessage<Self::Operation> {
-        SyncMessage::new(self.node_id().clone(), op)
+        SyncMessage::new(*self.node_id(), op) // UUID is Copy, dereference instead of clone
     }
 }
 
@@ -153,15 +146,17 @@ mod tests {
 
     #[test]
     fn test_synced_value() {
-        let mut val = SyncedValue::new(42, "node1".to_string());
+        let node1 = uuid::Uuid::new_v4();
+        let mut val = SyncedValue::new(42, node1);
         assert_eq!(*val.get(), 42);
 
-        val.set(100, "node1".to_string());
+        val.set(100, node1);
         assert_eq!(*val.get(), 100);
 
         // Test LWW semantics
+        let node2 = uuid::Uuid::new_v4();
         let old_time = Utc::now() - chrono::Duration::seconds(10);
-        val.apply_lww(50, old_time, "node2".to_string());
+        val.apply_lww(50, old_time, node2);
         assert_eq!(*val.get(), 100); // Should not update with older timestamp
     }
 
@@ -172,13 +167,48 @@ mod tests {
             value: i32,
         }
 
+        let node1 = uuid::Uuid::new_v4();
         let op = TestOp { value: 42 };
-        let msg = SyncMessage::new("node1".to_string(), op);
+        let msg = SyncMessage::new(node1, op);
 
         let bytes = msg.to_bytes().unwrap();
         let decoded = SyncMessage::<TestOp>::from_bytes(&bytes).unwrap();
 
-        assert_eq!(decoded.node_id, "node1");
+        assert_eq!(decoded.node_id, node1);
         assert_eq!(decoded.operation.value, 42);
+    }
+
+    #[test]
+    fn test_uuid_comparison() {
+        let node1 = uuid::Uuid::from_u128(1);
+        let node2 = uuid::Uuid::from_u128(2);
+
+        println!("node1: {}", node1);
+        println!("node2: {}", node2);
+        println!("node2 > node1: {}", node2 > node1);
+
+        assert!(node2 > node1, "UUID from_u128(2) should be > from_u128(1)");
+    }
+
+    #[test]
+    fn test_lww_tiebreaker() {
+        let node1 = uuid::Uuid::from_u128(1);
+        let node2 = uuid::Uuid::from_u128(2);
+
+        // Create SyncedValue FIRST, then capture a timestamp that's guaranteed to be newer
+        let mut lww = SyncedValue::new(100, node1);
+        std::thread::sleep(std::time::Duration::from_millis(1)); // Ensure ts is after init
+        let ts = Utc::now();
+
+        // Apply update from node1 at timestamp ts
+        lww.apply_lww(100, ts, node1);
+        println!("After node1 update: value={}, ts={:?}, node={}", lww.get(), lww.timestamp, lww.node_id);
+
+        // Apply conflicting update from node2 at SAME timestamp
+        lww.apply_lww(200, ts, node2);
+        println!("After node2 update: value={}, ts={:?}, node={}", lww.get(), lww.timestamp, lww.node_id);
+
+        // node2 > node1, so value2 should win
+        assert_eq!(*lww.get(), 200, "Higher node_id should win tiebreaker");
     }
 }

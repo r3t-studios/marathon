@@ -25,10 +25,14 @@
 //!
 //! // Build a component operation
 //! let builder = ComponentOpBuilder::new(node_id, clock.clone());
-//! let op = builder.set("Transform".to_string(), ComponentData::Inline(vec![1, 2, 3]));
+//! let op = builder.set(
+//!     "Transform".to_string(),
+//!     ComponentData::Inline(vec![1, 2, 3]),
+//! );
 //! ```
 
 mod apply_ops;
+mod auth;
 mod blob_support;
 mod change_detection;
 mod components;
@@ -51,6 +55,7 @@ mod tombstones;
 mod vector_clock;
 
 pub use apply_ops::*;
+pub use auth::*;
 pub use blob_support::*;
 pub use change_detection::*;
 pub use components::*;
@@ -108,10 +113,12 @@ pub fn spawn_networked_entity(
     use bevy::prelude::*;
 
     // Spawn with both NetworkedEntity and Persisted components
-    let entity = world.spawn((
-        NetworkedEntity::with_id(entity_id, node_id),
-        crate::persistence::Persisted::with_id(entity_id),
-    )).id();
+    let entity = world
+        .spawn((
+            NetworkedEntity::with_id(entity_id, node_id),
+            crate::persistence::Persisted::with_id(entity_id),
+        ))
+        .id();
 
     // Register in entity map
     let mut entity_map = world.resource_mut::<NetworkEntityMap>();

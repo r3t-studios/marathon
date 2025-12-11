@@ -5,7 +5,8 @@
 //! by its hash in the ComponentOp.
 //!
 //! **NOTE:** This is a simplified implementation for Phase 6. Full iroh-blobs
-//! integration will be completed when we integrate with actual gossip networking.
+//! integration will be completed when we integrate with actual gossip
+//! networking.
 
 use std::{
     collections::HashMap,
@@ -92,7 +93,8 @@ impl BlobStore {
     ///
     /// Returns an error if the cache lock is poisoned.
     pub fn has_blob(&self, hash: &BlobHash) -> Result<bool> {
-        Ok(self.cache
+        Ok(self
+            .cache
             .lock()
             .map_err(|e| NetworkingError::Blob(format!("Failed to lock cache: {}", e)))?
             .contains_key(hash))
@@ -103,7 +105,8 @@ impl BlobStore {
     /// This is safer than calling `has_blob()` followed by `get_blob()` because
     /// it's atomic - the blob can't be removed between the check and get.
     pub fn get_blob_if_exists(&self, hash: &BlobHash) -> Result<Option<Vec<u8>>> {
-        Ok(self.cache
+        Ok(self
+            .cache
             .lock()
             .map_err(|e| NetworkingError::Blob(format!("Failed to lock cache: {}", e)))?
             .get(hash)
@@ -114,7 +117,8 @@ impl BlobStore {
     ///
     /// Returns an error if the cache lock is poisoned.
     pub fn cache_size(&self) -> Result<usize> {
-        Ok(self.cache
+        Ok(self
+            .cache
             .lock()
             .map_err(|e| NetworkingError::Blob(format!("Failed to lock cache: {}", e)))?
             .len())
@@ -173,7 +177,10 @@ pub fn should_use_blob(data: &[u8]) -> bool {
 /// # Example
 ///
 /// ```
-/// use lib::networking::{create_component_data, BlobStore};
+/// use lib::networking::{
+///     BlobStore,
+///     create_component_data,
+/// };
 ///
 /// let store = BlobStore::new();
 ///
@@ -202,7 +209,11 @@ pub fn create_component_data(data: Vec<u8>, blob_store: &BlobStore) -> Result<Co
 /// # Example
 ///
 /// ```
-/// use lib::networking::{get_component_data, BlobStore, ComponentData};
+/// use lib::networking::{
+///     BlobStore,
+///     ComponentData,
+///     get_component_data,
+/// };
 ///
 /// let store = BlobStore::new();
 ///
@@ -334,7 +345,7 @@ mod tests {
             | ComponentData::BlobRef { hash, size } => {
                 assert_eq!(size, 100_000);
                 assert!(store.has_blob(&hash).unwrap());
-            }
+            },
             | ComponentData::Inline(_) => panic!("Expected blob reference"),
         }
     }

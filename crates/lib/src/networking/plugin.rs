@@ -8,7 +8,10 @@
 //!
 //! ```no_run
 //! use bevy::prelude::*;
-//! use lib::networking::{NetworkingPlugin, NetworkingConfig};
+//! use lib::networking::{
+//!     NetworkingConfig,
+//!     NetworkingPlugin,
+//! };
 //! use uuid::Uuid;
 //!
 //! fn main() {
@@ -28,28 +31,28 @@ use bevy::prelude::*;
 
 use crate::networking::{
     change_detection::{
-        auto_detect_transform_changes_system,
         LastSyncVersions,
+        auto_detect_transform_changes_system,
     },
     delta_generation::{
-        generate_delta_system,
         NodeVectorClock,
+        generate_delta_system,
     },
     entity_map::{
+        NetworkEntityMap,
         cleanup_despawned_entities_system,
         register_networked_entities_system,
-        NetworkEntityMap,
     },
     message_dispatcher::message_dispatcher_system,
     operation_log::{
+        OperationLog,
         periodic_sync_system,
         prune_operation_log_system,
-        OperationLog,
     },
     tombstones::{
+        TombstoneRegistry,
         garbage_collect_tombstones_system,
         handle_local_deletions_system,
-        TombstoneRegistry,
     },
     vector_clock::NodeId,
 };
@@ -81,6 +84,51 @@ impl Default for NetworkingConfig {
             prune_interval_secs: 60.0,
             tombstone_gc_interval_secs: 300.0,
         }
+    }
+}
+
+/// Optional session secret for authentication
+///
+/// This is a pre-shared secret that controls access to the gossip network.
+/// If configured, all joining nodes must provide the correct session secret
+/// to receive the full state.
+///
+/// # Security Model
+///
+/// The session secret provides network-level access control by:
+/// - Preventing unauthorized nodes from joining the gossip
+/// - Hash-based comparison prevents timing attacks
+/// - Works alongside iroh-gossip's built-in QUIC transport encryption
+///
+/// # Usage
+///
+/// Insert this as a Bevy resource to enable session secret validation:
+///
+/// ```no_run
+/// use bevy::prelude::*;
+/// use lib::networking::{
+///     NetworkingPlugin,
+///     SessionSecret,
+/// };
+/// use uuid::Uuid;
+///
+/// App::new()
+///     .add_plugins(NetworkingPlugin::default_with_node_id(Uuid::new_v4()))
+///     .insert_resource(SessionSecret::new(b"my_secret_key"))
+///     .run();
+/// ```
+#[derive(Resource, Clone)]
+pub struct SessionSecret(Vec<u8>);
+
+impl SessionSecret {
+    /// Create a new session secret from bytes
+    pub fn new(secret: impl Into<Vec<u8>>) -> Self {
+        Self(secret.into())
+    }
+
+    /// Get the secret as a byte slice
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -122,7 +170,10 @@ impl Default for NetworkingConfig {
 ///
 /// ```no_run
 /// use bevy::prelude::*;
-/// use lib::networking::{NetworkingPlugin, NetworkingConfig};
+/// use lib::networking::{
+///     NetworkingConfig,
+///     NetworkingPlugin,
+/// };
 /// use uuid::Uuid;
 ///
 /// App::new()

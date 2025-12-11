@@ -23,8 +23,7 @@ use crate::networking::{
 /// use bevy::prelude::*;
 /// use lib::networking::auto_detect_transform_changes_system;
 ///
-/// App::new()
-///     .add_systems(Update, auto_detect_transform_changes_system);
+/// App::new().add_systems(Update, auto_detect_transform_changes_system);
 /// ```
 pub fn auto_detect_transform_changes_system(
     mut query: Query<
@@ -38,7 +37,10 @@ pub fn auto_detect_transform_changes_system(
     // Count how many changed entities we found
     let count = query.iter().count();
     if count > 0 {
-        debug!("auto_detect_transform_changes_system: Found {} entities with changed Transform", count);
+        debug!(
+            "auto_detect_transform_changes_system: Found {} entities with changed Transform",
+            count
+        );
     }
 
     // Simply accessing &mut NetworkedEntity triggers Bevy's change detection
@@ -66,8 +68,8 @@ impl LastSyncVersions {
     /// Check if we should sync this entity based on version
     pub fn should_sync(&self, network_id: uuid::Uuid, version: u64) -> bool {
         match self.versions.get(&network_id) {
-            Some(&last_version) => version > last_version,
-            None => true, // Never synced before
+            | Some(&last_version) => version > last_version,
+            | None => true, // Never synced before
         }
     }
 

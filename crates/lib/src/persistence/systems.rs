@@ -135,8 +135,11 @@ fn perform_flush_sync(
 
 /// Helper function to perform a flush asynchronously (for normal operations)
 ///
-/// This runs on the I/O task pool to avoid blocking the main thread
-fn perform_flush_async(ops: Vec<PersistenceOp>, db: PersistenceDb) -> Result<FlushResult> {
+/// This runs the blocking SQLite operations on a thread pool via
+/// blocking::unblock to avoid blocking the async runtime. This works with both
+/// Bevy's async-executor and tokio runtimes, making it compatible with the
+/// current Bevy integration and the future dedicated iOS async runtime.
+async fn perform_flush_async(ops: Vec<PersistenceOp>, db: PersistenceDb) -> Result<FlushResult> {
     if ops.is_empty() {
         return Ok(FlushResult {
             operations_count: 0,
@@ -146,14 +149,25 @@ fn perform_flush_async(ops: Vec<PersistenceOp>, db: PersistenceDb) -> Result<Flu
     }
 
     let bytes_written = calculate_bytes_written(&ops);
-    let start = Instant::now();
 
-    let count = {
-        let mut conn = db.lock()?;
-        flush_to_sqlite(&ops, &mut conn)?
-    };
+    // Use blocking::unblock which works with any async runtime (async-executor,
+    // tokio, etc.) This spawns the blocking operation on a dedicated thread
+    // pool
+    let result = blocking::unblock(move || {
+        let start = Instant::now();
 
-    let duration = start.elapsed();
+        let count = {
+            let mut conn = db.lock()?;
+            flush_to_sqlite(&ops, &mut conn)?
+        };
+
+        let duration = start.elapsed();
+
+        Ok::<_, crate::persistence::PersistenceError>((count, duration))
+    })
+    .await?;
+
+    let (count, duration) = result;
 
     Ok(FlushResult {
         operations_count: count,
@@ -248,7 +262,7 @@ pub fn flush_system(
     let task_pool = IoTaskPool::get();
     let db_clone = db.clone();
 
-    let task = task_pool.spawn(async move { perform_flush_async(ops, db_clone.clone()) });
+    let task = task_pool.spawn(async move { perform_flush_async(ops, db_clone.clone()).await });
 
     pending_tasks.tasks.push(task);
 
@@ -448,22 +462,26 @@ mod tests {
         let entity_id = uuid::Uuid::new_v4();
 
         // First add the entity
-        write_buffer.add(PersistenceOp::UpsertEntity {
-            id: entity_id,
-            data: EntityData {
+        write_buffer
+            .add(PersistenceOp::UpsertEntity {
                 id: entity_id,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-                entity_type: "TestEntity".to_string(),
-            },
-        });
+                data: EntityData {
+                    id: entity_id,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                    entity_type: "TestEntity".to_string(),
+                },
+            })
+            .unwrap();
 
         // Then add a component
-        write_buffer.add(PersistenceOp::UpsertComponent {
-            entity_id,
-            component_type: "Transform".to_string(),
-            data: vec![1, 2, 3],
-        });
+        write_buffer
+            .add(PersistenceOp::UpsertComponent {
+                entity_id,
+                component_type: "Transform".to_string(),
+                data: vec![1, 2, 3],
+            })
+            .unwrap();
 
         // Take operations and flush synchronously (testing the flush logic)
         let ops = write_buffer.take_operations();

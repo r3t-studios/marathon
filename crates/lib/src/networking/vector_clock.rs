@@ -27,8 +27,8 @@ pub type NodeId = uuid::Uuid;
 /// # Causal Relationships
 ///
 /// Given two vector clocks A and B:
-/// - **A happened-before B** if all of A's counters ≤ B's counters and at
-///   least one is <
+/// - **A happened-before B** if all of A's counters ≤ B's counters and at least
+///   one is <
 /// - **A and B are concurrent** if neither happened-before the other
 /// - **A and B are identical** if all counters are equal
 ///
@@ -42,16 +42,16 @@ pub type NodeId = uuid::Uuid;
 /// let node2 = Uuid::new_v4();
 ///
 /// let mut clock1 = VectorClock::new();
-/// clock1.increment(node1);  // node1: 1
+/// clock1.increment(node1); // node1: 1
 ///
 /// let mut clock2 = VectorClock::new();
-/// clock2.increment(node2);  // node2: 1
+/// clock2.increment(node2); // node2: 1
 ///
 /// // These are concurrent - neither happened before the other
 /// assert!(clock1.is_concurrent_with(&clock2));
 ///
 /// // Merge the clocks
-/// clock1.merge(&clock2);  // node1: 1, node2: 1
+/// clock1.merge(&clock2); // node1: 1, node2: 1
 /// assert!(clock1.happened_before(&clock2) == false);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -116,11 +116,11 @@ impl VectorClock {
     /// let node2 = Uuid::new_v4();
     ///
     /// let mut clock1 = VectorClock::new();
-    /// clock1.increment(node1);  // node1: 1
-    /// clock1.increment(node1);  // node1: 2
+    /// clock1.increment(node1); // node1: 1
+    /// clock1.increment(node1); // node1: 2
     ///
     /// let mut clock2 = VectorClock::new();
-    /// clock2.increment(node2);  // node2: 1
+    /// clock2.increment(node2); // node2: 1
     ///
     /// clock1.merge(&clock2);
     /// assert_eq!(clock1.get(node1), 2);
@@ -147,36 +147,36 @@ impl VectorClock {
     /// let node = Uuid::new_v4();
     ///
     /// let mut clock1 = VectorClock::new();
-    /// clock1.increment(node);  // node: 1
+    /// clock1.increment(node); // node: 1
     ///
     /// let mut clock2 = VectorClock::new();
-    /// clock2.increment(node);  // node: 1
-    /// clock2.increment(node);  // node: 2
+    /// clock2.increment(node); // node: 1
+    /// clock2.increment(node); // node: 2
     ///
     /// assert!(clock1.happened_before(&clock2));
     /// assert!(!clock2.happened_before(&clock1));
     /// ```
     pub fn happened_before(&self, other: &VectorClock) -> bool {
-        // Check if all our counters are <= other's counters
-        let all_less_or_equal = self.clocks.iter().all(|(node_id, &our_counter)| {
-            let their_counter = other.get(*node_id);
-            our_counter <= their_counter
-        });
+        // Single-pass optimization: check both conditions simultaneously
+        let mut any_strictly_less = false;
 
-        if !all_less_or_equal {
-            return false;
+        // Check our nodes in a single pass
+        for (node_id, &our_counter) in &self.clocks {
+            let their_counter = other.get(*node_id);
+
+            // Early exit if we have a counter greater than theirs
+            if our_counter > their_counter {
+                return false;
+            }
+
+            // Track if any counter is strictly less
+            if our_counter < their_counter {
+                any_strictly_less = true;
+            }
         }
 
-        // Check if at least one counter is strictly less
-        // First check if any of our nodes has a lower counter
-        let mut any_strictly_less = self.clocks.iter().any(|(node_id, &our_counter)| {
-            let their_counter = other.get(*node_id);
-            our_counter < their_counter
-        });
-
-        // Also check if they have nodes we don't know about with non-zero values
-        // For nodes not in self.clocks, we treat them as having counter 0
-        // If other has a node with counter > 0 that we don't have, that counts as "strictly less"
+        // If we haven't found a strictly less counter yet, check if they have
+        // nodes we don't know about with non-zero values (those count as strictly less)
         if !any_strictly_less {
             any_strictly_less = other.clocks.iter().any(|(node_id, &their_counter)| {
                 !self.clocks.contains_key(node_id) && their_counter > 0
@@ -202,10 +202,10 @@ impl VectorClock {
     /// let node2 = Uuid::new_v4();
     ///
     /// let mut clock1 = VectorClock::new();
-    /// clock1.increment(node1);  // node1: 1
+    /// clock1.increment(node1); // node1: 1
     ///
     /// let mut clock2 = VectorClock::new();
-    /// clock2.increment(node2);  // node2: 1
+    /// clock2.increment(node2); // node2: 1
     ///
     /// assert!(clock1.is_concurrent_with(&clock2));
     /// assert!(clock2.is_concurrent_with(&clock1));
@@ -422,7 +422,10 @@ mod tests {
         clock2.increment(node);
 
         assert_eq!(clock1.compare(&clock2).unwrap(), std::cmp::Ordering::Less);
-        assert_eq!(clock2.compare(&clock1).unwrap(), std::cmp::Ordering::Greater);
+        assert_eq!(
+            clock2.compare(&clock1).unwrap(),
+            std::cmp::Ordering::Greater
+        );
         assert_eq!(clock1.compare(&clock1).unwrap(), std::cmp::Ordering::Equal);
     }
 

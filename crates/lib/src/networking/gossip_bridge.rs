@@ -69,8 +69,9 @@ impl GossipBridge {
 
     /// Drain all pending messages from the incoming queue atomically
     ///
-    /// This acquires the lock once and drains all messages, preventing race conditions
-    /// where messages could arrive between individual try_recv() calls.
+    /// This acquires the lock once and drains all messages, preventing race
+    /// conditions where messages could arrive between individual try_recv()
+    /// calls.
     pub fn drain_incoming(&self) -> Vec<VersionedMessage> {
         self.incoming
             .lock()
