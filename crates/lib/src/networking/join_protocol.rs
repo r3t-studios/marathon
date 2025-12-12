@@ -19,11 +19,14 @@ use bevy::{
 use crate::networking::{
     GossipBridge,
     NetworkedEntity,
+    SessionId,
+    VectorClock,
     blob_support::BlobStore,
     delta_generation::NodeVectorClock,
     entity_map::NetworkEntityMap,
     messages::{
         EntityState,
+        JoinType,
         SyncMessage,
         VersionedMessage,
     },
@@ -33,24 +36,34 @@ use crate::networking::{
 ///
 /// # Arguments
 /// * `node_id` - The UUID of the node requesting to join
+/// * `session_id` - The session to join
 /// * `session_secret` - Optional pre-shared secret for authentication
+/// * `last_known_clock` - Optional vector clock from previous session (for rejoin)
+/// * `join_type` - Whether this is a fresh join or rejoin
 ///
 /// # Example
 ///
 /// ```
-/// use lib::networking::build_join_request;
+/// use lib::networking::{build_join_request, SessionId, JoinType};
 /// use uuid::Uuid;
 ///
 /// let node_id = Uuid::new_v4();
-/// let request = build_join_request(node_id, None);
+/// let session_id = SessionId::new();
+/// let request = build_join_request(node_id, session_id, None, None, JoinType::Fresh);
 /// ```
 pub fn build_join_request(
     node_id: uuid::Uuid,
+    session_id: SessionId,
     session_secret: Option<Vec<u8>>,
+    last_known_clock: Option<VectorClock>,
+    join_type: JoinType,
 ) -> VersionedMessage {
     VersionedMessage::new(SyncMessage::JoinRequest {
         node_id,
+        session_id,
         session_secret,
+        last_known_clock,
+        join_type,
     })
 }
 
@@ -340,9 +353,15 @@ pub fn handle_join_requests_system(
         match message.message {
             | SyncMessage::JoinRequest {
                 node_id,
+                session_id,
                 session_secret,
+                last_known_clock: _,
+                join_type,
             } => {
-                info!("Received JoinRequest from node {}", node_id);
+                info!(
+                    "Received JoinRequest from node {} for session {} (type: {:?})",
+                    node_id, session_id, join_type
+                );
 
                 // Validate session secret if configured
                 if let Some(expected) =
@@ -454,15 +473,22 @@ mod tests {
     #[test]
     fn test_build_join_request() {
         let node_id = uuid::Uuid::new_v4();
-        let request = build_join_request(node_id, None);
+        let session_id = SessionId::new();
+        let request = build_join_request(node_id, session_id.clone(), None, None, JoinType::Fresh);
 
         match request.message {
             | SyncMessage::JoinRequest {
                 node_id: req_node_id,
+                session_id: req_session_id,
                 session_secret,
+                last_known_clock,
+                join_type,
             } => {
                 assert_eq!(req_node_id, node_id);
+                assert_eq!(req_session_id, session_id);
                 assert!(session_secret.is_none());
+                assert!(last_known_clock.is_none());
+                assert!(matches!(join_type, JoinType::Fresh));
             },
             | _ => panic!("Expected JoinRequest"),
         }
@@ -471,15 +497,64 @@ mod tests {
     #[test]
     fn test_build_join_request_with_secret() {
         let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
         let secret = vec![1, 2, 3, 4];
-        let request = build_join_request(node_id, Some(secret.clone()));
+        let request = build_join_request(
+            node_id,
+            session_id.clone(),
+            Some(secret.clone()),
+            None,
+            JoinType::Fresh,
+        );
 
         match request.message {
             | SyncMessage::JoinRequest {
                 node_id: _,
+                session_id: req_session_id,
                 session_secret,
+                last_known_clock,
+                join_type,
             } => {
+                assert_eq!(req_session_id, session_id);
                 assert_eq!(session_secret, Some(secret));
+                assert!(last_known_clock.is_none());
+                assert!(matches!(join_type, JoinType::Fresh));
+            },
+            | _ => panic!("Expected JoinRequest"),
+        }
+    }
+
+    #[test]
+    fn test_build_join_request_rejoin() {
+        let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
+        let clock = VectorClock::new();
+        let join_type = JoinType::Rejoin {
+            last_active: 1234567890,
+            entity_count: 42,
+        };
+
+        let request = build_join_request(
+            node_id,
+            session_id.clone(),
+            None,
+            Some(clock.clone()),
+            join_type.clone(),
+        );
+
+        match request.message {
+            | SyncMessage::JoinRequest {
+                node_id: req_node_id,
+                session_id: req_session_id,
+                session_secret,
+                last_known_clock,
+                join_type: req_join_type,
+            } => {
+                assert_eq!(req_node_id, node_id);
+                assert_eq!(req_session_id, session_id);
+                assert!(session_secret.is_none());
+                assert_eq!(last_known_clock, Some(clock));
+                assert!(matches!(req_join_type, JoinType::Rejoin { .. }));
             },
             | _ => panic!("Expected JoinRequest"),
         }

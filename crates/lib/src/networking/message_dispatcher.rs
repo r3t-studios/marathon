@@ -11,8 +11,10 @@ use bevy::{
 
 use crate::networking::{
     GossipBridge,
+    JoinType,
     NetworkedEntity,
     TombstoneRegistry,
+    VersionedMessage,
     apply_entity_delta,
     apply_full_state,
     blob_support::BlobStore,
@@ -101,12 +103,18 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
             apply_entity_delta(&delta, world);
         },
 
-        // JoinRequest - new peer joining
+        // JoinRequest - new peer joining (or rejoining)
         | SyncMessage::JoinRequest {
             node_id,
+            session_id,
             session_secret,
+            last_known_clock,
+            join_type,
         } => {
-            info!("Received JoinRequest from node {}", node_id);
+            info!(
+                "Received JoinRequest from node {} for session {} (type: {:?})",
+                node_id, session_id, join_type
+            );
 
             // Validate session secret if configured
             if let Some(expected) = world.get_resource::<SessionSecret>() {
@@ -133,33 +141,93 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                 debug!("Session secret provided but none configured, accepting");
             }
 
-            // Build and send full state
-            // We need to collect data in separate steps to avoid borrow conflicts
-            let networked_entities = {
-                let mut query = world.query::<(Entity, &NetworkedEntity)>();
-                query.iter(world).collect::<Vec<_>>()
+            // Hybrid join protocol: decide between FullState and MissingDeltas
+            // Fresh joins always get FullState
+            // Rejoins get deltas if <1000 operations, otherwise FullState
+            let response = match (&join_type, &last_known_clock) {
+                // Fresh join or no clock provided → send FullState
+                | (JoinType::Fresh, _) | (_, None) => {
+                    info!("Fresh join from node {} - sending FullState", node_id);
+
+                    // Collect networked entities
+                    let networked_entities = {
+                        let mut query = world.query::<(Entity, &NetworkedEntity)>();
+                        query.iter(world).collect::<Vec<_>>()
+                    };
+
+                    // Build full state
+                    let type_registry = world.resource::<AppTypeRegistry>().read();
+                    let node_clock = world.resource::<NodeVectorClock>();
+                    let blob_store = world.get_resource::<BlobStore>();
+
+                    build_full_state_from_data(
+                        world,
+                        &networked_entities,
+                        &type_registry,
+                        &node_clock,
+                        blob_store.map(|b| b as &BlobStore),
+                    )
+                },
+
+                // Rejoin with known clock → check delta count
+                | (JoinType::Rejoin { .. }, Some(their_clock)) => {
+                    info!(
+                        "Rejoin from node {} - checking delta count since last known clock",
+                        node_id
+                    );
+
+                    // Get operation log and check missing deltas
+                    let operation_log = world.resource::<crate::networking::OperationLog>();
+                    let missing_deltas =
+                        operation_log.get_all_operations_newer_than(their_clock);
+
+                    // If delta count is small (<= 1000 ops), send deltas
+                    // Otherwise fall back to full state
+                    if missing_deltas.len() <= 1000 {
+                        info!(
+                            "Rejoin from node {} - sending {} MissingDeltas (efficient rejoin)",
+                            node_id,
+                            missing_deltas.len()
+                        );
+
+                        VersionedMessage::new(SyncMessage::MissingDeltas {
+                            deltas: missing_deltas,
+                        })
+                    } else {
+                        info!(
+                            "Rejoin from node {} - delta count {} exceeds threshold, sending FullState",
+                            node_id,
+                            missing_deltas.len()
+                        );
+
+                        // Collect networked entities
+                        let networked_entities = {
+                            let mut query = world.query::<(Entity, &NetworkedEntity)>();
+                            query.iter(world).collect::<Vec<_>>()
+                        };
+
+                        // Build full state
+                        let type_registry = world.resource::<AppTypeRegistry>().read();
+                        let node_clock = world.resource::<NodeVectorClock>();
+                        let blob_store = world.get_resource::<BlobStore>();
+
+                        build_full_state_from_data(
+                            world,
+                            &networked_entities,
+                            &type_registry,
+                            &node_clock,
+                            blob_store.map(|b| b as &BlobStore),
+                        )
+                    }
+                },
             };
 
-            let full_state = {
-                let type_registry = world.resource::<AppTypeRegistry>().read();
-                let node_clock = world.resource::<NodeVectorClock>();
-                let blob_store = world.get_resource::<BlobStore>();
-
-                build_full_state_from_data(
-                    world,
-                    &networked_entities,
-                    &type_registry,
-                    &node_clock,
-                    blob_store.map(|b| b as &BlobStore),
-                )
-            };
-
-            // Get bridge to send response
+            // Send response
             if let Some(bridge) = world.get_resource::<GossipBridge>() {
-                if let Err(e) = bridge.send(full_state) {
-                    error!("Failed to send FullState: {}", e);
+                if let Err(e) = bridge.send(response) {
+                    error!("Failed to send join response: {}", e);
                 } else {
-                    info!("Sent FullState to node {}", node_id);
+                    info!("Sent join response to node {}", node_id);
                 }
             }
         },
@@ -250,6 +318,112 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                 debug!("Applying missing delta for entity {:?}", delta.entity_id);
 
                 apply_entity_delta(&delta, world);
+            }
+        },
+
+        // Lock - entity lock protocol messages
+        | SyncMessage::Lock(lock_msg) => {
+            use crate::networking::LockMessage;
+
+            if let Some(mut registry) = world.get_resource_mut::<crate::networking::EntityLockRegistry>() {
+                match lock_msg {
+                    | LockMessage::LockRequest { entity_id, node_id } => {
+                        debug!("Received LockRequest for entity {} from node {}", entity_id, node_id);
+
+                        match registry.try_acquire(entity_id, node_id) {
+                            | Ok(()) => {
+                                // Acquired successfully - broadcast confirmation
+                                if let Some(bridge) = world.get_resource::<GossipBridge>() {
+                                    let msg = VersionedMessage::new(SyncMessage::Lock(
+                                        LockMessage::LockAcquired {
+                                            entity_id,
+                                            holder: node_id,
+                                        },
+                                    ));
+                                    if let Err(e) = bridge.send(msg) {
+                                        error!("Failed to broadcast LockAcquired: {}", e);
+                                    } else {
+                                        info!("Lock acquired: entity {} by node {}", entity_id, node_id);
+                                    }
+                                }
+                            },
+                            | Err(current_holder) => {
+                                // Already locked - send rejection
+                                if let Some(bridge) = world.get_resource::<GossipBridge>() {
+                                    let msg = VersionedMessage::new(SyncMessage::Lock(
+                                        LockMessage::LockRejected {
+                                            entity_id,
+                                            requester: node_id,
+                                            current_holder,
+                                        },
+                                    ));
+                                    if let Err(e) = bridge.send(msg) {
+                                        error!("Failed to send LockRejected: {}", e);
+                                    } else {
+                                        debug!("Lock rejected: entity {} requested by {} (held by {})",
+                                            entity_id, node_id, current_holder);
+                                    }
+                                }
+                            },
+                        }
+                    },
+
+                    | LockMessage::LockAcquired { entity_id, holder } => {
+                        debug!("Received LockAcquired for entity {} by node {}", entity_id, holder);
+                        // Lock already applied optimistically, just log confirmation
+                    },
+
+                    | LockMessage::LockRejected {
+                        entity_id,
+                        requester,
+                        current_holder,
+                    } => {
+                        warn!(
+                            "Lock rejected: entity {} requested by {} (held by {})",
+                            entity_id, requester, current_holder
+                        );
+                        // Could trigger UI notification here
+                    },
+
+                    | LockMessage::LockHeartbeat { entity_id, holder } => {
+                        trace!("Received LockHeartbeat for entity {} from node {}", entity_id, holder);
+
+                        // Renew the lock's heartbeat timestamp
+                        if registry.renew_heartbeat(entity_id, holder) {
+                            trace!("Lock heartbeat renewed: entity {} by node {}", entity_id, holder);
+                        } else {
+                            debug!(
+                                "Received heartbeat for entity {} from {}, but lock not found or holder mismatch",
+                                entity_id, holder
+                            );
+                        }
+                    },
+
+                    | LockMessage::LockRelease { entity_id, node_id } => {
+                        debug!("Received LockRelease for entity {} from node {}", entity_id, node_id);
+
+                        if registry.release(entity_id, node_id) {
+                            // Broadcast confirmation
+                            if let Some(bridge) = world.get_resource::<GossipBridge>() {
+                                let msg = VersionedMessage::new(SyncMessage::Lock(
+                                    LockMessage::LockReleased { entity_id },
+                                ));
+                                if let Err(e) = bridge.send(msg) {
+                                    error!("Failed to broadcast LockReleased: {}", e);
+                                } else {
+                                    info!("Lock released: entity {}", entity_id);
+                                }
+                            }
+                        }
+                    },
+
+                    | LockMessage::LockReleased { entity_id } => {
+                        debug!("Received LockReleased for entity {}", entity_id);
+                        // Lock already released locally, just log confirmation
+                    },
+                }
+            } else {
+                warn!("Received lock message but EntityLockRegistry not available");
             }
         },
     }

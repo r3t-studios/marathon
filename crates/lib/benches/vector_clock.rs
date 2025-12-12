@@ -4,11 +4,11 @@
 //! single-pass optimization in the happened_before() method.
 
 use criterion::{
+    BenchmarkId,
+    Criterion,
     black_box,
     criterion_group,
     criterion_main,
-    BenchmarkId,
-    Criterion,
 };
 use lib::networking::VectorClock;
 
@@ -109,7 +109,8 @@ fn bench_happened_before_large_clocks(c: &mut Criterion) {
 
 /// Benchmark: happened_before with disjoint node sets
 ///
-/// This is the scenario where early exit optimization provides the most benefit.
+/// This is the scenario where early exit optimization provides the most
+/// benefit.
 fn bench_happened_before_disjoint(c: &mut Criterion) {
     let mut group = c.benchmark_group("VectorClock::happened_before (disjoint)");
 
@@ -257,27 +258,27 @@ fn bench_realistic_workload(c: &mut Criterion) {
             // Simulate 100 operations across 3 nodes
             for i in 0..100 {
                 match i % 7 {
-                    0 => {
+                    | 0 => {
                         clock1.increment(node1);
-                    }
-                    1 => {
+                    },
+                    | 1 => {
                         clock2.increment(node2);
-                    }
-                    2 => {
+                    },
+                    | 2 => {
                         clock3.increment(node3);
-                    }
-                    3 => {
+                    },
+                    | 3 => {
                         clock1.merge(&clock2);
-                    }
-                    4 => {
+                    },
+                    | 4 => {
                         clock2.merge(&clock3);
-                    }
-                    5 => {
+                    },
+                    | 5 => {
                         let _ = clock1.happened_before(&clock2);
-                    }
-                    _ => {
+                    },
+                    | _ => {
                         let _ = clock2.is_concurrent_with(&clock3);
-                    }
+                    },
                 }
             }
 

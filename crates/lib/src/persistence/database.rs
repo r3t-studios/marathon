@@ -32,10 +32,12 @@ fn current_timestamp() -> i64 {
 
 /// Initialize SQLite connection with WAL mode and optimizations
 pub fn initialize_persistence_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
 
     configure_sqlite_for_persistence(&conn)?;
-    create_persistence_schema(&conn)?;
+
+    // Run migrations to ensure schema is up to date
+    crate::persistence::run_migrations(&mut conn)?;
 
     Ok(conn)
 }
@@ -462,6 +464,153 @@ pub fn check_clean_shutdown(conn: &mut Connection) -> Result<bool> {
 /// - `Err`: If the database write fails
 pub fn mark_clean_shutdown(conn: &mut Connection) -> Result<()> {
     set_session_state(conn, "clean_shutdown", "true")
+}
+
+//
+// ============================================================================
+// Session Management Operations
+// ============================================================================
+//
+
+/// Save session metadata to database
+pub fn save_session(conn: &mut Connection, session: &crate::networking::Session) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO sessions (id, code, name, created_at, last_active, entity_count, state, secret)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            session.id.as_uuid().as_bytes(),
+            session.id.to_code(),
+            session.name,
+            session.created_at,
+            session.last_active,
+            session.entity_count as i64,
+            session.state.to_string(),
+            session.secret,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Load session by ID
+pub fn load_session(
+    conn: &Connection,
+    session_id: crate::networking::SessionId,
+) -> Result<Option<crate::networking::Session>> {
+    conn.query_row(
+        "SELECT code, name, created_at, last_active, entity_count, state, secret
+         FROM sessions WHERE id = ?1",
+        [session_id.as_uuid().as_bytes()],
+        |row| {
+            let code: String = row.get(0)?;
+            let state_str: String = row.get(5)?;
+            let state = crate::networking::SessionState::from_str(&state_str)
+                .unwrap_or(crate::networking::SessionState::Created);
+
+            // Reconstruct SessionId from the stored code
+            let id = crate::networking::SessionId::from_code(&code)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+
+            Ok(crate::networking::Session {
+                id,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                last_active: row.get(3)?,
+                entity_count: row.get::<_, i64>(4)? as usize,
+                state,
+                secret: row.get(6)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(PersistenceError::from)
+}
+
+/// Get the most recently active session
+pub fn get_last_active_session(conn: &Connection) -> Result<Option<crate::networking::Session>> {
+    conn.query_row(
+        "SELECT code, name, created_at, last_active, entity_count, state, secret
+         FROM sessions ORDER BY last_active DESC LIMIT 1",
+        [],
+        |row| {
+            let code: String = row.get(0)?;
+            let state_str: String = row.get(5)?;
+            let state = crate::networking::SessionState::from_str(&state_str)
+                .unwrap_or(crate::networking::SessionState::Created);
+
+            // Reconstruct SessionId from the stored code
+            let id = crate::networking::SessionId::from_code(&code)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+
+            Ok(crate::networking::Session {
+                id,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                last_active: row.get(3)?,
+                entity_count: row.get::<_, i64>(4)? as usize,
+                state,
+                secret: row.get(6)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(PersistenceError::from)
+}
+
+/// Save session vector clock to database
+pub fn save_session_vector_clock(
+    conn: &mut Connection,
+    session_id: crate::networking::SessionId,
+    clock: &crate::networking::VectorClock,
+) -> Result<()> {
+    let tx = conn.transaction()?;
+
+    // Delete old clock entries for this session
+    tx.execute(
+        "DELETE FROM vector_clock WHERE session_id = ?1",
+        [session_id.as_uuid().as_bytes()],
+    )?;
+
+    // Insert current clock state
+    for (node_id, &counter) in &clock.clocks {
+        tx.execute(
+            "INSERT INTO vector_clock (session_id, node_id, counter, updated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                session_id.as_uuid().as_bytes(),
+                node_id.to_string(),
+                counter as i64,
+                current_timestamp(),
+            ],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Load session vector clock from database
+pub fn load_session_vector_clock(
+    conn: &Connection,
+    session_id: crate::networking::SessionId,
+) -> Result<crate::networking::VectorClock> {
+    let mut stmt =
+        conn.prepare("SELECT node_id, counter FROM vector_clock WHERE session_id = ?1")?;
+
+    let mut clock = crate::networking::VectorClock::new();
+    let rows = stmt.query_map([session_id.as_uuid().as_bytes()], |row| {
+        let node_id_str: String = row.get(0)?;
+        let counter: i64 = row.get(1)?;
+        Ok((node_id_str, counter))
+    })?;
+
+    for row in rows {
+        let (node_id_str, counter) = row?;
+        if let Ok(node_id) = uuid::Uuid::parse_str(&node_id_str) {
+            clock.clocks.insert(node_id, counter as u64);
+        }
+    }
+
+    Ok(clock)
 }
 
 #[cfg(test)]

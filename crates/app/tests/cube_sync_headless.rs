@@ -5,31 +5,52 @@
 
 use std::{
     path::PathBuf,
-    time::{Duration, Instant},
+    time::{
+        Duration,
+        Instant,
+    },
 };
 
 use anyhow::Result;
 use app::CubeMarker;
 use bevy::{
-    app::{App, ScheduleRunnerPlugin},
+    app::{
+        App,
+        ScheduleRunnerPlugin,
+    },
     ecs::world::World,
     prelude::*,
     MinimalPlugins,
 };
 use bytes::Bytes;
 use futures_lite::StreamExt;
-use iroh::{protocol::Router, Endpoint};
+use iroh::{
+    protocol::Router,
+    Endpoint,
+};
 use iroh_gossip::{
-    api::{GossipReceiver, GossipSender},
+    api::{
+        GossipReceiver,
+        GossipSender,
+    },
     net::Gossip,
     proto::TopicId,
 };
 use lib::{
     networking::{
-        GossipBridge, NetworkedEntity, NetworkedTransform, NetworkingConfig, NetworkingPlugin,
-        Synced, VersionedMessage,
+        GossipBridge,
+        NetworkedEntity,
+        NetworkedTransform,
+        NetworkingConfig,
+        NetworkingPlugin,
+        Synced,
+        VersionedMessage,
     },
-    persistence::{Persisted, PersistenceConfig, PersistencePlugin},
+    persistence::{
+        Persisted,
+        PersistenceConfig,
+        PersistencePlugin,
+    },
 };
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -66,11 +87,9 @@ mod test_utils {
     pub fn create_test_app(node_id: Uuid, db_path: PathBuf, bridge: GossipBridge) -> App {
         let mut app = App::new();
 
-        app.add_plugins(
-            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-                1.0 / 60.0,
-            ))),
-        )
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+            Duration::from_secs_f64(1.0 / 60.0),
+        )))
         .insert_resource(bridge)
         .add_plugins(NetworkingPlugin::new(NetworkingConfig {
             node_id,
@@ -117,8 +136,7 @@ mod test_utils {
         check_fn: F,
     ) -> Result<()>
     where
-        F: Fn(&mut World, &mut World) -> bool,
-    {
+        F: Fn(&mut World, &mut World) -> bool, {
         let start = Instant::now();
         let mut tick_count = 0;
 
@@ -200,10 +218,10 @@ mod test_utils {
             println!("  Connecting to bootstrap peers...");
             for addr in &bootstrap_addrs {
                 match endpoint.connect(addr.clone(), iroh_gossip::ALPN).await {
-                    Ok(_conn) => println!("  ✓ Connected to bootstrap peer: {}", addr.id),
-                    Err(e) => {
+                    | Ok(_conn) => println!("  ✓ Connected to bootstrap peer: {}", addr.id),
+                    | Err(e) => {
                         println!("  ✗ Failed to connect to bootstrap peer {}: {}", addr.id, e)
-                    }
+                    },
                 }
             }
         }
@@ -220,11 +238,11 @@ mod test_utils {
         if has_bootstrap_peers {
             println!("  Waiting for join to complete (with timeout)...");
             match tokio::time::timeout(Duration::from_secs(3), receiver.joined()).await {
-                Ok(Ok(())) => println!("  Join completed!"),
-                Ok(Err(e)) => println!("  Join error: {}", e),
-                Err(_) => {
+                | Ok(Ok(())) => println!("  Join completed!"),
+                | Ok(Err(e)) => println!("  Join error: {}", e),
+                | Err(_) => {
                     println!("  Join timeout - proceeding anyway (mDNS may still connect later)")
-                }
+                },
             }
         } else {
             println!("  No bootstrap peers - skipping join wait (first node in swarm)");
@@ -270,7 +288,8 @@ mod test_utils {
         Ok((ep1, ep2, router1, router2, bridge1, bridge2))
     }
 
-    /// Spawn background tasks to forward messages between iroh-gossip and GossipBridge
+    /// Spawn background tasks to forward messages between iroh-gossip and
+    /// GossipBridge
     fn spawn_gossip_bridge_tasks(
         sender: GossipSender,
         mut receiver: GossipReceiver,
@@ -290,7 +309,7 @@ mod test_utils {
                         node_id, msg_count
                     );
                     match bincode::serialize(&versioned_msg) {
-                        Ok(bytes) => {
+                        | Ok(bytes) => {
                             if let Err(e) = sender.broadcast(Bytes::from(bytes)).await {
                                 eprintln!("[Node {}] Failed to broadcast message: {}", node_id, e);
                             } else {
@@ -299,8 +318,8 @@ mod test_utils {
                                     node_id, msg_count
                                 );
                             }
-                        }
-                        Err(e) => eprintln!(
+                        },
+                        | Err(e) => eprintln!(
                             "[Node {}] Failed to serialize message for broadcast: {}",
                             node_id, e
                         ),
@@ -318,7 +337,7 @@ mod test_utils {
             println!("[Node {}] Gossip receiver task started", node_id);
             loop {
                 match tokio::time::timeout(Duration::from_millis(100), receiver.next()).await {
-                    Ok(Some(Ok(event))) => {
+                    | Ok(Some(Ok(event))) => {
                         println!(
                             "[Node {}] Received gossip event: {:?}",
                             node_id,
@@ -331,7 +350,7 @@ mod test_utils {
                                 node_id, msg_count
                             );
                             match bincode::deserialize::<VersionedMessage>(&msg.content) {
-                                Ok(versioned_msg) => {
+                                | Ok(versioned_msg) => {
                                     if let Err(e) = bridge_in.push_incoming(versioned_msg) {
                                         eprintln!(
                                             "[Node {}] Failed to push to bridge incoming: {}",
@@ -343,24 +362,24 @@ mod test_utils {
                                             node_id, msg_count
                                         );
                                     }
-                                }
-                                Err(e) => eprintln!(
+                                },
+                                | Err(e) => eprintln!(
                                     "[Node {}] Failed to deserialize gossip message: {}",
                                     node_id, e
                                 ),
                             }
                         }
-                    }
-                    Ok(Some(Err(e))) => {
+                    },
+                    | Ok(Some(Err(e))) => {
                         eprintln!("[Node {}] Gossip receiver error: {}", node_id, e)
-                    }
-                    Ok(None) => {
+                    },
+                    | Ok(None) => {
                         println!("[Node {}] Gossip stream ended", node_id);
                         break;
-                    }
-                    Err(_) => {
+                    },
+                    | Err(_) => {
                         // Timeout, no message available
-                    }
+                    },
                 }
             }
         });

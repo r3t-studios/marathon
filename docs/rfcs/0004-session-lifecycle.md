@@ -68,45 +68,32 @@ The session data model defines how collaborative sessions are identified, tracke
 
 ### Session Identification
 
-Each collaborative session needs a globally unique identifier that's both machine-readable and human-friendly. We use UUIDs internally for uniqueness while providing a human-readable "session code" format (like `abc-def-123`) that users can easily share and enter manually.
+Each collaborative session needs a unique identifier that users can easily share and enter. The design prioritizes human usability while maintaining technical uniqueness and security.
 
-The `SessionId` type wraps a UUID but provides bidirectional conversion to/from 6-character alphanumeric codes. This code format makes it easy to verbally communicate session IDs ("join session abc-def-one-two-three") or manually type them into a join dialog.
+**User-Facing Session Codes**:
 
-Additionally, each session ID can be deterministically converted to an ALPN (Application-Layer Protocol Negotiation) identifier using BLAKE3 hashing. This ensures that peers in different sessions are cryptographically isolated at the network transport layer - they literally cannot discover or communicate with each other.
+Sessions are identified by short, memorable codes in the format `abc-def-123` (9 alphanumeric characters in three groups). This format is:
+- **Easy to communicate verbally**: "Join session abc-def-one-two-three"
+- **Simple to type**: No confusing characters (0 vs O, 1 vs l)
+- **Shareable**: Can be sent via chat, email, or written down
 
-```rust
-/// Unique identifier for a collaborative session
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct SessionId(Uuid);
+When a user creates a session, they see a code like `xyz-789-mno` that they can share with collaborators. When joining, they simply type this code into a dialog.
 
-impl SessionId {
-    /// Create a new random session ID
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
+**Technical Implementation**:
 
-    /// Create from a human-readable code (e.g., "abc-def-ghi")
-    pub fn from_code(code: &str) -> Result<Self> {
-        // Parse format: xxx-yyy-zzz (3 groups of 3 lowercase alphanumeric)
-        // Maps to deterministic UUID using hash
-        let uuid = generate_uuid_from_code(code)?;
-        Ok(Self(uuid))
-    }
+Behind the scenes, each session code maps to a UUID (Universally Unique Identifier) that provides true global uniqueness. The `SessionId` type handles bidirectional conversion:
+- User codes → UUIDs via deterministic hashing
+- UUIDs → display codes via formatting
 
-    /// Get human-readable code (first 9 characters of UUID formatted)
-    pub fn to_code(&self) -> String {
-        format_uuid_as_code(&self.0)
-    }
+**Network Isolation**:
 
-    /// Derive ALPN protocol identifier from session ID
-    pub fn to_alpn(&self) -> [u8; 32] {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"lonni-session-v1");
-        hasher.update(self.0.as_bytes());
-        *hasher.finalize().as_bytes()
-    }
-}
-```
+Each session ID also derives a unique ALPN (Application-Layer Protocol Negotiation) identifier using BLAKE3 hashing. This provides cryptographic isolation at the transport layer - peers in different sessions literally cannot discover or communicate with each other, even if they're on the same local network.
+
+**Key Operations**:
+- `SessionId::new()`: Generates a random UUID v4 for new sessions
+- `SessionId::from_code(code)`: Parses human-readable codes (format: `xxx-yyy-zzz`) into UUIDs
+- `to_code()`: Converts UUID to a 9-character alphanumeric code for display
+- `to_alpn()`: Derives a 32-byte ALPN identifier for network isolation
 
 ### Session Metadata
 
@@ -120,58 +107,23 @@ This metadata serves several purposes:
 
 The `CurrentSession` resource represents the active session within the Bevy ECS world. It includes both the session metadata and the vector clock state at the time of joining, which is essential for the hybrid sync protocol.
 
-```rust
-/// Metadata about a collaborative session
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
-    /// Unique identifier for this session
-    pub id: SessionId,
+**Session Structure**:
 
-    /// Human-readable name (optional)
-    pub name: Option<String>,
+The `Session` struct contains:
+- **id**: Unique `SessionId` identifying this session
+- **name**: Optional human-readable label (e.g., "Monday Design Review")
+- **created_at**: Timestamp of session creation
+- **last_active**: When this node was last active in the session (for auto-rejoin)
+- **entity_count**: Cached count of entities (for UI display)
+- **state**: Current lifecycle state (see state machine below)
+- **secret**: Optional encrypted password for session access control
 
-    /// When this session was created
-    pub created_at: DateTime<Utc>,
+**Session States**:
 
-    /// Last time this node was active in this session
-    pub last_active: DateTime<Utc>,
+Five states track the session lifecycle (see "Session State Transitions" section below for detailed state machine):
+- `Created`, `Joining`, `Active`, `Disconnected`, `Left`
 
-    /// How many entities are in this session (cached)
-    pub entity_count: usize,
-
-    /// Session state
-    pub state: SessionState,
-
-    /// Optional session secret for authentication
-    pub secret: Option<Vec<u8>>,
-}
-
-/// Current state of a session
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SessionState {
-    /// Session created but not yet joined network
-    Created,
-
-    /// Currently joining (waiting for FullState or deltas)
-    Joining,
-
-    /// Fully synchronized and active
-    Active,
-
-    /// Temporarily disconnected (will attempt rejoin)
-    Disconnected,
-
-    /// Cleanly left (archived, can rejoin later)
-    Left,
-}
-
-/// Bevy resource tracking the current session
-#[derive(Resource)]
-pub struct CurrentSession {
-    pub session: Session,
-    pub vector_clock_at_join: VectorClock,
-}
-```
+The `CurrentSession` Bevy resource wraps the session metadata along with the vector clock captured at join time. This clock snapshot enables the hybrid sync protocol to determine which deltas are needed when rejoining.
 
 ### Database Schema
 
@@ -272,15 +224,9 @@ Instead of using a single global gossip topic, each session gets its own ALPN (A
 
 Each session derives a unique ALPN identifier using BLAKE3 cryptographic hashing. The derivation is deterministic - the same session ID always produces the same ALPN - which allows all peers to independently compute the correct ALPN for a session they want to join.
 
-```rust
-/// Derive a unique ALPN protocol identifier from a session ID
-pub fn derive_alpn_from_session(session_id: &SessionId) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"/app/v1/session-id/");  // Domain separation prefix
-    hasher.update(session_id.0.as_bytes());
-    *hasher.finalize().as_bytes()
-}
-```
+**Derivation Process**:
+
+The ALPN is computed by hashing the session UUID with BLAKE3, using a domain separation prefix (`/app/v1/session-id/`) followed by the session ID bytes. This produces a deterministic 32-byte identifier that all peers independently compute from the same session code.
 
 The design provides several security and isolation guarantees:
 
@@ -301,59 +247,29 @@ The gossip network initialization is modified to use session-specific ALPNs inst
 
 The combination ensures both local and remote sessions work seamlessly.
 
-```rust
-/// Initialize gossip with session-specific ALPN
-async fn init_gossip_for_session(session: &Session) -> Result<GossipBridge> {
-    info!("Creating endpoint with discovery...");
-    let endpoint = Endpoint::builder()
-        .discovery(MdnsDiscovery::builder())  // Local network
-        .discovery(PkarrDiscovery::builder()) // Internet-wide via pkarr DNS
-        .bind()
-        .await?;
+**Initialization Flow**:
 
-    let endpoint_id = endpoint.addr().id;
-    let node_id = endpoint_id_to_uuid(&endpoint_id);
+The initialization process has three temporal phases:
 
-    info!("Node ID: {}", node_id);
-    info!("Session ID: {}", session.id.to_code());
+**One-time Endpoint Setup** (occurs once per application launch):
+1. **Endpoint Creation**: Build an iroh `Endpoint` with both mDNS and Pkarr discovery mechanisms enabled
+2. **Gossip Protocol**: Spawn the gossip protocol handler using `Gossip::builder().spawn(endpoint)`
 
-    // Derive session-specific ALPN
-    let alpn = session.id.to_alpn();
-    info!("Using session ALPN: {}", hex::encode(&alpn[..8]));
+**Per-session Connection** (occurs when joining each session):
+3. **ALPN Derivation**: Call `session.id.to_alpn()` to compute the 32-byte session-specific ALPN identifier
+4. **Router Configuration**: Create a router that only accepts connections on the session's ALPN
+   - Critical: Use the derived ALPN, not the default `iroh_gossip::ALPN`
+   - This enforces network isolation at the transport layer
+5. **Topic Subscription**: Subscribe to a gossip topic derived from the ALPN (can reuse the same bytes)
+6. **Join Wait**: Wait up to 2 seconds for the join confirmation
+   - Timeout is expected for the first node in a session (no peers yet)
+   - Errors are logged but don't prevent continuing
 
-    info!("Spawning gossip protocol...");
-    let gossip = Gossip::builder().spawn(endpoint.clone());
+**Background Operation** (runs continuously while session is active):
+7. **Bridge Creation**: Create a `GossipBridge` that wraps the gossip channels and provides session context
+8. **Task Spawning**: Launch background tasks to forward messages between gossip and application
 
-    // Router accepts connections with this specific ALPN only
-    info!("Setting up router with session ALPN...");
-    let router = Router::builder(endpoint.clone())
-        .accept(alpn, gossip.clone())  // NOTE: Use session ALPN, not iroh_gossip::ALPN
-        .spawn();
-
-    // Subscribe to topic (can use session ID directly as topic)
-    let topic_id = TopicId::from_bytes(alpn);
-    info!("Subscribing to session topic...");
-    let subscribe_handle = gossip.subscribe(topic_id, vec![]).await?;
-
-    let (sender, mut receiver) = subscribe_handle.split();
-
-    // Wait for join (with timeout)
-    info!("Waiting for gossip join...");
-    match tokio::time::timeout(Duration::from_secs(2), receiver.joined()).await {
-        Ok(Ok(())) => info!("Joined session gossip swarm"),
-        Ok(Err(e)) => warn!("Join error: {} (proceeding anyway)", e),
-        Err(_) => info!("Join timeout (first node in session)"),
-    }
-
-    // Create bridge with session context
-    let bridge = GossipBridge::new_with_session(node_id, session.id.clone());
-
-    // Spawn forwarding tasks
-    spawn_bridge_tasks(sender, receiver, bridge.clone(), endpoint, router, gossip);
-
-    Ok(bridge)
-}
-```
+The key architectural decision is using the same ALPN bytes for both transport-layer connection acceptance and application-layer topic identification. This ensures consistent isolation across both layers.
 
 ### Session Discovery
 
@@ -405,42 +321,17 @@ The key fields are:
 
 Existing peers use this information to decide: "Can I send just deltas, or do I need to send the full state?"
 
-```rust
-/// Request to join a session
-JoinRequest {
-    /// ID of the node requesting to join
-    node_id: NodeId,
+**JoinRequest Message Structure**:
 
-    /// Session ID we're trying to join
-    session_id: SessionId,
+| Field | Type | Purpose |
+|-------|------|---------|
+| `node_id` | `NodeId` | Identifier of the joining node |
+| `session_id` | `SessionId` | Target session UUID |
+| `session_secret` | `Option<Vec<u8>>` | Authentication credential if session is password-protected |
+| `last_known_clock` | `Option<VectorClock>` | Vector clock from previous participation; `None` indicates fresh join requiring full state |
+| `join_type` | `JoinType` | Enum: `Fresh` or `Rejoin { last_active, entity_count }` |
 
-    /// Optional session secret for authentication
-    session_secret: Option<Vec<u8>>,
-
-    /// Our last known vector clock for this session (if rejoining)
-    /// None = fresh join (need full state)
-    /// Some = rejoin (only need deltas since this clock)
-    last_known_clock: Option<VectorClock>,
-
-    /// Are we rejoining or joining fresh?
-    join_type: JoinType,
-},
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum JoinType {
-    /// First time joining this session
-    Fresh,
-
-    /// Rejoining after disconnect/restart
-    Rejoin {
-        /// When we last left
-        last_active: DateTime<Utc>,
-
-        /// How many entities we had
-        entity_count: usize,
-    },
-}
-```
+The `last_known_clock` field is the key discriminator: its presence signals that the node has persistent state and only needs deltas, while its absence triggers full state transfer.
 
 ### Join Flow: Fresh Join
 
@@ -532,103 +423,40 @@ sequenceDiagram
 
 The join handler is a Bevy system that runs on existing peers and responds to incoming `JoinRequest` messages. Its responsibility is to decide whether to send full state or deltas based on the joining node's vector clock.
 
-The handler performs several critical validations:
+**Message Processing Loop**:
 
-1. **Session ID Validation**: Ensures the request is for the current session (prevents cross-session pollution)
-2. **Secret Validation**: If the session is password-protected, validates the provided secret using constant-time comparison
-3. **Clock Analysis**: Compares the requester's `last_known_clock` with the operation log to determine if deltas are feasible
-4. **Response Selection**: Chooses between sending `MissingDeltas` (for rejoins with <1000 operations) or `FullState` (for fresh joins or large deltas)
+The system polls the gossip bridge for incoming messages and filters for `JoinRequest` messages. For each request, it performs a multi-stage validation and response pipeline:
 
-The 1000-operation threshold is a heuristic: below this, sending individual deltas is more efficient than serializing the entire world. Above it, the overhead of transmitting many small deltas exceeds the cost of sending a snapshot.
+**Stage 1: Security Validation**
 
-```rust
-pub fn handle_join_request_system(
-    world: &World,
-    bridge: Res<GossipBridge>,
-    current_session: Res<CurrentSession>,
-    operation_log: Res<OperationLog>,
-    networked_entities: Query<(Entity, &NetworkedEntity)>,
-    type_registry: Res<AppTypeRegistry>,
-    node_clock: Res<NodeVectorClock>,
-) {
-    while let Some(message) = bridge.try_recv() {
-        match message.message {
-            SyncMessage::JoinRequest {
-                node_id,
-                session_id,
-                session_secret,
-                last_known_clock,
-                join_type,
-            } => {
-                // Validate session ID matches
-                if session_id != current_session.session.id {
-                    warn!("JoinRequest for wrong session: expected {}, got {}",
-                        current_session.session.id.to_code(),
-                        session_id.to_code());
-                    continue;
-                }
+1. **Session ID Check**: Verify the request is for the current session
+   - Mismatched session IDs are logged and rejected
+   - Prevents cross-session message pollution
+2. **Secret Validation**: If the session has a secret, validate the provided credential
+   - Uses constant-time comparison via `validate_session_secret()`
+   - Rejects requests with invalid or missing secrets
 
-                // Validate session secret if configured
-                if let Some(expected_secret) = &current_session.session.secret {
-                    match &session_secret {
-                        Some(provided) if validate_session_secret(provided, expected_secret).is_ok() => {
-                            info!("Session secret validated for node {}", node_id);
-                        }
-                        _ => {
-                            error!("JoinRequest from {} rejected: invalid secret", node_id);
-                            continue;
-                        }
-                    }
-                }
+**Stage 2: Delta Feasibility Analysis**
 
-                info!("Handling JoinRequest from {} ({:?})", node_id, join_type);
+The handler examines the `join_type` and `last_known_clock` fields:
 
-                // Decide: send deltas or full state?
-                let response = match (join_type, last_known_clock) {
-                    (JoinType::Rejoin { .. }, Some(their_clock)) => {
-                        // Check if we can send deltas
-                        let missing_deltas = operation_log.get_all_operations_newer_than(&their_clock);
+- **Fresh Join** (`join_type: Fresh` or `last_known_clock: None`):
+  - Always send `FullState` - no other option available
+  - Call `build_full_state_for_session()` to serialize all entities and components
 
-                        const MAX_DELTA_OPS: usize = 1000;
-                        if missing_deltas.len() <= MAX_DELTA_OPS {
-                            info!("Sending {} deltas to rejoining node {}", missing_deltas.len(), node_id);
-                            VersionedMessage::new(SyncMessage::MissingDeltas {
-                                deltas: missing_deltas,
-                            })
-                        } else {
-                            info!("Too many deltas ({}), sending FullState instead", missing_deltas.len());
-                            build_full_state_for_session(
-                                world,
-                                &networked_entities,
-                                &type_registry.read(),
-                                &node_clock,
-                                &session_id,
-                            )
-                        }
-                    }
-                    _ => {
-                        // Fresh join - send full state
-                        info!("Sending FullState to node {}", node_id);
-                        build_full_state_for_session(
-                            world,
-                            &networked_entities,
-                            &type_registry.read(),
-                            &node_clock,
-                            &session_id,
-                        )
-                    }
-                };
+- **Rejoin** (`join_type: Rejoin` with `last_known_clock: Some(clock)`):
+  - Query operation log: `get_all_operations_newer_than(their_clock)`
+  - Count missing operations
+  - If count ≤ 1000: Send `MissingDeltas` message with operation list
+  - If count > 1000: Send `FullState` instead (more efficient than 1000+ small messages)
 
-                // Send response
-                if let Err(e) = bridge.send(response) {
-                    error!("Failed to send join response: {}", e);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-```
+**Stage 3: Response Transmission**
+
+Send the constructed response message (`FullState` or `MissingDeltas`) over the gossip bridge. Log errors if transmission fails.
+
+**Design Rationale**:
+
+The 1000-operation threshold is a heuristic based on message overhead: below this, individual delta messages are smaller than a full world snapshot. Above it, the cost of serializing and transmitting 1000+ small messages exceeds the cost of sending one large snapshot. This threshold can be tuned based on profiling.
 
 ## Temporary Lock-based Ownership
 
@@ -643,10 +471,12 @@ To prevent CRDT conflicts on complex operations (e.g., multi-step drawing, entit
 **Design Principles:**
 - **Initiator-driven**: Locks are requested immediately when user interaction begins (e.g., clicking an object), not after waiting for server approval
 - **Optimistic**: The local client assumes the lock will succeed and allows immediate interaction; conflicts are resolved asynchronously
-- **Temporary**: Locks auto-expire after 5 seconds (default) to prevent orphaned locks from crashed nodes
+- **Temporary**: Locks auto-expire after 5 seconds to prevent orphaned locks from crashed nodes
 - **Advisory**: Locks are checked before delta generation, but the underlying CRDT still handles conflicts if locks fail
 - **Deterministic conflict resolution**: When two nodes request the same lock simultaneously, the higher node ID wins
 - **Auto-release**: Disconnected nodes automatically lose all their locks
+
+**Note**: The 5-second lock timeout is fixed in the initial implementation. Future versions may make this configurable per-entity-type or per-session based on UX requirements.
 
 ### Lock State Model
 
@@ -654,7 +484,7 @@ The lock system is implemented as a simple in-memory registry that tracks which 
 - **Entity ID**: Which entity is locked
 - **Holder**: Which node owns the lock
 - **Acquisition timestamp**: When the lock was acquired
-- **Timeout duration**: How long until auto-expiry (default 5 seconds)
+- **Timeout duration**: How long until auto-expiry (5 seconds)
 
 The `EntityLockRegistry` resource maintains a HashMap of entity ID to lock state, plus an acquisition history queue for rate limiting.
 
@@ -841,186 +671,84 @@ The integration is implemented through Bevy systems that run at specific lifecyc
 
 The session lifecycle is managed through two primary Bevy systems: one for initialization on startup, and one for persisting state on shutdown.
 
-```rust
-/// Load or create session on startup
-pub fn initialize_session_system(
-    mut commands: Commands,
-    db: Res<PersistenceDb>,
-) {
-    let conn = db.lock().unwrap();
+**Startup: `initialize_session_system`**
 
-    // Check for previous session
-    let session = match get_last_active_session(&conn) {
-        Ok(Some(session)) => {
-            info!("Resuming previous session: {}", session.id.to_code());
-            session
-        }
-        Ok(None) | Err(_) => {
-            info!("No previous session, creating new one");
-            let session = Session {
-                id: SessionId::new(),
-                name: None,
-                created_at: Utc::now(),
-                last_active: Utc::now(),
-                entity_count: 0,
-                state: SessionState::Created,
-                secret: None,
-            };
+On application startup, this system queries the database for the most recent active session:
 
-            // Persist to database
-            if let Err(e) = save_session(&conn, &session) {
-                error!("Failed to save new session: {}", e);
-            }
+1. **Session Discovery**: Query `sessions` table ordered by `last_active DESC` to find the most recent session
+2. **Decision Point**:
+   - If a session exists: Resume it (enables automatic rejoin after crashes)
+   - If no session exists: Create a new session with a random UUID and default state
+3. **Vector Clock Loading**: Load the session's vector clock from the database, or initialize an empty clock for new sessions
+4. **Resource Initialization**: Insert `CurrentSession` resource containing session metadata and the saved vector clock
 
-            session
-        }
-    };
+This enables crash recovery - if the app crashes and restarts, it automatically resumes the previous session and rejoins the network.
 
-    // Load vector clock for this session
-    let vector_clock = load_session_vector_clock(&conn, &session.id)
-        .unwrap_or_else(|_| VectorClock::new());
+**Shutdown: `save_session_state_system`**
 
-    // Insert as resource
-    commands.insert_resource(CurrentSession {
-        session: session.clone(),
-        vector_clock_at_join: vector_clock.clone(),
-    });
+On clean shutdown, this system persists the current session state:
 
-    info!("Session initialized: {}", session.id.to_code());
-}
+1. **Update Metadata**: Set `last_active` timestamp, count current entities, mark state as `Left`
+2. **Save Session**: Write session metadata to the `sessions` table using `INSERT OR REPLACE`
+3. **Save Vector Clock**: Transaction-based save that clears old clock entries and inserts current state for all known nodes
 
-/// Save session state on shutdown
-pub fn save_session_state_system(
-    current_session: Res<CurrentSession>,
-    node_clock: Res<NodeVectorClock>,
-    networked_entities: Query<&NetworkedEntity>,
-    db: Res<PersistenceDb>,
-) {
-    let mut conn = db.lock().unwrap();
-
-    // Update session metadata
-    let mut session = current_session.session.clone();
-    session.last_active = Utc::now();
-    session.entity_count = networked_entities.iter().count();
-    session.state = SessionState::Left;
-
-    if let Err(e) = save_session(&conn, &session) {
-        error!("Failed to save session state: {}", e);
-    }
-
-    // Save vector clock
-    if let Err(e) = save_session_vector_clock(&conn, &session.id, &node_clock.clock) {
-        error!("Failed to save vector clock: {}", e);
-    }
-
-    info!("Session state saved for {}", session.id.to_code());
-}
-```
+The vector clock save uses a transaction to ensure atomic updates - either all clock entries are saved, or none are. This prevents partial clock states that could cause sync issues on rejoin.
 
 ### Database Operations
 
-```rust
-/// Load the most recent active session
-pub fn get_last_active_session(conn: &Connection) -> Result<Option<Session>> {
-    let row = conn.query_row(
-        "SELECT id, name, created_at, last_active, entity_count, state, secret
-         FROM sessions
-         ORDER BY last_active DESC
-         LIMIT 1",
-        [],
-        |row| {
-            Ok(Session {
-                id: SessionId(Uuid::from_slice(&row.get::<_, Vec<u8>>(0)?)?),
-                name: row.get(1)?,
-                created_at: timestamp_to_datetime(row.get(2)?),
-                last_active: timestamp_to_datetime(row.get(3)?),
-                entity_count: row.get(4)?,
-                state: parse_session_state(&row.get::<_, String>(5)?),
-                secret: row.get(6)?,
-            })
-        },
-    ).optional()?;
+The persistence layer provides several key database operations:
 
-    Ok(row)
-}
+**Session Queries**:
+- `get_last_active_session()`: Queries the most recent session by `last_active DESC`, returns `Option<Session>`
+- `save_session()`: Upserts session metadata using `INSERT OR REPLACE`, persisting all session fields
 
-/// Save session metadata
-pub fn save_session(conn: &Connection, session: &Session) -> Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO sessions (id, name, created_at, last_active, entity_count, state, secret)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            session.id.0.as_bytes(),
-            session.name,
-            session.created_at.timestamp(),
-            session.last_active.timestamp(),
-            session.entity_count,
-            format!("{:?}", session.state).to_lowercase(),
-            session.secret,
-        ],
-    )?;
+**Vector Clock Persistence**:
+- `load_session_vector_clock()`: Queries all `node_id`/`counter` pairs for a session, rebuilding the HashMap
+- `save_session_vector_clock()`: Transactional save that deletes old entries then inserts current clock state
 
-    Ok(())
-}
-
-/// Load vector clock for a session
-pub fn load_session_vector_clock(conn: &Connection, session_id: &SessionId) -> Result<VectorClock> {
-    let mut clock = VectorClock::new();
-
-    let mut stmt = conn.prepare(
-        "SELECT node_id, counter
-         FROM vector_clock
-         WHERE session_id = ?1"
-    )?;
-
-    let rows = stmt.query_map([session_id.0.as_bytes()], |row| {
-        let node_str: String = row.get(0)?;
-        let counter: u64 = row.get(1)?;
-        Ok((Uuid::parse_str(&node_str).unwrap(), counter))
-    })?;
-
-    for row in rows {
-        let (node_id, counter) = row?;
-        clock.clocks.insert(node_id, counter);
-    }
-
-    Ok(clock)
-}
-
-/// Save vector clock for a session
-pub fn save_session_vector_clock(
-    conn: &mut Connection,
-    session_id: &SessionId,
-    clock: &VectorClock,
-) -> Result<()> {
-    let tx = conn.transaction()?;
-
-    // Clear old clocks for this session
-    tx.execute(
-        "DELETE FROM vector_clock WHERE session_id = ?1",
-        [session_id.0.as_bytes()],
-    )?;
-
-    // Insert current clocks
-    for (node_id, counter) in &clock.clocks {
-        tx.execute(
-            "INSERT INTO vector_clock (session_id, node_id, counter, updated_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                session_id.0.as_bytes(),
-                node_id.to_string(),
-                counter,
-                Utc::now().timestamp(),
-            ],
-        )?;
-    }
-
-    tx.commit()?;
-    Ok(())
-}
-```
+All operations use parameterized queries to prevent SQL injection and handle optional fields (like `name` and `secret`) correctly. Session IDs are stored as 16-byte BLOBs for efficiency.
 
 ## Implementation Roadmap
+
+### Documentation Standards
+
+All public APIs should follow Rust documentation conventions with comprehensive docstrings. Expected format:
+
+```rust
+/// Derives a session-specific ALPN identifier for network isolation.
+///
+/// This function computes a deterministic 32-byte BLAKE3 hash from the session ID,
+/// using a domain separation prefix to prevent collisions with other protocol uses.
+/// All peers independently compute the same ALPN from a given session code, enabling
+/// decentralized coordination without a central authority.
+///
+/// # Arguments
+/// * `session_id` - The unique session identifier
+///
+/// # Returns
+/// A 32-byte BLAKE3 hash suitable for use as an ALPN protocol identifier
+///
+/// # Example
+/// ```
+/// let session = SessionId::new();
+/// let alpn = derive_alpn_from_session(&session);
+/// assert_eq!(alpn.len(), 32);
+/// ```
+///
+/// # Security
+/// The domain separation prefix (`/app/v1/session-id/`) ensures ALPNs cannot
+/// collide with other protocol uses of the same hash space.
+pub fn derive_alpn_from_session(session_id: &SessionId) -> [u8; 32]
+```
+
+Key documentation elements:
+- **Summary**: One-line description of purpose
+- **Detailed explanation**: How it works and why
+- **Arguments**: All parameters with types and descriptions
+- **Returns**: What the function produces
+- **Examples**: Working code demonstrating usage
+- **Panics/Errors**: Document failure conditions
+- **Security/Safety**: Highlight security-critical behavior
 
 ### Phase 1: Session Data Model & Persistence
 - Create `SessionId`, `Session`, `SessionState` types
@@ -1121,6 +849,24 @@ pub fn save_session_vector_clock(
 - Vector clock + LWW determines final state
 - Locks are advisory (CRDTs provide safety net)
 
+**Convergence Behavior**:
+
+When the partition heals, the gossip protocol reconnects and nodes exchange their full state. The CRDT merge process happens automatically:
+1. Vector clocks from both partitions are compared
+2. Operations with concurrent clocks are merged using Last-Write-Wins (LWW) based on timestamps
+3. The final state reflects the operation with the highest timestamp
+4. Convergence typically completes within 1-2 seconds after reconnection
+
+**UX Implications**:
+
+Users in the "losing" partition may see their changes overridden. To minimize surprise:
+- Visual indicator shows when the app is disconnected (yellow/orange connection status)
+- On reconnection, entities that changed display a brief animation/highlight
+- A notification shows "Reconnected - syncing changes" with entity count
+- Changes made during disconnection that were overridden could be logged for potential manual recovery (future enhancement)
+
+The system prioritizes consistency over preserving every edit during splits, which is acceptable for collaborative creative work where real-time coordination is expected.
+
 ## Security Considerations
 
 Security in a peer-to-peer collaborative environment requires careful balance between usability and protection. This RFC addresses two primary security concerns: session access control and protocol integrity.
@@ -1134,34 +880,22 @@ The secret is hashed using BLAKE3 before comparison, ensuring that:
 - Timing analysis cannot reveal secret length or content
 - Fast validation (BLAKE3 is extremely performant)
 
-```rust
-/// Validate session secret using constant-time comparison
-pub fn validate_session_secret(provided: &[u8], expected: &[u8]) -> Result<(), AuthError> {
-    use subtle::ConstantTimeEq;
-
-    let provided_hash = blake3::hash(provided);
-    let expected_hash = blake3::hash(expected);
-
-    if provided_hash.as_bytes().ct_eq(expected_hash.as_bytes()).into() {
-        Ok(())
-    } else {
-        Err(AuthError::InvalidSecret)
-    }
-}
-```
+The validation function uses the `subtle` crate's `ConstantTimeEq` trait to perform constant-time comparison of the hashed secrets, preventing timing-based attacks that could leak information about the secret.
 
 ### Rate Limiting
 
-```rust
-// In EntityLockRegistry
-const MAX_LOCKS_PER_NODE: usize = 100;
-const MAX_LOCK_REQUESTS_PER_SEC: usize = 10;
+To prevent abuse and buggy clients from monopolizing resources, the lock system implements two rate limits:
 
-// Prevent lock spamming
-if self.locks_held_by(node_id) >= MAX_LOCKS_PER_NODE {
-    return Err(LockError::TooManyLocks);
-}
-```
+1. **Total Locks per Node**: Maximum 100 concurrent locks per node
+   - Prevents a single node from locking every entity in the session
+   - Ensures entities remain available for other participants
+
+2. **Acquisition Rate**: Maximum 10 lock requests per second per node
+   - Prevents rapid lock spamming attacks
+   - Tracked via a rolling 60-second acquisition history queue
+   - Old entries are pruned to prevent memory growth
+
+When a rate limit is exceeded, the lock request returns a `LockError::RateLimited` error. The requesting node's UI should display appropriate feedback to the user.
 
 ## Performance Considerations
 
@@ -1209,6 +943,14 @@ This streaming approach provides several UX benefits:
 - **Bandwidth monitoring**: Progress meter shows transfer is active and not stalled
 
 The 100x bandwidth improvement for delta-based rejoins remains the primary optimization, but streaming ensures fresh joins also have good UX.
+
+**Implementation Notes**:
+
+Several implementation details are deferred to Phase 3 (Hybrid Join Protocol):
+- **Dependency Ordering**: Entities with parent-child relationships or component references will be sorted before streaming to ensure dependencies arrive before dependents
+- **Message Size Limits**: Batch size (50-100 entities) will be dynamically adjusted based on average entity serialization size to stay under QUIC message size limits (~1 MB)
+- **Retry Mechanism**: Missing entity ranges are tracked and can be requested via `RequestMissingEntities { start_index, end_index }` if gaps are detected
+- **Cancellation**: If the user abandons the join before completion, in-flight batches are discarded and the partial state is cleared
 
 ## Testing Strategy
 
