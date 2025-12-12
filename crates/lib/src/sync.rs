@@ -195,18 +195,29 @@ mod tests {
         let node1 = uuid::Uuid::from_u128(1);
         let node2 = uuid::Uuid::from_u128(2);
 
-        // Create SyncedValue FIRST, then capture a timestamp that's guaranteed to be newer
+        // Create SyncedValue FIRST, then capture a timestamp that's guaranteed to be
+        // newer
         let mut lww = SyncedValue::new(100, node1);
         std::thread::sleep(std::time::Duration::from_millis(1)); // Ensure ts is after init
         let ts = Utc::now();
 
         // Apply update from node1 at timestamp ts
         lww.apply_lww(100, ts, node1);
-        println!("After node1 update: value={}, ts={:?}, node={}", lww.get(), lww.timestamp, lww.node_id);
+        println!(
+            "After node1 update: value={}, ts={:?}, node={}",
+            lww.get(),
+            lww.timestamp,
+            lww.node_id
+        );
 
         // Apply conflicting update from node2 at SAME timestamp
         lww.apply_lww(200, ts, node2);
-        println!("After node2 update: value={}, ts={:?}, node={}", lww.get(), lww.timestamp, lww.node_id);
+        println!(
+            "After node2 update: value={}, ts={:?}, node={}",
+            lww.get(),
+            lww.timestamp,
+            lww.node_id
+        );
 
         // node2 > node1, so value2 should win
         assert_eq!(*lww.get(), 200, "Higher node_id should win tiebreaker");

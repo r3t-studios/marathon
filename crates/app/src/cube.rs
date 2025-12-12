@@ -2,10 +2,17 @@
 
 use bevy::prelude::*;
 use lib::{
-    networking::{NetworkedEntity, NetworkedTransform, Synced},
+    networking::{
+        NetworkedEntity,
+        NetworkedTransform,
+        Synced,
+    },
     persistence::Persisted,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use uuid::Uuid;
 
 /// Marker component for the replicated cube

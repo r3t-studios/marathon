@@ -9,7 +9,9 @@ use serde::{
 };
 
 use crate::networking::{
+    locks::LockMessage,
     operations::ComponentOp,
+    session::SessionId,
     vector_clock::{
         NodeId,
         VectorClock,
@@ -42,6 +44,22 @@ impl VersionedMessage {
     }
 }
 
+/// Join request type - distinguishes fresh joins from rejoin attempts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum JoinType {
+    /// Fresh join - never connected to this session before
+    Fresh,
+
+    /// Rejoin - returning to a session we left earlier
+    Rejoin {
+        /// When we were last active in this session (Unix timestamp)
+        last_active: i64,
+
+        /// Cached entity count from when we left
+        entity_count: usize,
+    },
+}
+
 /// CRDT synchronization protocol messages
 ///
 /// These messages implement the sync protocol defined in RFC 0001.
@@ -56,14 +74,25 @@ impl VersionedMessage {
 pub enum SyncMessage {
     /// Request to join the network and receive full state
     ///
-    /// Sent by a new peer when it first connects. The response will be a
-    /// `FullState` message containing all entities and their components.
+    /// Sent by a new peer when it first connects. For fresh joins, the response
+    /// will be a `FullState` message. For rejoins with small deltas (<1000 ops),
+    /// the response will be `MissingDeltas`.
     JoinRequest {
         /// ID of the node requesting to join
         node_id: NodeId,
 
+        /// Session ID to join
+        session_id: SessionId,
+
         /// Optional session secret for authentication
         session_secret: Option<Vec<u8>>,
+
+        /// Vector clock from when we last left this session
+        /// None = fresh join, Some = rejoin
+        last_known_clock: Option<VectorClock>,
+
+        /// Type of join (fresh or rejoin with metadata)
+        join_type: JoinType,
     },
 
     /// Complete world state sent to new peers
@@ -116,6 +145,12 @@ pub enum SyncMessage {
         /// Entity deltas that the recipient is missing
         deltas: Vec<EntityDelta>,
     },
+
+    /// Entity lock protocol messages
+    ///
+    /// Used for collaborative editing to prevent concurrent modifications.
+    /// Locks are acquired when entities are selected and released when deselected.
+    Lock(LockMessage),
 }
 
 /// Complete state of a single entity
@@ -262,9 +297,13 @@ mod tests {
     #[test]
     fn test_versioned_message_creation() {
         let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
         let message = SyncMessage::JoinRequest {
             node_id,
+            session_id,
             session_secret: None,
+            last_known_clock: None,
+            join_type: JoinType::Fresh,
         };
 
         let versioned = VersionedMessage::new(message);
@@ -306,9 +345,13 @@ mod tests {
     #[test]
     fn test_message_serialization() -> bincode::Result<()> {
         let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
         let message = SyncMessage::JoinRequest {
             node_id,
+            session_id,
             session_secret: None,
+            last_known_clock: None,
+            join_type: JoinType::Fresh,
         };
 
         let versioned = VersionedMessage::new(message);
@@ -340,6 +383,134 @@ mod tests {
 
         let bytes = bincode::serialize(&message)?;
         let _deserialized: SyncMessage = bincode::deserialize(&bytes)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_join_type_fresh() {
+        let join_type = JoinType::Fresh;
+
+        // Fresh join should serialize correctly
+        let bytes = bincode::serialize(&join_type).unwrap();
+        let deserialized: JoinType = bincode::deserialize(&bytes).unwrap();
+
+        assert!(matches!(deserialized, JoinType::Fresh));
+    }
+
+    #[test]
+    fn test_join_type_rejoin() {
+        let join_type = JoinType::Rejoin {
+            last_active: 1234567890,
+            entity_count: 42,
+        };
+
+        // Rejoin should serialize correctly
+        let bytes = bincode::serialize(&join_type).unwrap();
+        let deserialized: JoinType = bincode::deserialize(&bytes).unwrap();
+
+        match deserialized {
+            | JoinType::Rejoin {
+                last_active,
+                entity_count,
+            } => {
+                assert_eq!(last_active, 1234567890);
+                assert_eq!(entity_count, 42);
+            },
+            | _ => panic!("Expected JoinType::Rejoin"),
+        }
+    }
+
+    #[test]
+    fn test_hybrid_join_protocol_fresh() {
+        // Fresh join should have no last_known_clock
+        let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
+        let message = SyncMessage::JoinRequest {
+            node_id,
+            session_id,
+            session_secret: None,
+            last_known_clock: None,
+            join_type: JoinType::Fresh,
+        };
+
+        let bytes = bincode::serialize(&message).unwrap();
+        let deserialized: SyncMessage = bincode::deserialize(&bytes).unwrap();
+
+        match deserialized {
+            | SyncMessage::JoinRequest {
+                join_type,
+                last_known_clock,
+                ..
+            } => {
+                assert!(matches!(join_type, JoinType::Fresh));
+                assert!(last_known_clock.is_none());
+            },
+            | _ => panic!("Expected JoinRequest"),
+        }
+    }
+
+    #[test]
+    fn test_hybrid_join_protocol_rejoin() {
+        // Rejoin should have last_known_clock
+        let node_id = uuid::Uuid::new_v4();
+        let session_id = SessionId::new();
+        let clock = VectorClock::new();
+        let message = SyncMessage::JoinRequest {
+            node_id,
+            session_id,
+            session_secret: None,
+            last_known_clock: Some(clock.clone()),
+            join_type: JoinType::Rejoin {
+                last_active: 1234567890,
+                entity_count: 100,
+            },
+        };
+
+        let bytes = bincode::serialize(&message).unwrap();
+        let deserialized: SyncMessage = bincode::deserialize(&bytes).unwrap();
+
+        match deserialized {
+            | SyncMessage::JoinRequest {
+                join_type,
+                last_known_clock,
+                ..
+            } => {
+                assert!(matches!(join_type, JoinType::Rejoin { .. }));
+                assert_eq!(last_known_clock, Some(clock));
+            },
+            | _ => panic!("Expected JoinRequest"),
+        }
+    }
+
+    #[test]
+    fn test_missing_deltas_serialization() -> bincode::Result<()> {
+        // Test that MissingDeltas message serializes correctly
+        let node_id = uuid::Uuid::new_v4();
+        let entity_id = uuid::Uuid::new_v4();
+        let clock = VectorClock::new();
+
+        let delta = EntityDelta {
+            entity_id,
+            node_id,
+            vector_clock: clock,
+            operations: vec![],
+        };
+
+        let message = SyncMessage::MissingDeltas {
+            deltas: vec![delta],
+        };
+
+        let bytes = bincode::serialize(&message)?;
+        let deserialized: SyncMessage = bincode::deserialize(&bytes)?;
+
+        match deserialized {
+            | SyncMessage::MissingDeltas { deltas } => {
+                assert_eq!(deltas.len(), 1);
+                assert_eq!(deltas[0].entity_id, entity_id);
+            },
+            | _ => panic!("Expected MissingDeltas"),
+        }
 
         Ok(())
     }

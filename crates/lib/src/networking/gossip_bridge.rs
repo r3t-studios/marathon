@@ -144,14 +144,22 @@ mod tests {
 
     #[test]
     fn test_send_message() {
-        use crate::networking::SyncMessage;
+        use crate::networking::{
+            JoinType,
+            SessionId,
+            SyncMessage,
+        };
 
         let node_id = uuid::Uuid::new_v4();
         let bridge = GossipBridge::new(node_id);
+        let session_id = SessionId::new();
 
         let message = SyncMessage::JoinRequest {
             node_id,
+            session_id,
             session_secret: None,
+            last_known_clock: None,
+            join_type: JoinType::Fresh,
         };
         let versioned = VersionedMessage::new(message);
 

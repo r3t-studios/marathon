@@ -15,12 +15,21 @@ fn test_gossip_bridge_creation() {
 
 #[test]
 fn test_gossip_bridge_send() {
+    use lib::networking::{
+        JoinType,
+        SessionId,
+    };
+
     let node_id = uuid::Uuid::new_v4();
     let bridge = init_gossip_bridge(node_id);
+    let session_id = SessionId::new();
 
     let message = SyncMessage::JoinRequest {
         node_id,
+        session_id,
         session_secret: None,
+        last_known_clock: None,
+        join_type: JoinType::Fresh,
     };
     let versioned = VersionedMessage::new(message);
 

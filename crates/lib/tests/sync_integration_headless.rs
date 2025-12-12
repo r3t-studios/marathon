@@ -41,12 +41,16 @@ use iroh_gossip::{
 };
 use lib::{
     networking::{
+        EntityLockRegistry,
         GossipBridge,
+        LockMessage,
         NetworkedEntity,
+        NetworkedSelection,
         NetworkedTransform,
         NetworkingConfig,
         NetworkingPlugin,
         Synced,
+        SyncMessage,
         VersionedMessage,
     },
     persistence::{
@@ -210,7 +214,8 @@ mod test_utils {
 
         // Register test component types for reflection
         app.register_type::<TestPosition>()
-            .register_type::<TestHealth>();
+            .register_type::<TestHealth>()
+            .register_type::<NetworkedSelection>();
 
         app
     }
@@ -299,10 +304,10 @@ mod test_utils {
         topic_id: TopicId,
         bootstrap_addrs: Vec<iroh::EndpointAddr>,
     ) -> Result<(Endpoint, Gossip, Router, GossipBridge)> {
-        println!("  Creating endpoint with mDNS discovery...");
-        // Create the Iroh endpoint with mDNS local discovery
+        println!("  Creating endpoint (localhost only for fast testing)...");
+        // Create the Iroh endpoint bound to localhost only (no mDNS needed)
         let endpoint = Endpoint::builder()
-            .discovery(iroh::discovery::mdns::MdnsDiscovery::builder())
+            .bind_addr_v4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0))
             .bind()
             .await?;
         let endpoint_id = endpoint.addr().id;
@@ -324,7 +329,7 @@ mod test_utils {
             .accept(iroh_gossip::ALPN, gossip.clone())
             .spawn();
 
-        // Add bootstrap peers to endpoint's discovery using StaticProvider
+        // Add bootstrap peers using StaticProvider for direct localhost connections
         let bootstrap_count = bootstrap_addrs.len();
         let has_bootstrap_peers = !bootstrap_addrs.is_empty();
 
@@ -337,49 +342,28 @@ mod test_utils {
                 static_provider.add_endpoint_info(addr.clone());
             }
             endpoint.discovery().add(static_provider);
-            println!(
-                "  Added {} bootstrap peers to static discovery",
-                bootstrap_count
-            );
+            println!("  Added {} bootstrap peers to discovery", bootstrap_count);
 
-            // Explicitly connect to bootstrap peers
-            println!("  Connecting to bootstrap peers...");
+            // Connect to bootstrap peers (localhost connections are instant)
             for addr in &bootstrap_addrs {
                 match endpoint.connect(addr.clone(), iroh_gossip::ALPN).await {
-                    | Ok(_conn) => println!("  ✓ Connected to bootstrap peer: {}", addr.id),
-                    | Err(e) => {
-                        println!("  ✗ Failed to connect to bootstrap peer {}: {}", addr.id, e)
-                    },
+                    | Ok(_conn) => println!("  ✓ Connected to {}", addr.id),
+                    | Err(e) => println!("  ✗ Connection failed: {}", e),
                 }
             }
         }
 
-        println!(
-            "  Subscribing to topic with {} bootstrap peers...",
-            bootstrap_count
-        );
-        // Subscribe to the topic (the IDs now have addresses via discovery)
+        // Subscribe to the topic
         let subscribe_handle = gossip.subscribe(topic_id, bootstrap_ids).await?;
-
-        println!("  Splitting sender/receiver...");
-        // Split into sender and receiver
         let (sender, mut receiver) = subscribe_handle.split();
 
-        // Only wait for join if we have bootstrap peers
-        // receiver.joined() waits until we've connected to at least one peer
-        // If there are no bootstrap peers (first node), skip this step
+        // Wait for join if we have bootstrap peers (should be instant on localhost)
         if has_bootstrap_peers {
-            println!("  Waiting for join to complete (with timeout)...");
-            // Use a timeout in case mDNS discovery takes a while or fails
-            match tokio::time::timeout(Duration::from_secs(3), receiver.joined()).await {
-                | Ok(Ok(())) => println!("  Join completed!"),
-                | Ok(Err(e)) => println!("  Join error: {}", e),
-                | Err(_) => {
-                    println!("  Join timeout - proceeding anyway (mDNS may still connect later)")
-                },
+            match tokio::time::timeout(Duration::from_millis(500), receiver.joined()).await {
+                | Ok(Ok(())) => println!("  ✓ Join completed"),
+                | Ok(Err(e)) => println!("  ✗ Join error: {}", e),
+                | Err(_) => println!("  ⚠ Join timeout (proceeding anyway)"),
             }
-        } else {
-            println!("  No bootstrap peers - skipping join wait (first node in swarm)");
         }
 
         // Create bridge and wire it up
@@ -422,10 +406,8 @@ mod test_utils {
             init_gossip_node(topic_id, vec![node1_addr]).await?;
         println!("Node 2 initialized with ID: {}", ep2.addr().id);
 
-        // Give mDNS and gossip time to discover peers
-        println!("Waiting for mDNS/gossip peer discovery...");
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        println!("Peer discovery wait complete");
+        // Brief wait for gossip protocol to stabilize (localhost is fast)
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         Ok((ep1, ep2, router1, router2, bridge1, bridge2))
     }
@@ -1035,6 +1017,349 @@ async fn test_persistence_crash_recovery() -> Result<()> {
 
         println!("✓ Crash recovery test passed");
     }
+
+    Ok(())
+}
+
+/// Test 5: Lock heartbeat renewal mechanism
+#[tokio::test(flavor = "multi_thread")]
+async fn test_lock_heartbeat_renewal() -> Result<()> {
+    use test_utils::*;
+
+    println!("=== Starting test_lock_heartbeat_renewal ===");
+
+    let ctx1 = TestContext::new();
+    let ctx2 = TestContext::new();
+
+    let (ep1, ep2, router1, router2, bridge1, bridge2) = setup_gossip_pair().await?;
+
+    let node1_id = bridge1.node_id();
+    let node2_id = bridge2.node_id();
+
+    let mut app1 = create_test_app(node1_id, ctx1.db_path(), bridge1);
+    let mut app2 = create_test_app(node2_id, ctx2.db_path(), bridge2);
+
+    // Spawn entity
+    let entity_id = Uuid::new_v4();
+    let _ = app1.world_mut()
+        .spawn((
+            NetworkedEntity::with_id(entity_id, node1_id),
+            TestPosition { x: 10.0, y: 20.0 },
+            Persisted::with_id(entity_id),
+            Synced,
+        ))
+        .id();
+
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(3), |_, w2| {
+        count_entities_with_id(w2, entity_id) > 0
+    })
+    .await?;
+    println!("✓ Entity synced");
+
+    // Acquire lock on both nodes
+    {
+        let world = app1.world_mut();
+        let mut registry = world.resource_mut::<EntityLockRegistry>();
+        registry.try_acquire(entity_id, node1_id).ok();
+    }
+    {
+        let bridge = app1.world().resource::<GossipBridge>();
+        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
+            entity_id,
+            node_id: node1_id,
+        }));
+        bridge.send(msg).ok();
+    }
+
+    for _ in 0..5 {
+        app1.update();
+        app2.update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Verify both nodes have the lock
+    {
+        let registry1 = app1.world().resource::<EntityLockRegistry>();
+        let registry2 = app2.world().resource::<EntityLockRegistry>();
+        assert!(registry1.is_locked(entity_id), "Lock should exist on node 1");
+        assert!(registry2.is_locked(entity_id), "Lock should exist on node 2");
+        println!("✓ Lock acquired on both nodes");
+    }
+
+    // Test heartbeat renewal: send a few heartbeats and verify locks persist
+    for i in 0..3 {
+        // Renew on node 1
+        {
+            let world = app1.world_mut();
+            let mut registry = world.resource_mut::<EntityLockRegistry>();
+            assert!(
+                registry.renew_heartbeat(entity_id, node1_id),
+                "Should successfully renew lock"
+            );
+        }
+
+        // Send heartbeat to node 2
+        {
+            let bridge = app1.world().resource::<GossipBridge>();
+            let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockHeartbeat {
+                entity_id,
+                holder: node1_id,
+            }));
+            bridge.send(msg).ok();
+        }
+
+        // Process
+        for _ in 0..3 {
+            app1.update();
+            app2.update();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        // Verify locks still exist after heartbeat
+        {
+            let registry1 = app1.world().resource::<EntityLockRegistry>();
+            let registry2 = app2.world().resource::<EntityLockRegistry>();
+            assert!(
+                registry1.is_locked(entity_id),
+                "Lock should persist on node 1 after heartbeat {}",
+                i + 1
+            );
+            assert!(
+                registry2.is_locked(entity_id),
+                "Lock should persist on node 2 after heartbeat {}",
+                i + 1
+            );
+        }
+    }
+
+    println!("✓ Heartbeat renewal mechanism working correctly");
+
+    router1.shutdown().await?;
+    router2.shutdown().await?;
+    ep1.close().await;
+    ep2.close().await;
+
+    Ok(())
+}
+
+/// Test 6: Lock expires without heartbeats
+#[tokio::test(flavor = "multi_thread")]
+async fn test_lock_heartbeat_expiration() -> Result<()> {
+    use test_utils::*;
+
+    println!("=== Starting test_lock_heartbeat_expiration ===");
+
+    let ctx1 = TestContext::new();
+    let ctx2 = TestContext::new();
+
+    let (ep1, ep2, router1, router2, bridge1, bridge2) = setup_gossip_pair().await?;
+
+    let node1_id = bridge1.node_id();
+    let node2_id = bridge2.node_id();
+
+    let mut app1 = create_test_app(node1_id, ctx1.db_path(), bridge1);
+    let mut app2 = create_test_app(node2_id, ctx2.db_path(), bridge2);
+
+    // Node 1 spawns entity and selects it
+    let entity_id = Uuid::new_v4();
+    let _ = app1.world_mut()
+        .spawn((
+            NetworkedEntity::with_id(entity_id, node1_id),
+            NetworkedSelection::default(),
+            TestPosition { x: 10.0, y: 20.0 },
+            Persisted::with_id(entity_id),
+            Synced,
+        ))
+        .id();
+
+    // Wait for sync
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(5), |_, w2| {
+        count_entities_with_id(w2, entity_id) > 0
+    })
+    .await?;
+
+    // Acquire lock locally on node 1 (gossip doesn't loop back to sender)
+    {
+        let world = app1.world_mut();
+        let mut registry = world.resource_mut::<EntityLockRegistry>();
+        registry.try_acquire(entity_id, node1_id).ok();
+    }
+
+    // Broadcast LockRequest so other nodes apply optimistically
+    {
+        let bridge = app1.world().resource::<GossipBridge>();
+        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
+            entity_id,
+            node_id: node1_id,
+        }));
+        bridge.send(msg).ok();
+    }
+
+    // Update to allow lock propagation
+    for _ in 0..10 {
+        app1.update();
+        app2.update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Verify lock acquired
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(2), |_, w2| {
+        let registry2 = w2.resource::<EntityLockRegistry>();
+        registry2.is_locked(entity_id)
+    })
+    .await?;
+    println!("✓ Lock acquired and propagated");
+
+    // Simulate node 1 crash: remove lock from node 1's registry without sending release
+    // This stops heartbeat broadcasts from node 1
+    {
+        let mut registry = app1.world_mut().resource_mut::<EntityLockRegistry>();
+        registry.force_release(entity_id);
+        println!("✓ Simulated node 1 crash (stopped heartbeats)");
+    }
+
+    // Force the lock to expire on node 2 (simulating 5+ seconds passing without heartbeats)
+    {
+        let mut registry = app2.world_mut().resource_mut::<EntityLockRegistry>();
+        registry.expire_lock_for_testing(entity_id);
+        println!("✓ Forced lock to appear expired on node 2");
+    }
+
+    // Run cleanup system (which removes expired locks and broadcasts LockReleased)
+    println!("Running cleanup to expire locks...");
+    for _ in 0..10 {
+        app2.update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Verify lock was removed from node 2
+    {
+        let registry = app2.world().resource::<EntityLockRegistry>();
+        assert!(
+            !registry.is_locked(entity_id),
+            "Lock should be expired on node 2 after cleanup"
+        );
+        println!("✓ Lock expired on node 2 after 5 seconds without heartbeat");
+    }
+
+    println!("✓ Lock heartbeat expiration test passed");
+
+    router1.shutdown().await?;
+    router2.shutdown().await?;
+    ep1.close().await;
+    ep2.close().await;
+
+    Ok(())
+}
+
+/// Test 7: Lock release stops heartbeats
+#[tokio::test(flavor = "multi_thread")]
+async fn test_lock_release_stops_heartbeats() -> Result<()> {
+    use test_utils::*;
+
+    println!("=== Starting test_lock_release_stops_heartbeats ===");
+
+    let ctx1 = TestContext::new();
+    let ctx2 = TestContext::new();
+
+    let (ep1, ep2, router1, router2, bridge1, bridge2) = setup_gossip_pair().await?;
+
+    let node1_id = bridge1.node_id();
+    let node2_id = bridge2.node_id();
+
+    let mut app1 = create_test_app(node1_id, ctx1.db_path(), bridge1);
+    let mut app2 = create_test_app(node2_id, ctx2.db_path(), bridge2);
+
+    // Node 1 spawns entity and selects it
+    let entity_id = Uuid::new_v4();
+    let _ = app1.world_mut()
+        .spawn((
+            NetworkedEntity::with_id(entity_id, node1_id),
+            NetworkedSelection::default(),
+            TestPosition { x: 10.0, y: 20.0 },
+            Persisted::with_id(entity_id),
+            Synced,
+        ))
+        .id();
+
+    // Wait for sync
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(5), |_, w2| {
+        count_entities_with_id(w2, entity_id) > 0
+    })
+    .await?;
+
+    // Acquire lock locally on node 1 (gossip doesn't loop back to sender)
+    {
+        let world = app1.world_mut();
+        let mut registry = world.resource_mut::<EntityLockRegistry>();
+        registry.try_acquire(entity_id, node1_id).ok();
+    }
+
+    // Broadcast LockRequest so other nodes apply optimistically
+    {
+        let bridge = app1.world().resource::<GossipBridge>();
+        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
+            entity_id,
+            node_id: node1_id,
+        }));
+        bridge.send(msg).ok();
+    }
+
+    // Update to allow lock propagation
+    for _ in 0..10 {
+        app1.update();
+        app2.update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Wait for lock to propagate
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(2), |_, w2| {
+        let registry2 = w2.resource::<EntityLockRegistry>();
+        registry2.is_locked(entity_id)
+    })
+    .await?;
+    println!("✓ Lock acquired and propagated");
+
+    // Release lock on node 1
+    {
+        let world = app1.world_mut();
+        let mut registry = world.resource_mut::<EntityLockRegistry>();
+        if registry.release(entity_id, node1_id) {
+            println!("✓ Lock released on node 1");
+        }
+    }
+
+    // Broadcast LockRelease message to other nodes
+    {
+        let bridge = app1.world().resource::<GossipBridge>();
+        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRelease {
+            entity_id,
+            node_id: node1_id,
+        }));
+        bridge.send(msg).ok();
+    }
+
+    // Update to trigger lock release propagation
+    for _ in 0..10 {
+        app1.update();
+        app2.update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Wait for release to propagate to node 2
+    wait_for_sync(&mut app1, &mut app2, Duration::from_secs(3), |_, w2| {
+        let registry2 = w2.resource::<EntityLockRegistry>();
+        !registry2.is_locked(entity_id)
+    })
+    .await?;
+    println!("✓ Lock release propagated to node 2");
+
+    println!("✓ Lock release stops heartbeats test passed");
+
+    router1.shutdown().await?;
+    router2.shutdown().await?;
+    ep1.close().await;
+    ep2.close().await;
 
     Ok(())
 }

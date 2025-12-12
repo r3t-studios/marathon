@@ -1,7 +1,8 @@
 //! Gossip networking setup with dedicated tokio runtime
 //!
-//! This module manages iroh-gossip networking with a tokio runtime running as a sidecar to Bevy.
-//! The tokio runtime runs in a dedicated background thread, separate from Bevy's ECS loop.
+//! This module manages iroh-gossip networking with a tokio runtime running as a
+//! sidecar to Bevy. The tokio runtime runs in a dedicated background thread,
+//! separate from Bevy's ECS loop.
 //!
 //! # Architecture
 //!
@@ -48,8 +49,15 @@
 
 use anyhow::Result;
 use bevy::prelude::*;
-use lib::networking::GossipBridge;
+use lib::networking::{GossipBridge, SessionId};
 use uuid::Uuid;
+
+/// Session ID to use for network initialization
+///
+/// This resource must be inserted before setup_gossip_networking runs.
+/// It provides the session ID used to derive the session-specific ALPN.
+#[derive(Resource, Clone)]
+pub struct InitialSessionId(pub SessionId);
 
 /// Channel for receiving the GossipBridge from the background thread
 ///
@@ -69,8 +77,21 @@ pub struct GossipBridgeChannel(crossbeam_channel::Receiver<GossipBridge>);
 ///
 /// - **macOS**: Full support with mDNS discovery
 /// - **iOS**: Not yet implemented
-pub fn setup_gossip_networking(mut commands: Commands) {
-    info!("Setting up gossip networking...");
+///
+/// # Requirements
+///
+/// The InitialSessionId resource must be inserted before this system runs.
+/// If not present, an error is logged and networking is disabled.
+pub fn setup_gossip_networking(
+    mut commands: Commands,
+    session_id: Option<Res<InitialSessionId>>,
+) {
+    let Some(session_id) = session_id else {
+        error!("InitialSessionId resource not found - cannot initialize networking");
+        return;
+    };
+
+    info!("Setting up gossip networking for session {}...", session_id.0);
 
     // Spawn dedicated thread with Tokio runtime for gossip initialization
     #[cfg(not(target_os = "ios"))]
@@ -78,19 +99,20 @@ pub fn setup_gossip_networking(mut commands: Commands) {
         let (sender, receiver) = crossbeam_channel::unbounded();
         commands.insert_resource(GossipBridgeChannel(receiver));
 
+        let session_id = session_id.0.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
-                match init_gossip().await {
-                    Ok(bridge) => {
+                match init_gossip(session_id).await {
+                    | Ok(bridge) => {
                         info!("Gossip bridge initialized successfully");
                         if let Err(e) = sender.send(bridge) {
                             error!("Failed to send bridge to main thread: {}", e);
                         }
-                    }
-                    Err(e) => {
+                    },
+                    | Err(e) => {
                         error!("Failed to initialize gossip: {}", e);
-                    }
+                    },
                 }
             });
         });
@@ -114,8 +136,7 @@ pub fn setup_gossip_networking(mut commands: Commands) {
 /// - **iOS**: No-op (networking not implemented)
 pub fn poll_gossip_bridge(
     mut commands: Commands,
-    #[cfg(not(target_os = "ios"))]
-    channel: Option<Res<GossipBridgeChannel>>,
+    #[cfg(not(target_os = "ios"))] channel: Option<Res<GossipBridgeChannel>>,
 ) {
     #[cfg(not(target_os = "ios"))]
     if let Some(channel) = channel {
@@ -127,16 +148,21 @@ pub fn poll_gossip_bridge(
     }
 }
 
-/// Initialize iroh-gossip networking stack
+/// Initialize iroh-gossip networking stack with session-specific ALPN
 ///
 /// This async function runs in the background tokio runtime and:
 /// 1. Creates an iroh endpoint with mDNS discovery
 /// 2. Spawns the gossip protocol
-/// 3. Sets up the router to accept gossip connections
-/// 4. Subscribes to a shared topic (ID: [42; 32])
-/// 5. Waits for join with a 2-second timeout
-/// 6. Creates and configures the GossipBridge
-/// 7. Spawns forwarding tasks to bridge messages
+/// 3. Derives session-specific ALPN from session ID (using BLAKE3)
+/// 4. Sets up the router to accept connections on the session ALPN
+/// 5. Subscribes to a topic derived from the session ALPN
+/// 6. Waits for join with a 2-second timeout
+/// 7. Creates and configures the GossipBridge
+/// 8. Spawns forwarding tasks to bridge messages
+///
+/// # Parameters
+///
+/// - `session_id`: The session ID used to derive the ALPN for network isolation
 ///
 /// # Returns
 ///
@@ -147,12 +173,16 @@ pub fn poll_gossip_bridge(
 ///
 /// This function is only compiled on non-iOS platforms.
 #[cfg(not(target_os = "ios"))]
-async fn init_gossip() -> Result<GossipBridge> {
-    use iroh::discovery::mdns::MdnsDiscovery;
-    use iroh::protocol::Router;
-    use iroh::Endpoint;
-    use iroh_gossip::net::Gossip;
-    use iroh_gossip::proto::TopicId;
+async fn init_gossip(session_id: SessionId) -> Result<GossipBridge> {
+    use iroh::{
+        discovery::mdns::MdnsDiscovery,
+        protocol::Router,
+        Endpoint,
+    };
+    use iroh_gossip::{
+        net::Gossip,
+        proto::TopicId,
+    };
 
     info!("Creating endpoint with mDNS discovery...");
     let endpoint = Endpoint::builder()
@@ -172,14 +202,21 @@ async fn init_gossip() -> Result<GossipBridge> {
     info!("Spawning gossip protocol...");
     let gossip = Gossip::builder().spawn(endpoint.clone());
 
+    // Derive session-specific ALPN for network isolation
+    let session_alpn = session_id.to_alpn();
+    info!(
+        "Using session-specific ALPN (session: {})",
+        session_id
+    );
+
     info!("Setting up router...");
     let router = Router::builder(endpoint.clone())
-        .accept(iroh_gossip::ALPN, gossip.clone())
+        .accept(session_alpn.as_slice(), gossip.clone())
         .spawn();
 
-    // Subscribe to shared topic
-    let topic_id = TopicId::from_bytes([42; 32]);
-    info!("Subscribing to topic...");
+    // Subscribe to topic derived from session ALPN (use same bytes for consistency)
+    let topic_id = TopicId::from_bytes(session_alpn);
+    info!("Subscribing to session topic...");
     let subscribe_handle = gossip.subscribe(topic_id, vec![]).await?;
 
     let (sender, mut receiver) = subscribe_handle.split();
@@ -187,9 +224,9 @@ async fn init_gossip() -> Result<GossipBridge> {
     // Wait for join (with timeout since we might be the first node)
     info!("Waiting for gossip join...");
     match tokio::time::timeout(std::time::Duration::from_secs(2), receiver.joined()).await {
-        Ok(Ok(())) => info!("Joined gossip swarm"),
-        Ok(Err(e)) => warn!("Join error: {} (proceeding anyway)", e),
-        Err(_) => info!("Join timeout (first node in swarm)"),
+        | Ok(Ok(())) => info!("Joined gossip swarm"),
+        | Ok(Err(e)) => warn!("Join error: {} (proceeding anyway)", e),
+        | Err(_) => info!("Join timeout (first node in swarm)"),
     }
 
     // Create bridge
@@ -204,16 +241,19 @@ async fn init_gossip() -> Result<GossipBridge> {
 
 /// Spawn tokio tasks to forward messages between iroh-gossip and GossipBridge
 ///
-/// This function spawns two concurrent tokio tasks that run for the lifetime of the application:
+/// This function spawns two concurrent tokio tasks that run for the lifetime of
+/// the application:
 ///
-/// 1. **Outgoing Task**: Polls GossipBridge for outgoing messages and broadcasts them via gossip
-/// 2. **Incoming Task**: Receives messages from gossip and pushes them into GossipBridge
+/// 1. **Outgoing Task**: Polls GossipBridge for outgoing messages and
+///    broadcasts them via gossip
+/// 2. **Incoming Task**: Receives messages from gossip and pushes them into
+///    GossipBridge
 ///
 /// # Lifetime Management
 ///
-/// The iroh resources (endpoint, router, gossip) are moved into the first task to keep them
-/// alive for the application lifetime. Without this, they would be dropped immediately and
-/// the gossip connection would close.
+/// The iroh resources (endpoint, router, gossip) are moved into the first task
+/// to keep them alive for the application lifetime. Without this, they would be
+/// dropped immediately and the gossip connection would close.
 ///
 /// # Platform Support
 ///
@@ -227,10 +267,11 @@ fn spawn_bridge_tasks(
     _router: iroh::protocol::Router,
     _gossip: iroh_gossip::net::Gossip,
 ) {
+    use std::time::Duration;
+
     use bytes::Bytes;
     use futures_lite::StreamExt;
     use lib::networking::VersionedMessage;
-    use std::time::Duration;
 
     let node_id = bridge.node_id();
 
@@ -239,8 +280,8 @@ fn spawn_bridge_tasks(
     let bridge_out = bridge.clone();
     tokio::spawn(async move {
         let _endpoint = _endpoint; // Keep alive for app lifetime
-        let _router = _router;     // Keep alive for app lifetime
-        let _gossip = _gossip;     // Keep alive for app lifetime
+        let _router = _router; // Keep alive for app lifetime
+        let _gossip = _gossip; // Keep alive for app lifetime
 
         loop {
             if let Some(msg) = bridge_out.try_recv_outgoing() {
@@ -259,7 +300,7 @@ fn spawn_bridge_tasks(
     tokio::spawn(async move {
         loop {
             match tokio::time::timeout(Duration::from_millis(100), receiver.next()).await {
-                Ok(Some(Ok(event))) => {
+                | Ok(Some(Ok(event))) => {
                     if let iroh_gossip::api::Event::Received(msg) = event {
                         if let Ok(versioned_msg) =
                             bincode::deserialize::<VersionedMessage>(&msg.content)
@@ -269,10 +310,10 @@ fn spawn_bridge_tasks(
                             }
                         }
                     }
-                }
-                Ok(Some(Err(e))) => error!("[Node {}] Receiver error: {}", node_id, e),
-                Ok(None) => break,
-                Err(_) => {} // Timeout
+                },
+                | Ok(Some(Err(e))) => error!("[Node {}] Receiver error: {}", node_id, e),
+                | Ok(None) => break,
+                | Err(_) => {}, // Timeout
             }
         }
     });

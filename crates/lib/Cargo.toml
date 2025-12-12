@@ -19,6 +19,8 @@ bevy.workspace = true
 bincode = "1.3"
 futures-lite = "2.0"
 sha2 = "0.10"
+blake3 = "1.5"
+rand = "0.8"
 tokio.workspace = true
 blocking = "1.6"
 

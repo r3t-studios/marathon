@@ -502,6 +502,10 @@ pub fn receive_and_apply_deltas_system(world: &mut World) {
                 // Handled by handle_missing_deltas_system
                 debug!("MissingDeltas handled by dedicated system");
             },
+            | SyncMessage::Lock { .. } => {
+                // Handled by lock message dispatcher
+                debug!("Lock message handled by dedicated system");
+            },
         }
     }
 }

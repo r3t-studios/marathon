@@ -4,18 +4,19 @@
 //! optimization that replaced Vec::retain() with HashMap-based indexing.
 
 use criterion::{
+    BenchmarkId,
+    Criterion,
     black_box,
     criterion_group,
     criterion_main,
-    BenchmarkId,
-    Criterion,
 };
 use lib::persistence::{
     PersistenceOp,
     WriteBuffer,
 };
 
-/// Benchmark: Add many updates to the same component (worst case for old implementation)
+/// Benchmark: Add many updates to the same component (worst case for old
+/// implementation)
 ///
 /// This scenario heavily stresses the deduplication logic. In the old O(n)
 /// implementation, each add() would scan the entire buffer. With HashMap
@@ -105,9 +106,9 @@ fn bench_mixed_workload(c: &mut Criterion) {
                     // 70% updates to Transform, 20% to Material, 10% to unique components
                     for i in 0..num_ops {
                         let (component_type, data_size) = match i % 10 {
-                            0..=6 => ("Transform".to_string(), 64), // 70%
-                            7..=8 => ("Material".to_string(), 128),  // 20%
-                            _ => (format!("Component{}", i), 32),    // 10%
+                            | 0..=6 => ("Transform".to_string(), 64), // 70%
+                            | 7..=8 => ("Material".to_string(), 128), // 20%
+                            | _ => (format!("Component{}", i), 32),   // 10%
                         };
 
                         let op = PersistenceOp::UpsertComponent {

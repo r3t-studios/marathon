@@ -43,11 +43,21 @@ use crate::networking::{
         cleanup_despawned_entities_system,
         register_networked_entities_system,
     },
+    locks::{
+        EntityLockRegistry,
+        broadcast_lock_heartbeats_system,
+        cleanup_expired_locks_system,
+        release_locks_on_deselection_system,
+    },
     message_dispatcher::message_dispatcher_system,
     operation_log::{
         OperationLog,
         periodic_sync_system,
         prune_operation_log_system,
+    },
+    session_lifecycle::{
+        initialize_session_system,
+        save_session_on_shutdown_system,
     },
     tombstones::{
         TombstoneRegistry,
@@ -139,6 +149,9 @@ impl SessionSecret {
 ///
 /// # Systems Added
 ///
+/// ## Startup
+/// - Initialize or restore session from persistence (auto-rejoin)
+///
 /// ## PreUpdate
 /// - Register newly spawned networked entities
 /// - **Central message dispatcher** (handles all incoming messages efficiently)
@@ -147,16 +160,24 @@ impl SessionSecret {
 ///   - FullState messages
 ///   - SyncRequest messages
 ///   - MissingDeltas messages
+///   - Lock messages (LockRequest, LockAcquired, LockRejected, LockHeartbeat, LockRelease, LockReleased)
 ///
 /// ## Update
+/// - Auto-detect Transform changes
 /// - Handle local entity deletions
+/// - Release locks when entities are deselected
 ///
 /// ## PostUpdate
 /// - Generate and broadcast EntityDelta for changed entities
 /// - Periodic SyncRequest for anti-entropy
+/// - Broadcast lock heartbeats to maintain active locks
 /// - Prune old operations from operation log
 /// - Garbage collect tombstones
+/// - Cleanup expired locks (5-second timeout)
 /// - Cleanup despawned entities from entity map
+///
+/// ## Last
+/// - Save session state and vector clock to persistence
 ///
 /// # Resources Added
 ///
@@ -165,6 +186,7 @@ impl SessionSecret {
 /// - `LastSyncVersions` - Change detection for entities
 /// - `OperationLog` - Operation log for anti-entropy
 /// - `TombstoneRegistry` - Tombstone tracking for deletions
+/// - `EntityLockRegistry` - Entity lock registry with heartbeat tracking
 ///
 /// # Example
 ///
@@ -213,7 +235,11 @@ impl Plugin for NetworkingPlugin {
             .insert_resource(LastSyncVersions::default())
             .insert_resource(OperationLog::new())
             .insert_resource(TombstoneRegistry::new())
+            .insert_resource(EntityLockRegistry::new())
             .insert_resource(crate::networking::ComponentVectorClocks::new());
+
+        // Startup systems - initialize session from persistence
+        app.add_systems(Startup, initialize_session_system);
 
         // PreUpdate systems - handle incoming messages first
         app.add_systems(
@@ -237,6 +263,8 @@ impl Plugin for NetworkingPlugin {
                 auto_detect_transform_changes_system,
                 // Handle local entity deletions
                 handle_local_deletions_system,
+                // Release locks when entities are deselected
+                release_locks_on_deselection_system,
             ),
         );
 
@@ -251,10 +279,22 @@ impl Plugin for NetworkingPlugin {
                 // Maintenance tasks
                 prune_operation_log_system,
                 garbage_collect_tombstones_system,
+                cleanup_expired_locks_system,
                 // Cleanup despawned entities
                 cleanup_despawned_entities_system,
             ),
         );
+
+        // Broadcast lock heartbeats every 1 second to maintain active locks
+        app.add_systems(
+            PostUpdate,
+            broadcast_lock_heartbeats_system.run_if(bevy::time::common_conditions::on_timer(
+                std::time::Duration::from_secs(1),
+            )),
+        );
+
+        // Last schedule - save session state on shutdown
+        app.add_systems(Last, save_session_on_shutdown_system);
 
         info!(
             "NetworkingPlugin initialized for node {}",
@@ -333,6 +373,7 @@ mod tests {
         assert!(app.world().get_resource::<LastSyncVersions>().is_some());
         assert!(app.world().get_resource::<OperationLog>().is_some());
         assert!(app.world().get_resource::<TombstoneRegistry>().is_some());
+        assert!(app.world().get_resource::<EntityLockRegistry>().is_some());
     }
 
     #[test]
