@@ -27,6 +27,7 @@ blake3 = "1.5"
 rand = "0.8"
 tokio.workspace = true
 blocking = "1.6"
+crossbeam-channel = "0.5"
 iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
 

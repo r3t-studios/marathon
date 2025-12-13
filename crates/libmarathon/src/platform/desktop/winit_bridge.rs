@@ -4,8 +4,9 @@
 //! to engine-agnostic InputEvents.
 
 use crate::engine::{InputEvent, KeyCode, Modifiers, MouseButton, TouchPhase};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use glam::Vec2;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use winit::event::{ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::PhysicalKey;
 
@@ -31,11 +32,15 @@ pub enum RawWinitEvent {
     },
 }
 
-/// Thread-safe buffer for winit events
+/// Lock-free channel for winit events
 ///
-/// The winit event loop pushes events here.
-/// The engine drains them each frame.
-static BUFFER: Mutex<Vec<RawWinitEvent>> = Mutex::new(Vec::new());
+/// The winit event loop sends events here.
+/// The engine receives them each frame.
+static EVENT_CHANNEL: OnceLock<(Sender<RawWinitEvent>, Receiver<RawWinitEvent>)> = OnceLock::new();
+
+fn get_event_channel() -> &'static (Sender<RawWinitEvent>, Receiver<RawWinitEvent>) {
+    EVENT_CHANNEL.get_or_init(|| unbounded())
+}
 
 /// Current input state for tracking drags and modifiers
 static INPUT_STATE: Mutex<InputState> = Mutex::new(InputState {
@@ -83,13 +88,13 @@ pub fn push_window_event(event: &WindowEvent) {
                     MouseButton::Middle => input_state.middle_pressed = *state == ElementState::Pressed,
                 }
 
-                if let Ok(mut buf) = BUFFER.lock() {
-                    buf.push(RawWinitEvent::MouseButton {
-                        button: mouse_button,
-                        state: *state,
-                        position,
-                    });
-                }
+                // Send to lock-free channel (never blocks or fails)
+                let (sender, _) = get_event_channel();
+                let _ = sender.send(RawWinitEvent::MouseButton {
+                    button: mouse_button,
+                    state: *state,
+                    position,
+                });
             }
         }
 
@@ -101,9 +106,8 @@ pub fn push_window_event(event: &WindowEvent) {
 
                 // Generate drag events for any pressed buttons
                 if input_state.left_pressed || input_state.right_pressed || input_state.middle_pressed {
-                    if let Ok(mut buf) = BUFFER.lock() {
-                        buf.push(RawWinitEvent::CursorMoved { position: pos });
-                    }
+                    let (sender, _) = get_event_channel();
+                    let _ = sender.send(RawWinitEvent::CursorMoved { position: pos });
                 }
             }
         }
@@ -112,13 +116,12 @@ pub fn push_window_event(event: &WindowEvent) {
             // Only handle physical keys
             if let PhysicalKey::Code(key_code) = key_event.physical_key {
                 if let Ok(input_state) = INPUT_STATE.lock() {
-                    if let Ok(mut buf) = BUFFER.lock() {
-                        buf.push(RawWinitEvent::Keyboard {
-                            key: key_code,
-                            state: key_event.state,
-                            modifiers: input_state.modifiers,
-                        });
-                    }
+                    let (sender, _) = get_event_channel();
+                    let _ = sender.send(RawWinitEvent::Keyboard {
+                        key: key_code,
+                        state: key_event.state,
+                        modifiers: input_state.modifiers,
+                    });
                 }
             }
         }
@@ -141,12 +144,11 @@ pub fn push_window_event(event: &WindowEvent) {
             };
 
             if let Ok(input_state) = INPUT_STATE.lock() {
-                if let Ok(mut buf) = BUFFER.lock() {
-                    buf.push(RawWinitEvent::MouseWheel {
-                        delta: scroll_delta,
-                        position: input_state.last_position,
-                    });
-                }
+                let (sender, _) = get_event_channel();
+                let _ = sender.send(RawWinitEvent::MouseWheel {
+                    delta: scroll_delta,
+                    position: input_state.last_position,
+                });
             }
         }
 
@@ -157,17 +159,15 @@ pub fn push_window_event(event: &WindowEvent) {
 /// Drain all buffered winit events and convert to InputEvents
 ///
 /// Call this from your engine's input processing to consume events.
+/// This uses a lock-free channel so it never blocks and can't silently drop events.
 pub fn drain_as_input_events() -> Vec<InputEvent> {
-    BUFFER
-        .lock()
-        .ok()
-        .map(|mut b| {
-            std::mem::take(&mut *b)
-                .into_iter()
-                .filter_map(raw_to_input_event)
-                .collect()
-        })
-        .unwrap_or_default()
+    let (_, receiver) = get_event_channel();
+
+    // Drain all events from the channel
+    receiver
+        .try_iter()
+        .filter_map(raw_to_input_event)
+        .collect()
 }
 
 /// Convert a raw winit event to an engine InputEvent
