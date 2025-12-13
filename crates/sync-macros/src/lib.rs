@@ -31,11 +31,11 @@ impl SyncStrategy {
     fn to_tokens(&self) -> proc_macro2::TokenStream {
         match self {
             | SyncStrategy::LastWriteWins => {
-                quote! { lib::networking::SyncStrategy::LastWriteWins }
+                quote! { libmarathon::networking::SyncStrategy::LastWriteWins }
             },
-            | SyncStrategy::Set => quote! { lib::networking::SyncStrategy::Set },
-            | SyncStrategy::Sequence => quote! { lib::networking::SyncStrategy::Sequence },
-            | SyncStrategy::Custom => quote! { lib::networking::SyncStrategy::Custom },
+            | SyncStrategy::Set => quote! { libmarathon::networking::SyncStrategy::Set },
+            | SyncStrategy::Sequence => quote! { libmarathon::networking::SyncStrategy::Sequence },
+            | SyncStrategy::Custom => quote! { libmarathon::networking::SyncStrategy::Custom },
         }
     }
 }
@@ -124,7 +124,7 @@ impl SyncAttributes {
 /// # Example
 /// ```ignore
 /// use bevy::prelude::*;
-/// use lib::networking::Synced;
+/// use libmarathon::networking::Synced;
 /// use sync_macros::Synced as SyncedDerive;
 ///
 /// #[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize)]
@@ -160,9 +160,9 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     let merge_impl = generate_merge(&input, &attrs.strategy);
 
     let expanded = quote! {
-        impl lib::networking::SyncComponent for #name {
+        impl libmarathon::networking::SyncComponent for #name {
             const VERSION: u32 = #version;
-            const STRATEGY: lib::networking::SyncStrategy = #strategy_tokens;
+            const STRATEGY: libmarathon::networking::SyncStrategy = #strategy_tokens;
 
             #[inline]
             fn serialize_sync(&self) -> anyhow::Result<Vec<u8>> {
@@ -175,7 +175,7 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
             }
 
             #[inline]
-            fn merge(&mut self, remote: Self, clock_cmp: lib::networking::ClockComparison) -> lib::networking::ComponentMergeDecision {
+            fn merge(&mut self, remote: Self, clock_cmp: libmarathon::networking::ClockComparison) -> libmarathon::networking::ComponentMergeDecision {
                 #merge_impl
             }
         }
@@ -235,19 +235,19 @@ fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
         use tracing::info;
 
         match clock_cmp {
-            lib::networking::ClockComparison::RemoteNewer => {
+            libmarathon::networking::ClockComparison::RemoteNewer => {
                 info!(
                     component = std::any::type_name::<Self>(),
                     ?clock_cmp,
                     "Taking remote (newer)"
                 );
                 *self = remote;
-                lib::networking::ComponentMergeDecision::TookRemote
+                libmarathon::networking::ComponentMergeDecision::TookRemote
             }
-            lib::networking::ClockComparison::LocalNewer => {
-                lib::networking::ComponentMergeDecision::KeptLocal
+            libmarathon::networking::ClockComparison::LocalNewer => {
+                libmarathon::networking::ComponentMergeDecision::KeptLocal
             }
-            lib::networking::ClockComparison::Concurrent => {
+            libmarathon::networking::ClockComparison::Concurrent => {
                 // Tiebreaker: Compare serialized representations for deterministic choice
                 // In a real implementation, we'd use node_id, but for now use a simple hash
                 #hash_tiebreaker
@@ -259,9 +259,9 @@ fn generate_lww_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
                         "Taking remote (concurrent, tiebreaker)"
                     );
                     *self = remote;
-                    lib::networking::ComponentMergeDecision::TookRemote
+                    libmarathon::networking::ComponentMergeDecision::TookRemote
                 } else {
-                    lib::networking::ComponentMergeDecision::KeptLocal
+                    libmarathon::networking::ComponentMergeDecision::KeptLocal
                 }
             }
         }
@@ -292,23 +292,23 @@ fn generate_set_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
         // the component to expose merge() method or implement it directly
 
         match clock_cmp {
-            lib::networking::ClockComparison::RemoteNewer => {
+            libmarathon::networking::ClockComparison::RemoteNewer => {
                 *self = remote;
-                lib::networking::ComponentMergeDecision::TookRemote
+                libmarathon::networking::ComponentMergeDecision::TookRemote
             }
-            lib::networking::ClockComparison::LocalNewer => {
-                lib::networking::ComponentMergeDecision::KeptLocal
+            libmarathon::networking::ClockComparison::LocalNewer => {
+                libmarathon::networking::ComponentMergeDecision::KeptLocal
             }
-            lib::networking::ClockComparison::Concurrent => {
+            libmarathon::networking::ClockComparison::Concurrent => {
                 // In a full implementation, we would merge the OrSet here
                 // For now, use LWW with tiebreaker as fallback
                 #hash_tiebreaker
 
                 if remote_hash > local_hash {
                     *self = remote;
-                    lib::networking::ComponentMergeDecision::TookRemote
+                    libmarathon::networking::ComponentMergeDecision::TookRemote
                 } else {
-                    lib::networking::ComponentMergeDecision::KeptLocal
+                    libmarathon::networking::ComponentMergeDecision::KeptLocal
                 }
             }
         }
@@ -338,23 +338,23 @@ fn generate_sequence_merge(_input: &DeriveInput) -> proc_macro2::TokenStream {
         // the component to expose merge() method or implement it directly
 
         match clock_cmp {
-            lib::networking::ClockComparison::RemoteNewer => {
+            libmarathon::networking::ClockComparison::RemoteNewer => {
                 *self = remote;
-                lib::networking::ComponentMergeDecision::TookRemote
+                libmarathon::networking::ComponentMergeDecision::TookRemote
             }
-            lib::networking::ClockComparison::LocalNewer => {
-                lib::networking::ComponentMergeDecision::KeptLocal
+            libmarathon::networking::ClockComparison::LocalNewer => {
+                libmarathon::networking::ComponentMergeDecision::KeptLocal
             }
-            lib::networking::ClockComparison::Concurrent => {
+            libmarathon::networking::ClockComparison::Concurrent => {
                 // In a full implementation, we would merge the Rga here
                 // For now, use LWW with tiebreaker as fallback
                 #hash_tiebreaker
 
                 if remote_hash > local_hash {
                     *self = remote;
-                    lib::networking::ComponentMergeDecision::TookRemote
+                    libmarathon::networking::ComponentMergeDecision::TookRemote
                 } else {
-                    lib::networking::ComponentMergeDecision::KeptLocal
+                    libmarathon::networking::ComponentMergeDecision::KeptLocal
                 }
             }
         }
@@ -371,6 +371,6 @@ fn generate_custom_merge(input: &DeriveInput) -> proc_macro2::TokenStream {
                 stringify!(#name)
             )
         );
-        lib::networking::ComponentMergeDecision::KeptLocal
+        libmarathon::networking::ComponentMergeDecision::KeptLocal
     }
 }

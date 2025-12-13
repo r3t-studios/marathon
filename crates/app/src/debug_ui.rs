@@ -6,10 +6,14 @@ use bevy_egui::{
     EguiContexts,
     EguiPrimaryContextPass,
 };
-use lib::networking::{
+use libmarathon::networking::{
+    EntityLockRegistry,
     GossipBridge,
+    NetworkedEntity,
     NodeVectorClock,
 };
+
+use crate::cube::{CubeMarker, DeleteCubeEvent, SpawnCubeEvent};
 
 pub struct DebugUiPlugin;
 
@@ -24,10 +28,10 @@ fn render_debug_ui(
     mut contexts: EguiContexts,
     node_clock: Option<Res<NodeVectorClock>>,
     gossip_bridge: Option<Res<GossipBridge>>,
-    cube_query: Query<
-        (&Transform, &lib::networking::NetworkedEntity),
-        With<crate::cube::CubeMarker>,
-    >,
+    lock_registry: Option<Res<EntityLockRegistry>>,
+    cube_query: Query<(&Transform, &NetworkedEntity), With<CubeMarker>>,
+    mut spawn_events: MessageWriter<SpawnCubeEvent>,
+    mut delete_events: MessageWriter<DeleteCubeEvent>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -107,10 +111,79 @@ fn render_debug_ui(
             }
 
             ui.add_space(10.0);
+            ui.heading("Entity Controls");
+            ui.separator();
+
+            if ui.button("➕ Spawn Cube").clicked() {
+                spawn_events.write(SpawnCubeEvent {
+                    position: Vec3::new(
+                        rand::random::<f32>() * 4.0 - 2.0,
+                        0.5,
+                        rand::random::<f32>() * 4.0 - 2.0,
+                    ),
+                });
+            }
+
+            ui.label(format!("Total cubes: {}", cube_query.iter().count()));
+
+            // List all cubes with delete buttons
+            ui.add_space(5.0);
+            egui::ScrollArea::vertical()
+                .id_salt("cube_list")
+                .max_height(150.0)
+                .show(ui, |ui| {
+                    for (_transform, networked) in cube_query.iter() {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Cube {:.8}...", networked.network_id));
+                            if ui.small_button("🗑").clicked() {
+                                delete_events.write(DeleteCubeEvent {
+                                    entity_id: networked.network_id,
+                                });
+                            }
+                        });
+                    }
+                });
+
+            ui.add_space(10.0);
+            ui.heading("Lock Status");
+            ui.separator();
+
+            if let (Some(lock_registry), Some(clock)) = (&lock_registry, &node_clock) {
+                let node_id = clock.node_id;
+                let locked_cubes = cube_query
+                    .iter()
+                    .filter(|(_, networked)| lock_registry.is_locked(networked.network_id, node_id))
+                    .count();
+
+                ui.label(format!("Locked entities: {}", locked_cubes));
+
+                ui.add_space(5.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("lock_list")
+                    .max_height(100.0)
+                    .show(ui, |ui| {
+                        for (_, networked) in cube_query.iter() {
+                            let entity_id = networked.network_id;
+                            if let Some(holder) = lock_registry.get_holder(entity_id, node_id) {
+                                let is_ours = holder == node_id;
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("🔒 {:.8}...", entity_id));
+                                    ui.label(if is_ours { "(you)" } else { "(peer)" });
+                                });
+                            }
+                        }
+                    });
+            } else {
+                ui.label("Lock registry: Not ready");
+            }
+
+            ui.add_space(10.0);
             ui.heading("Controls");
             ui.separator();
+            ui.label("Left click: Select cube");
             ui.label("Left drag: Move cube (XY)");
             ui.label("Right drag: Rotate cube");
             ui.label("Scroll: Move cube (Z)");
+            ui.label("ESC: Deselect");
         });
 }

@@ -1,6 +1,6 @@
 /// Basic tests for the Synced derive macro
 use bevy::prelude::*;
-use lib::networking::{
+use libmarathon::networking::{
     ClockComparison,
     ComponentMergeDecision,
     SyncComponent,

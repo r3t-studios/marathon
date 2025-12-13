@@ -36,7 +36,7 @@ use iroh_gossip::{
     net::Gossip,
     proto::TopicId,
 };
-use lib::{
+use libmarathon::{
     networking::{
         GossipBridge,
         NetworkedEntity,

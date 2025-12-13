@@ -227,16 +227,20 @@ dependencies = [
  "bytes",
  "crossbeam-channel",
  "futures-lite",
+ "glam 0.29.3",
  "iroh",
  "iroh-gossip",
- "lib",
+ "libmarathon",
  "objc",
+ "rand 0.8.5",
+ "raw-window-handle",
  "serde",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "winit",
 ]
 
 [[package]]
@@ -1145,7 +1149,7 @@ dependencies = [
  "approx",
  "bevy_reflect",
  "derive_more 2.0.1",
- "glam",
+ "glam 0.30.9",
  "itertools 0.14.0",
  "libm",
  "rand 0.9.2",
@@ -1320,7 +1324,7 @@ dependencies = [
  "downcast-rs 2.0.2",
  "erased-serde",
  "foldhash 0.2.0",
- "glam",
+ "glam 0.30.9",
  "inventory",
  "petgraph",
  "serde",
@@ -2815,7 +2819,7 @@ checksum = "02ba239319a4f60905966390f5e52799d868103a533bb7e27822792332504ddd"
 dependencies = [
  "const_panic",
  "encase_derive",
- "glam",
+ "glam 0.30.9",
  "thiserror 2.0.17",
 ]
 
@@ -3347,6 +3351,12 @@ dependencies = [
 
 [[package]]
 name = "glam"
+version = "0.29.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8babf46d4c1c9d92deac9f7be466f76dfc4482b6452fc5024b5e8daf6ffeb3ee"
+
+[[package]]
+name = "glam"
 version = "0.30.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd47b05dddf0005d850e5644cae7f2b14ac3df487979dbfff3b56f20b1a6ae46"
@@ -3628,7 +3638,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29a164ceff4500f2a72b1d21beaa8aa8ad83aec2b641844c659b190cb3ea2e0b"
 dependencies = [
  "constgebra",
- "glam",
+ "glam 0.30.9",
  "tinyvec",
 ]
 
@@ -4467,36 +4477,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lib"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy",
- "bincode",
- "blake3",
- "blocking",
- "chrono",
- "crdts",
- "criterion",
- "futures-lite",
- "iroh",
- "iroh-gossip",
- "proptest",
- "rand 0.8.5",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sync-macros",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4517,6 +4497,40 @@ name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
+
+[[package]]
+name = "libmarathon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bincode",
+ "blake3",
+ "blocking",
+ "bytes",
+ "chrono",
+ "crdts",
+ "criterion",
+ "futures-lite",
+ "glam 0.29.3",
+ "iroh",
+ "iroh-gossip",
+ "proptest",
+ "rand 0.8.5",
+ "raw-window-handle",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sync-macros",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
+ "winit",
+]
 
 [[package]]
 name = "libredox"
@@ -7014,7 +7028,7 @@ dependencies = [
  "anyhow",
  "bevy",
  "bincode",
- "lib",
+ "libmarathon",
  "proc-macro2",
  "quote",
  "serde",
@@ -7959,6 +7973,7 @@ checksum = "34949b42822155826b41db8e5d0c1be3a2bd296c747577a43a3e6daefc296142"
 dependencies = [
  "dlib",
  "log",
+ "once_cell",
  "pkg-config",
 ]
 

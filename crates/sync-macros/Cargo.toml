@@ -12,7 +12,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 [dev-dependencies]
-lib = { path = "../lib" }
+libmarathon = { path = "../libmarathon" }
 bevy = { workspace = true }
 serde = { workspace = true }
 bincode = "1.3"

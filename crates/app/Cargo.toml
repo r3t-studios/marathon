@@ -10,9 +10,8 @@ ios = []
 headless = []
 
 [dependencies]
-lib = { path = "../lib" }
+libmarathon = { path = "../libmarathon" }
 bevy = { version = "0.17", default-features = false, features = [
-    "bevy_winit",
     "bevy_render",
     "bevy_core_pipeline",
     "bevy_pbr",
@@ -21,12 +20,16 @@ bevy = { version = "0.17", default-features = false, features = [
     "png",
 ] }
 bevy_egui = "0.38"
+glam = "0.29"
+winit = "0.30"
+raw-window-handle = "0.6"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 anyhow = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
 iroh = { version = "0.95", features = ["discovery-local-network"] }
 iroh-gossip = "0.95"
 futures-lite = "2.0"
@@ -36,6 +39,7 @@ crossbeam-channel = "0.5.15"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc = "0.2"
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 iroh = { version = "0.95", features = ["discovery-local-network"] }

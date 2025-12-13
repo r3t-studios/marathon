@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
+use libmarathon::networking::{EntityLockRegistry, NetworkedEntity, NodeVectorClock};
 
 pub struct MouseInputPlugin;
 
@@ -20,13 +21,15 @@ struct MouseState {
     right_pressed: bool,
 }
 
-/// Handle mouse input to move and rotate the cube
+/// Handle mouse input to move and rotate cubes that are locked by us
 fn handle_mouse_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion: EventReader<MouseMotion>,
-    mut mouse_wheel: EventReader<MouseWheel>,
+    mut mouse_motion: MessageReader<MouseMotion>,
+    mut mouse_wheel: MessageReader<MouseWheel>,
     mut mouse_state: Local<Option<MouseState>>,
-    mut cube_query: Query<&mut Transform, With<crate::cube::CubeMarker>>,
+    lock_registry: Res<EntityLockRegistry>,
+    node_clock: Res<NodeVectorClock>,
+    mut cube_query: Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
 ) {
     // Initialize mouse state if needed
     if mouse_state.is_none() {
@@ -38,42 +41,57 @@ fn handle_mouse_input(
     state.left_pressed = mouse_buttons.pressed(MouseButton::Left);
     state.right_pressed = mouse_buttons.pressed(MouseButton::Right);
 
+    let node_id = node_clock.node_id;
+
     // Get total mouse delta this frame
     let mut total_delta = Vec2::ZERO;
     for motion in mouse_motion.read() {
         total_delta += motion.delta;
     }
 
-    // Process mouse motion
+    // Process mouse motion - only for cubes locked by us
     if total_delta != Vec2::ZERO {
-        for mut transform in cube_query.iter_mut() {
+        for (networked, mut transform) in cube_query.iter_mut() {
+            // Only move cubes that we have locked
+            if !lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
+                continue;
+            }
+
             if state.left_pressed {
                 // Left drag: Move cube in XY plane
                 // Scale factor for sensitivity
                 let sensitivity = 0.01;
                 transform.translation.x += total_delta.x * sensitivity;
                 transform.translation.y -= total_delta.y * sensitivity; // Invert Y
+                // Change detection will trigger clock tick automatically
             } else if state.right_pressed {
                 // Right drag: Rotate cube
                 let sensitivity = 0.01;
                 let rotation_x = Quat::from_rotation_y(total_delta.x * sensitivity);
                 let rotation_y = Quat::from_rotation_x(-total_delta.y * sensitivity);
                 transform.rotation = rotation_x * transform.rotation * rotation_y;
+                // Change detection will trigger clock tick automatically
             }
         }
     }
 
-    // Process mouse wheel for Z-axis movement
+    // Process mouse wheel for Z-axis movement - only for cubes locked by us
     let mut total_scroll = 0.0;
     for wheel in mouse_wheel.read() {
         total_scroll += wheel.y;
     }
 
     if total_scroll != 0.0 {
-        for mut transform in cube_query.iter_mut() {
+        for (networked, mut transform) in cube_query.iter_mut() {
+            // Only move cubes that we have locked
+            if !lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
+                continue;
+            }
+
             // Scroll: Move in Z axis
             let sensitivity = 0.1;
             transform.translation.z += total_scroll * sensitivity;
+            // Change detection will trigger clock tick automatically
         }
     }
 }
