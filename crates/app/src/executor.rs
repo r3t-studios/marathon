@@ -30,7 +30,7 @@ pub use crate::input::event_buffer::InputEventBuffer;
 
 /// Application handler state machine
 enum AppHandler {
-    Initializing { app: App },
+    Initializing { app: Option<App> },
     Running {
         window: Arc<WinitWindow>,
         bevy_window_entity: Entity,
@@ -38,17 +38,62 @@ enum AppHandler {
     },
 }
 
-impl AppHandler {
-    fn initialize(&mut self, event_loop: &ActiveEventLoop) {
-        // Only initialize if we're in the Initializing state
-        if !matches!(self, AppHandler::Initializing { .. }) {
-            return;
-        }
+// Helper functions to reduce duplication
+fn send_window_created(app: &mut App, window: Entity) {
+    app.world_mut()
+        .resource_mut::<Messages<WindowCreated>>()
+        .write(WindowCreated { window });
+}
 
-        // Take ownership of the app (replace with placeholder temporarily)
-        let temp_state = std::mem::replace(self, AppHandler::Initializing { app: App::new() });
-        let AppHandler::Initializing { app } = temp_state else { unreachable!() };
-        let mut bevy_app = app;
+fn send_window_resized(
+    app: &mut App,
+    window: Entity,
+    physical_size: winit::dpi::PhysicalSize<u32>,
+    scale_factor: f64,
+) {
+    app.world_mut()
+        .resource_mut::<Messages<WindowResized>>()
+        .write(WindowResized {
+            window,
+            width: physical_size.width as f32 / scale_factor as f32,
+            height: physical_size.height as f32 / scale_factor as f32,
+        });
+}
+
+fn send_scale_factor_changed(app: &mut App, window: Entity, scale_factor: f64) {
+    app.world_mut()
+        .resource_mut::<Messages<WindowScaleFactorChanged>>()
+        .write(WindowScaleFactorChanged {
+            window,
+            scale_factor,
+        });
+}
+
+fn send_window_closing(app: &mut App, window: Entity) {
+    app.world_mut()
+        .resource_mut::<Messages<WindowClosing>>()
+        .write(WindowClosing { window });
+}
+
+impl AppHandler {
+    /// Initialize the window and transition to Running state.
+    ///
+    /// This is called on the first `resumed()` event from winit.
+    /// Subsequent `resumed()` calls are ignored to prevent double initialization.
+    ///
+    /// # Errors
+    /// Returns an error if window creation or RawHandleWrapper creation fails.
+    fn initialize(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+        // Only initialize if we're in the Initializing state with an app
+        let AppHandler::Initializing { app: app_opt } = self else {
+            warn!("initialize() called on non-Initializing state, ignoring");
+            return Ok(());
+        };
+
+        let Some(mut bevy_app) = app_opt.take() else {
+            warn!("initialize() called twice, ignoring");
+            return Ok(());
+        };
 
         // Insert InputEventBuffer resource
         bevy_app.insert_resource(InputEventBuffer::default());
@@ -72,31 +117,32 @@ impl AppHandler {
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
         let winit_window = event_loop.create_window(window_attributes)
-            .expect("Failed to create window");
+            .map_err(|e| format!("Failed to create window: {}", e))?;
         let winit_window = Arc::new(winit_window);
         info!("Created window before app.finish()");
 
         let physical_size = winit_window.inner_size();
         let scale_factor = winit_window.scale_factor();
 
-        // Create window entity with all required components
+        // Create window entity with all required components (use logical size)
         let mut window = bevy::window::Window {
             title: "Marathon".to_string(),
             resolution: WindowResolution::new(
-                physical_size.width,
-                physical_size.height,
+                physical_size.width / scale_factor as u32,
+                physical_size.height / scale_factor as u32,
             ),
             mode: WindowMode::Windowed,
             position: WindowPosition::Automatic,
             focused: true,
             ..Default::default()
         };
-        window.resolution.set_scale_factor_override(Some(scale_factor as f32));
+        // Set scale factor explicitly
+        window.resolution.set_scale_factor(scale_factor as f32);
 
         // Create WindowWrapper and RawHandleWrapper for renderer
         let window_wrapper = WindowWrapper::new(winit_window.clone());
         let raw_handle_wrapper = RawHandleWrapper::new(&window_wrapper)
-            .expect("Failed to create RawHandleWrapper");
+            .map_err(|e| format!("Failed to create RawHandleWrapper: {}", e))?;
 
         let window_entity = bevy_app.world_mut().spawn((
             window,
@@ -105,19 +151,10 @@ impl AppHandler {
         )).id();
         info!("Created window entity {}", window_entity);
 
-        // Send WindowCreated event
-        bevy_app.world_mut()
-            .resource_mut::<Messages<WindowCreated>>()
-            .write(WindowCreated { window: window_entity });
-
-        // Send WindowResized event
-        bevy_app.world_mut()
-            .resource_mut::<Messages<WindowResized>>()
-            .write(WindowResized {
-                window: window_entity,
-                width: physical_size.width as f32 / scale_factor as f32,
-                height: physical_size.height as f32 / scale_factor as f32,
-            });
+        // Send initialization events
+        send_window_created(&mut bevy_app, window_entity);
+        send_window_resized(&mut bevy_app, window_entity, physical_size, scale_factor);
+        send_scale_factor_changed(&mut bevy_app, window_entity, scale_factor);
 
         // Now finish the app - the renderer will initialize with the window
         bevy_app.finish();
@@ -130,15 +167,53 @@ impl AppHandler {
             bevy_window_entity: window_entity,
             bevy_app,
         };
+
+        Ok(())
+    }
+
+    /// Clean shutdown of the app and window
+    fn shutdown(&mut self, event_loop: &ActiveEventLoop) {
+        if let AppHandler::Running {
+            bevy_window_entity,
+            ref mut bevy_app,
+            ..
+        } = self
+        {
+            info!("Shutting down gracefully");
+
+            // Send WindowClosing event
+            send_window_closing(bevy_app, *bevy_window_entity);
+
+            // Run one final update to process close event
+            bevy_app.update();
+
+            // Cleanup
+            bevy_app.finish();
+            bevy_app.cleanup();
+        }
+
+        event_loop.exit();
     }
 }
 
 impl ApplicationHandler for AppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Initialize on first resumed() call
-        self.initialize(event_loop);
+        if let Err(e) = self.initialize(event_loop) {
+            error!("Failed to initialize: {}", e);
+            event_loop.exit();
+            return;
+        }
         info!("App resumed");
     }
+
+    // TODO(@siennathesane): Implement suspended() callback for mobile platforms.
+    // On iOS/Android, the app can be backgrounded (suspended). We should:
+    // - Stop requesting redraws to save battery
+    // - Potentially release GPU resources
+    // - Log the suspended state for debugging
+    // Note: RedrawRequested events won't fire while suspended anyway,
+    // so the unbounded loop naturally pauses.
 
     fn window_event(
         &mut self,
@@ -161,40 +236,34 @@ impl ApplicationHandler for AppHandler {
 
         match event {
             WinitWindowEvent::CloseRequested => {
-                info!("Window close requested");
-                event_loop.exit();
+                self.shutdown(event_loop);
             }
 
             WinitWindowEvent::Resized(physical_size) => {
                 // Notify Bevy of window resize
                 let scale_factor = window.scale_factor();
-                bevy_app.world_mut()
-                    .resource_mut::<Messages<WindowResized>>()
-                    .write(WindowResized {
-                        window: *bevy_window_entity,
-                        width: physical_size.width as f32 / scale_factor as f32,
-                        height: physical_size.height as f32 / scale_factor as f32,
-                    });
+                send_window_resized(bevy_app, *bevy_window_entity, physical_size, scale_factor);
             }
 
             WinitWindowEvent::RedrawRequested => {
                 // Collect input events from platform bridge
                 let input_events = desktop::drain_as_input_events();
 
-                // Write events to InputEventBuffer resource
-                bevy_app.world_mut().resource_mut::<InputEventBuffer>().events = input_events;
+                // Reuse buffer capacity instead of replacing (optimization)
+                {
+                    let mut buffer = bevy_app.world_mut().resource_mut::<InputEventBuffer>();
+                    buffer.events.clear();
+                    buffer.events.extend(input_events);
+                }
 
                 // Run one Bevy ECS update (unbounded)
                 bevy_app.update();
 
                 // Check if app should exit
-                if let Some(exit) = bevy_app.should_exit() {
-                    info!("App exit requested: {:?}", exit);
-                    event_loop.exit();
+                if bevy_app.should_exit().is_some() {
+                    self.shutdown(event_loop);
+                    return;
                 }
-
-                // Clear input buffer for next frame
-                bevy_app.world_mut().resource_mut::<InputEventBuffer>().clear();
 
                 // Request next frame immediately (unbounded loop)
                 window.request_redraw();
@@ -205,29 +274,70 @@ impl ApplicationHandler for AppHandler {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // Request redraw to keep loop running
+        // Ensure we keep rendering even if no window events arrive.
+        // This is needed for unbounded mode with ControlFlow::Poll to maintain
+        // maximum frame rate by continuously requesting redraws.
         if let AppHandler::Running { ref window, .. } = self {
             window.request_redraw();
         }
     }
 }
 
-/// Run the application executor
+/// Run the application executor with a custom event loop.
+///
+/// This executor owns the winit event loop directly (instead of using Bevy's WinitPlugin)
+/// and drives both the window and Bevy's ECS in unbounded mode for maximum performance.
+///
+/// # Unbounded Execution
+///
+/// The executor runs as fast as possible using `ControlFlow::Poll`, which means:
+/// - The window event loop runs continuously without waiting for events
+/// - Bevy's ECS `app.update()` is called on every frame
+/// - Both rendering and game logic run unbounded (no frame rate cap)
+///
+/// This provides maximum performance but will drain battery quickly.
+/// See the TODO comment about adaptive frame rate limiting for production use.
+///
+/// # Window Lifecycle
+///
+/// 1. Event loop starts and calls `resumed()` (winit requirement)
+/// 2. Window and window entity are created BEFORE `app.finish()`
+/// 3. Bevy's renderer initializes during `app.finish()` with the window available
+/// 4. App transitions to Running state and begins the render loop
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The event loop cannot be created
+/// - Window creation fails during initialization
+/// - The event loop encounters a fatal error
+///
+/// # Example
+///
+/// ```no_run
+/// use bevy::prelude::*;
+///
+/// let app = App::new();
+/// // ... configure app with plugins and systems ...
+///
+/// executor::run(app).expect("Failed to run executor");
+/// ```
 pub fn run(app: App) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
 
-    // TODO: Add battery power detection and adaptive frame/tick rate limiting
+    // TODO(@siennathesane): Add battery power detection and adaptive frame/tick rate limiting
     // When on battery: reduce to 60fps cap, lower ECS tick rate
     // When plugged in: run unbounded for maximum performance
+    // See GitHub issue #TBD for implementation details
 
     // Run as fast as possible (unbounded)
     event_loop.set_control_flow(ControlFlow::Poll);
 
     info!("Starting executor (unbounded mode)");
 
-    // Create handler in Initializing state
+    // Create handler in Initializing state with the app
     // It will transition to Running state on first resumed() callback
-    let mut handler = AppHandler::Initializing { app };
+    let mut handler = AppHandler::Initializing { app: Some(app) };
 
     event_loop.run_app(&mut handler)?;
 
