@@ -49,7 +49,7 @@
 
 use anyhow::Result;
 use bevy::prelude::*;
-use lib::networking::{GossipBridge, SessionId};
+use libmarathon::networking::{GossipBridge, SessionId};
 use uuid::Uuid;
 
 /// Session ID to use for network initialization
@@ -271,7 +271,7 @@ fn spawn_bridge_tasks(
 
     use bytes::Bytes;
     use futures_lite::StreamExt;
-    use lib::networking::VersionedMessage;
+    use libmarathon::networking::VersionedMessage;
 
     let node_id = bridge.node_id();
 

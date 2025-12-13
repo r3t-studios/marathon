@@ -3,38 +3,36 @@
 //! This demonstrates real-time CRDT synchronization with Apple Pencil input.
 
 use bevy::prelude::*;
-use bevy_egui::EguiPlugin;
-use lib::{
-    networking::{NetworkingConfig, NetworkingPlugin},
+// use bevy_egui::EguiPlugin;  // Disabled - needs WinitPlugin which we own directly
+use libmarathon::{
+    engine::{EngineBridge, EngineCore},
     persistence::{PersistenceConfig, PersistencePlugin},
 };
 use std::path::PathBuf;
-use uuid::Uuid;
 
 mod camera;
 mod cube;
 mod debug_ui;
+mod executor;
+mod engine_bridge;
 mod rendering;
+mod selection;
+mod session;
+mod session_ui;
 mod setup;
 
-#[cfg(not(target_os = "ios"))]
-mod input {
-    pub mod mouse;
-    pub use mouse::MouseInputPlugin;
-}
+use engine_bridge::EngineBridgePlugin;
 
-#[cfg(target_os = "ios")]
-mod input {
-    pub mod pencil;
-    pub use pencil::PencilInputPlugin;
-}
+mod input;
 
 use camera::*;
 use cube::*;
 use debug_ui::*;
 use input::*;
 use rendering::*;
-use setup::*;
+use selection::*;
+use session::*;
+use session_ui::*;
 
 fn main() {
     // Initialize logging
@@ -46,56 +44,62 @@ fn main() {
         )
         .init();
 
-    // Create node ID (in production, load from config or generate once)
-    let node_id = Uuid::new_v4();
-    info!("Starting app with node ID: {}", node_id);
-
     // Database path
     let db_path = PathBuf::from("cube_demo.db");
+    let db_path_str = db_path.to_str().unwrap().to_string();
 
-    // Create Bevy app
-    App::new()
-        .add_plugins(DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: format!("Replicated Cube Demo - Node {}", &node_id.to_string()[..8]),
-                    resolution: (1280, 720).into(),
-                    ..default()
-                }),
-                ..default()
-            })
-            .disable::<bevy::log::LogPlugin>()  // Disable Bevy's logger, using tracing-subscriber instead
-        )
-        .add_plugins(EguiPlugin::default())
-        // Networking (bridge will be set up in startup)
-        .add_plugins(NetworkingPlugin::new(NetworkingConfig {
-            node_id,
-            sync_interval_secs: 1.0,
-            prune_interval_secs: 60.0,
-            tombstone_gc_interval_secs: 300.0,
-        }))
-        // Persistence
-        .add_plugins(PersistencePlugin::with_config(
-            db_path,
-            PersistenceConfig {
-                flush_interval_secs: 2,
-                checkpoint_interval_secs: 30,
-                battery_adaptive: true,
-                ..Default::default()
-            },
-        ))
-        // Camera
-        .add_plugins(CameraPlugin)
-        // Rendering
-        .add_plugins(RenderingPlugin)
-        // Input
-        .add_plugins(MouseInputPlugin)
-        // Cube management
-        .add_plugins(CubePlugin)
-        // Debug UI
-        .add_plugins(DebugUiPlugin)
-        // Gossip networking setup
-        .add_systems(Startup, setup_gossip_networking)
-        .add_systems(Update, poll_gossip_bridge)
-        .run();
+    // Create EngineBridge (for communication between Bevy and EngineCore)
+    let (engine_bridge, engine_handle) = EngineBridge::new();
+    info!("EngineBridge created");
+
+    // Spawn EngineCore on tokio runtime (runs in background thread)
+    std::thread::spawn(move || {
+        info!("Starting EngineCore on tokio runtime...");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let core = EngineCore::new(engine_handle, &db_path_str);
+            core.run().await;
+        });
+    });
+    info!("EngineCore spawned in background");
+
+    // Create Bevy app (without winit - we own the event loop)
+    let mut app = App::new();
+
+    // Insert EngineBridge as a resource for Bevy systems to use
+    app.insert_resource(engine_bridge);
+
+    // Use DefaultPlugins but disable winit/window/input (we own those)
+    app.add_plugins(
+        DefaultPlugins
+            .build()
+            .disable::<bevy::log::LogPlugin>()  // Using tracing-subscriber
+            .disable::<bevy::winit::WinitPlugin>()  // We own winit
+            .disable::<bevy::window::WindowPlugin>()  // We own the window
+            .disable::<bevy::input::InputPlugin>()  // We provide InputEvents directly
+            .disable::<bevy::gilrs::GilrsPlugin>()  // We handle gamepad input ourselves
+    );
+
+    // app.add_plugins(EguiPlugin::default());  // Disabled - needs WinitPlugin
+    app.add_plugins(EngineBridgePlugin);
+    app.add_plugins(PersistencePlugin::with_config(
+        db_path,
+        PersistenceConfig {
+            flush_interval_secs: 2,
+            checkpoint_interval_secs: 30,
+            battery_adaptive: true,
+            ..Default::default()
+        },
+    ));
+    app.add_plugins(CameraPlugin);
+    app.add_plugins(RenderingPlugin);
+    app.add_plugins(input::InputHandlerPlugin);
+    app.add_plugins(CubePlugin);
+    app.add_plugins(SelectionPlugin);
+    // app.add_plugins(DebugUiPlugin);  // Disabled - uses egui
+    // app.add_plugins(SessionUiPlugin);  // Disabled - uses egui
+    app.add_systems(Startup, initialize_offline_resources);
+
+    // Run with our executor (unbounded event loop)
+    executor::run(app).expect("Failed to run executor");
 }

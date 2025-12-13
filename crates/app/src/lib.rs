@@ -6,7 +6,10 @@
 pub mod camera;
 pub mod cube;
 pub mod debug_ui;
+pub mod engine_bridge;
+pub mod input;
 pub mod rendering;
 pub mod setup;
 
 pub use cube::CubeMarker;
+pub use engine_bridge::EngineBridgePlugin;
