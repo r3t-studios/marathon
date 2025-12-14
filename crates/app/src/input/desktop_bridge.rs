@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::{MouseButtonInput, MouseWheel};
 use bevy::window::CursorMoved;
-use libmarathon::engine::{InputEvent, InputEventBuffer, KeyCode as EngineKeyCode, MouseButton as EngineMouseButton, TouchPhase, Modifiers};
+use libmarathon::platform::input::{InputEvent, InputEventBuffer, KeyCode as EngineKeyCode, MouseButton as EngineMouseButton, TouchPhase, Modifiers};
 
 /// Convert Bevy's Vec2 to glam::Vec2
 ///

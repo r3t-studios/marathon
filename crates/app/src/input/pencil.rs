@@ -3,7 +3,7 @@
 //! This module integrates the platform-agnostic pencil bridge with Bevy.
 
 use bevy::prelude::*;
-use libmarathon::{engine::InputEvent, platform::ios};
+use libmarathon::{platform::input::InputEvent, platform::ios};
 
 pub struct PencilInputPlugin;
 

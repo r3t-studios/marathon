@@ -2,4 +2,4 @@
 //!
 //! InputEventBuffer is now defined in libmarathon::engine
 
-pub use libmarathon::engine::InputEventBuffer;
+pub use libmarathon::platform::input::InputEventBuffer;

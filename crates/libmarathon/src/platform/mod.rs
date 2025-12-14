@@ -1,7 +1,11 @@
-//! Platform-specific input bridges
+//! Platform abstraction layer
 //!
-//! This module contains platform-specific code for capturing input
-//! and converting it to engine-agnostic InputEvents.
+//! This module provides platform-agnostic interfaces for OS/hardware interaction:
+//! - **input**: Abstract input events (keyboard, mouse, touch, gestures)
+//! - **desktop**: Concrete winit-based implementation for desktop platforms
+//! - **ios**: Concrete UIKit-based implementation for iOS
+
+pub mod input;
 
 #[cfg(target_os = "ios")]
 pub mod ios;

@@ -12,7 +12,6 @@ use std::path::PathBuf;
 mod camera;
 mod cube;
 mod debug_ui;
-mod executor;
 mod engine_bridge;
 mod rendering;
 mod selection;
@@ -101,5 +100,5 @@ fn main() {
     app.add_systems(Startup, initialize_offline_resources);
 
     // Run with our executor (unbounded event loop)
-    executor::run(app).expect("Failed to run executor");
+    libmarathon::platform::desktop::run_executor(app).expect("Failed to run executor");
 }
