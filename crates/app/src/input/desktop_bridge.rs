@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::{MouseButtonInput, MouseWheel};
 use bevy::window::CursorMoved;
-use libmarathon::engine::{InputEvent, KeyCode as EngineKeyCode, MouseButton as EngineMouseButton, TouchPhase, Modifiers};
+use libmarathon::engine::{InputEvent, InputEventBuffer, KeyCode as EngineKeyCode, MouseButton as EngineMouseButton, TouchPhase, Modifiers};
 
 /// Convert Bevy's Vec2 to glam::Vec2
 ///
@@ -100,19 +100,6 @@ impl Plugin for DesktopInputBridgePlugin {
     }
 }
 
-/// Buffer for InputEvents collected this frame
-#[derive(Resource, Default)]
-pub struct InputEventBuffer {
-    pub events: Vec<InputEvent>,
-}
-
-impl InputEventBuffer {
-    /// Get all events from this frame
-    pub fn events(&self) -> &[InputEvent] {
-        &self.events
-    }
-}
-
 /// Clear the buffer at the start of each frame
 fn clear_buffer(mut buffer: ResMut<InputEventBuffer>) {
     buffer.events.clear();
@@ -152,17 +139,21 @@ fn collect_mouse_buttons(
     }
 }
 
-/// Collect mouse motion events (for drag tracking)
+/// Collect mouse motion events (for hover and drag tracking)
 fn collect_mouse_motion(
     mut buffer: ResMut<InputEventBuffer>,
     mut cursor_moved: MessageReader<CursorMoved>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
 ) {
-    // Only process if cursor actually moved
     for event in cursor_moved.read() {
         let cursor_pos = event.position;
 
-        // Generate drag events for currently pressed buttons
+        // ALWAYS send MouseMove for cursor tracking (hover, tooltips, etc.)
+        buffer.events.push(InputEvent::MouseMove {
+            pos: to_glam_vec2(cursor_pos),
+        });
+
+        // ALSO generate drag events for currently pressed buttons
         if mouse_buttons.pressed(MouseButton::Left) {
             buffer.events.push(InputEvent::Mouse {
                 pos: to_glam_vec2(cursor_pos),

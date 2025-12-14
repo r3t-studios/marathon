@@ -4,8 +4,8 @@
 //! and shows connected peer information.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use libmarathon::{
+    debug_ui::{egui, EguiContexts, EguiPrimaryContextPass},
     engine::{EngineBridge, EngineCommand},
     networking::{CurrentSession, NodeVectorClock, SessionId},
 };

@@ -39,6 +39,15 @@ pub struct Modifiers {
     pub meta: bool, // Command on macOS, Windows key on Windows
 }
 
+/// Input event buffer for Bevy ECS integration
+///
+/// The executor fills this buffer each frame with input events from winit,
+/// and Bevy systems (like egui) consume these events.
+#[derive(bevy::prelude::Resource, Default, Clone)]
+pub struct InputEventBuffer {
+    pub events: Vec<InputEvent>,
+}
+
 /// Abstract input event that the engine processes
 ///
 /// Platform-specific code converts native input (UITouch, winit events)
@@ -70,6 +79,13 @@ pub enum InputEvent {
         button: MouseButton,
         /// Touch phase
         phase: TouchPhase,
+    },
+
+    /// Mouse cursor movement (no button pressed)
+    /// This is separate from Mouse to distinguish hover from drag
+    MouseMove {
+        /// Screen position in pixels
+        pos: Vec2,
     },
 
     /// Touch input (fingers on touchscreen)
@@ -107,6 +123,7 @@ impl InputEvent {
         match self {
             InputEvent::Stylus { pos, .. } => Some(*pos),
             InputEvent::Mouse { pos, .. } => Some(*pos),
+            InputEvent::MouseMove { pos } => Some(*pos),
             InputEvent::Touch { pos, .. } => Some(*pos),
             InputEvent::MouseWheel { pos, .. } => Some(*pos),
             InputEvent::Keyboard { .. } => None,
@@ -119,7 +136,7 @@ impl InputEvent {
             InputEvent::Stylus { phase, .. } => Some(*phase),
             InputEvent::Mouse { phase, .. } => Some(*phase),
             InputEvent::Touch { phase, .. } => Some(*phase),
-            InputEvent::Keyboard { .. } | InputEvent::MouseWheel { .. } => None,
+            InputEvent::Keyboard { .. } | InputEvent::MouseWheel { .. } | InputEvent::MouseMove { .. } => None,
         }
     }
 

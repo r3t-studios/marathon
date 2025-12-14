@@ -21,8 +21,8 @@ use libmarathon::engine::InputEvent;
 use libmarathon::platform::desktop;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent as WinitWindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event::{Event as WinitEvent, WindowEvent as WinitWindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window as WinitWindow, WindowId, WindowAttributes};
 
 // Re-export InputEventBuffer from the input module
@@ -124,6 +124,9 @@ impl AppHandler {
         let physical_size = winit_window.inner_size();
         let scale_factor = winit_window.scale_factor();
 
+        // Set the scale factor in the input bridge so mouse coords are converted correctly
+        desktop::set_scale_factor(scale_factor);
+
         // Create window entity with all required components (use logical size)
         let mut window = bevy::window::Window {
             title: "Marathon".to_string(),
@@ -134,10 +137,13 @@ impl AppHandler {
             mode: WindowMode::Windowed,
             position: WindowPosition::Automatic,
             focused: true,
+            // Let Window use default theme - will auto-detect system theme, egui will follow
             ..Default::default()
         };
-        // Set scale factor explicitly
-        window.resolution.set_scale_factor(scale_factor as f32);
+        // Set scale factor using the proper API that applies to physical size
+        window
+            .resolution
+            .set_scale_factor_and_apply_to_physical_size(scale_factor as f32);
 
         // Create WindowWrapper and RawHandleWrapper for renderer
         let window_wrapper = WindowWrapper::new(winit_window.clone());
@@ -151,10 +157,9 @@ impl AppHandler {
         )).id();
         info!("Created window entity {}", window_entity);
 
-        // Send initialization events
+        // Send initialization event (only WindowCreated, like Bevy does)
+        // WindowResized and WindowScaleFactorChanged should only fire in response to actual winit events
         send_window_created(&mut bevy_app, window_entity);
-        send_window_resized(&mut bevy_app, window_entity, physical_size, scale_factor);
-        send_scale_factor_changed(&mut bevy_app, window_entity, scale_factor);
 
         // Now finish the app - the renderer will initialize with the window
         bevy_app.finish();
@@ -187,9 +192,9 @@ impl AppHandler {
             // Run one final update to process close event
             bevy_app.update();
 
-            // Cleanup
-            bevy_app.finish();
-            bevy_app.cleanup();
+            // Don't call finish/cleanup - let Bevy's AppExit handle it
+            // bevy_app.finish();
+            // bevy_app.cleanup();
         }
 
         event_loop.exit();
@@ -240,7 +245,14 @@ impl ApplicationHandler for AppHandler {
             }
 
             WinitWindowEvent::Resized(physical_size) => {
-                // Notify Bevy of window resize
+                // Update the Bevy Window component's physical resolution
+                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                    window_component
+                        .resolution
+                        .set_physical_resolution(physical_size.width, physical_size.height);
+                }
+
+                // Notify Bevy systems of window resize
                 let scale_factor = window.scale_factor();
                 send_window_resized(bevy_app, *bevy_window_entity, physical_size, scale_factor);
             }
@@ -267,6 +279,26 @@ impl ApplicationHandler for AppHandler {
 
                 // Request next frame immediately (unbounded loop)
                 window.request_redraw();
+            }
+
+            WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                // Update the Bevy Window component's scale factor
+                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                    let prior_factor = window_component.resolution.scale_factor();
+
+                    // Use the proper API that applies to physical size
+                    window_component
+                        .resolution
+                        .set_scale_factor_and_apply_to_physical_size(scale_factor as f32);
+
+                    // Send scale factor changed event so camera system can update
+                    send_scale_factor_changed(bevy_app, *bevy_window_entity, scale_factor);
+
+                    info!(
+                        "Scale factor changed from {} to {} for window {:?}",
+                        prior_factor, scale_factor, bevy_window_entity
+                    );
+                }
             }
 
             _ => {}
@@ -322,7 +354,8 @@ impl ApplicationHandler for AppHandler {
 ///
 /// executor::run(app).expect("Failed to run executor");
 /// ```
-pub fn run(app: App) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
+    // Create event loop (using default type for now, WakeUp will be added when implementing battery mode)
     let event_loop = EventLoop::new()?;
 
     // TODO(@siennathesane): Add battery power detection and adaptive frame/tick rate limiting

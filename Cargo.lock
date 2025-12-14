@@ -222,10 +222,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
- "bevy_egui",
  "bincode",
  "bytes",
  "crossbeam-channel",
+ "egui",
  "futures-lite",
  "glam 0.29.3",
  "iroh",
@@ -721,7 +721,7 @@ dependencies = [
  "bevy_reflect",
  "bytemuck",
  "derive_more 2.0.1",
- "encase",
+ "encase 0.11.2",
  "serde",
  "thiserror 2.0.17",
  "wgpu-types",
@@ -826,60 +826,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_egui"
-version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c20416343c6d24eedad9db93c4c42c6571b15d14bac4f6f41b993ec413243f9"
-dependencies = [
- "arboard",
- "bevy_app",
- "bevy_asset",
- "bevy_camera",
- "bevy_color",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_ecs",
- "bevy_image",
- "bevy_input",
- "bevy_log",
- "bevy_math",
- "bevy_mesh",
- "bevy_picking",
- "bevy_platform",
- "bevy_reflect",
- "bevy_render",
- "bevy_shader",
- "bevy_time",
- "bevy_transform",
- "bevy_ui_render",
- "bevy_utils",
- "bevy_window",
- "bevy_winit",
- "bytemuck",
- "crossbeam-channel",
- "egui",
- "encase",
- "getrandom 0.3.4",
- "image",
- "itertools 0.14.0",
- "js-sys",
- "thread_local",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "webbrowser",
- "wgpu-types",
- "winit",
-]
-
-[[package]]
 name = "bevy_encase_derive"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7449e5903594a00f007732ba232af0c527ad4e6e3d29bc3e195ec78dbd20c8b2"
 dependencies = [
  "bevy_macro_utils",
- "encase_derive_impl",
+ "encase_derive_impl 0.11.2",
 ]
 
 [[package]]
@@ -1381,7 +1334,7 @@ dependencies = [
  "bytemuck",
  "derive_more 2.0.1",
  "downcast-rs 2.0.2",
- "encase",
+ "encase 0.11.2",
  "fixedbitset",
  "image",
  "indexmap",
@@ -2813,14 +2766,35 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "encase"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0a05902cf601ed11d564128448097b98ebe3c6574bd7b6a653a3d56d54aa020"
+dependencies = [
+ "const_panic",
+ "encase_derive 0.10.0",
+ "glam 0.29.3",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "encase"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02ba239319a4f60905966390f5e52799d868103a533bb7e27822792332504ddd"
 dependencies = [
  "const_panic",
- "encase_derive",
+ "encase_derive 0.11.2",
  "glam 0.30.9",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "encase_derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "181d475b694e2dd56ae919ce7699d344d1fd259292d590c723a50d1189a2ea85"
+dependencies = [
+ "encase_derive_impl 0.10.0",
 ]
 
 [[package]]
@@ -2829,7 +2803,18 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5223d6c647f09870553224f6e37261fe5567bc5a4f4cf13ed337476e79990f2f"
 dependencies = [
- "encase_derive_impl",
+ "encase_derive_impl 0.11.2",
+]
+
+[[package]]
+name = "encase_derive_impl"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f97b51c5cc57ef7c5f7a0c57c250251c49ee4c28f819f87ac32f4aceabc36792"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -4503,19 +4488,24 @@ name = "libmarathon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "bevy",
  "bincode",
  "blake3",
  "blocking",
+ "bytemuck",
  "bytes",
  "chrono",
  "crdts",
  "criterion",
  "crossbeam-channel",
+ "egui",
+ "encase 0.10.0",
  "futures-lite",
  "glam 0.29.3",
  "iroh",
  "iroh-gossip",
+ "itertools 0.14.0",
  "proptest",
  "rand 0.8.5",
  "raw-window-handle",
@@ -4530,6 +4520,7 @@ dependencies = [
  "toml",
  "tracing",
  "uuid",
+ "wgpu-types",
  "winit",
 ]
 
@@ -7996,22 +7987,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webbrowser"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00f1243ef785213e3a32fa0396093424a3a6ea566f9948497e5a2309261a4c97"
-dependencies = [
- "core-foundation 0.10.1",
- "jni",
- "log",
- "ndk-context",
- "objc2 0.6.3",
- "objc2-foundation 0.3.2",
- "url",
- "web-sys",
 ]
 
 [[package]]

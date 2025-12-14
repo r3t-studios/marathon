@@ -30,6 +30,12 @@ blocking = "1.6"
 crossbeam-channel = "0.5"
 iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
+egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
+arboard = "3.4"
+bytemuck = { version = "1.14", features = ["derive"] }
+encase = { version = "0.10", features = ["glam"] }
+wgpu-types = "26.0"
+itertools = "0.14"
 
 [dev-dependencies]
 tokio.workspace = true

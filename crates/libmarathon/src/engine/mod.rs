@@ -16,6 +16,6 @@ pub use core::EngineCore;
 pub use events::EngineEvent;
 pub use game_actions::GameAction;
 pub use input_controller::{AccessibilitySettings, InputContext, InputController};
-pub use input_events::{InputEvent, KeyCode, Modifiers, MouseButton, TouchPhase};
+pub use input_events::{InputEvent, InputEventBuffer, KeyCode, Modifiers, MouseButton, TouchPhase};
 pub use networking::NetworkingManager;
 pub use persistence::PersistenceManager;

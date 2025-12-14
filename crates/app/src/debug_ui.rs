@@ -1,11 +1,8 @@
 //! Debug UI overlay using egui
 
 use bevy::prelude::*;
-use bevy_egui::{
-    egui,
-    EguiContexts,
-    EguiPrimaryContextPass,
-};
+use bevy::ecs::message::MessageWriter;
+use libmarathon::debug_ui::{EguiContexts, EguiPrimaryContextPass};
 use libmarathon::networking::{
     EntityLockRegistry,
     GossipBridge,
@@ -25,17 +22,15 @@ impl Plugin for DebugUiPlugin {
 
 /// Render the debug UI panel
 fn render_debug_ui(
-    mut contexts: EguiContexts,
+    mut egui_ctx: EguiContexts,
     node_clock: Option<Res<NodeVectorClock>>,
     gossip_bridge: Option<Res<GossipBridge>>,
     lock_registry: Option<Res<EntityLockRegistry>>,
     cube_query: Query<(&Transform, &NetworkedEntity), With<CubeMarker>>,
     mut spawn_events: MessageWriter<SpawnCubeEvent>,
     mut delete_events: MessageWriter<DeleteCubeEvent>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
+) -> Result {
+    let ctx: &egui::Context = egui_ctx.ctx_mut()?;
 
     egui::Window::new("Debug Info")
         .default_pos([10.0, 10.0])
@@ -186,4 +181,6 @@ fn render_debug_ui(
             ui.label("Scroll: Move cube (Z)");
             ui.label("ESC: Deselect");
         });
+
+    Ok(())
 }
