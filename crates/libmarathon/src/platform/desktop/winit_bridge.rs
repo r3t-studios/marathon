@@ -42,6 +42,16 @@ fn get_event_channel() -> &'static (Sender<RawWinitEvent>, Receiver<RawWinitEven
     EVENT_CHANNEL.get_or_init(|| unbounded())
 }
 
+/// Current scale factor (needed to convert physical to logical pixels)
+static SCALE_FACTOR: Mutex<f64> = Mutex::new(1.0);
+
+/// Set the window scale factor (call when window is created or scale changes)
+pub fn set_scale_factor(scale_factor: f64) {
+    if let Ok(mut sf) = SCALE_FACTOR.lock() {
+        *sf = scale_factor;
+    }
+}
+
 /// Current input state for tracking drags and modifiers
 static INPUT_STATE: Mutex<InputState> = Mutex::new(InputState {
     left_pressed: false,
@@ -99,16 +109,19 @@ pub fn push_window_event(event: &WindowEvent) {
         }
 
         WindowEvent::CursorMoved { position, .. } => {
-            let pos = Vec2::new(position.x as f32, position.y as f32);
+            // Convert from physical pixels to logical pixels
+            let scale_factor = SCALE_FACTOR.lock().map(|sf| *sf).unwrap_or(1.0);
+            let pos = Vec2::new(
+                (position.x / scale_factor) as f32,
+                (position.y / scale_factor) as f32,
+            );
 
             if let Ok(mut input_state) = INPUT_STATE.lock() {
                 input_state.last_position = pos;
 
-                // Generate drag events for any pressed buttons
-                if input_state.left_pressed || input_state.right_pressed || input_state.middle_pressed {
-                    let (sender, _) = get_event_channel();
-                    let _ = sender.send(RawWinitEvent::CursorMoved { position: pos });
-                }
+                // ALWAYS send cursor movement for hover tracking (egui needs this!)
+                let (sender, _) = get_event_channel();
+                let _ = sender.send(RawWinitEvent::CursorMoved { position: pos });
             }
         }
 
@@ -187,24 +200,34 @@ fn raw_to_input_event(event: RawWinitEvent) -> Option<InputEvent> {
         }
 
         RawWinitEvent::CursorMoved { position } => {
-            // Determine which button is pressed for drag events
+            // Check if any button is pressed
             let input_state = INPUT_STATE.lock().ok()?;
 
-            let button = if input_state.left_pressed {
-                MouseButton::Left
+            if input_state.left_pressed {
+                // Drag with left button
+                Some(InputEvent::Mouse {
+                    pos: position,
+                    button: MouseButton::Left,
+                    phase: TouchPhase::Moved,
+                })
             } else if input_state.right_pressed {
-                MouseButton::Right
+                // Drag with right button
+                Some(InputEvent::Mouse {
+                    pos: position,
+                    button: MouseButton::Right,
+                    phase: TouchPhase::Moved,
+                })
             } else if input_state.middle_pressed {
-                MouseButton::Middle
+                // Drag with middle button
+                Some(InputEvent::Mouse {
+                    pos: position,
+                    button: MouseButton::Middle,
+                    phase: TouchPhase::Moved,
+                })
             } else {
-                return None; // No button pressed, ignore
-            };
-
-            Some(InputEvent::Mouse {
-                pos: position,
-                button,
-                phase: TouchPhase::Moved,
-            })
+                // No button pressed - hover tracking
+                Some(InputEvent::MouseMove { pos: position })
+            }
         }
 
         RawWinitEvent::Keyboard { key, state, modifiers } => {

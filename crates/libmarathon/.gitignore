@@ -1,4 +1,4 @@
 /target
-chat.db
+*.db
 *.db-shm
 *.db-wal

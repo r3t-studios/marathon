@@ -19,7 +19,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_text",
     "png",
 ] }
-bevy_egui = "0.38"
+egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
 glam = "0.29"
 winit = "0.30"
 raw-window-handle = "0.6"

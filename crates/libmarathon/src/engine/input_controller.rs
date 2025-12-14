@@ -169,6 +169,11 @@ impl InputController {
         let mut actions = Vec::new();
 
         match event {
+            InputEvent::MouseMove { pos: _ } => {
+                // Mouse hover - no game actions, just UI tracking
+                // This is handled by egui's custom_input_system
+            }
+
             InputEvent::Mouse { pos, button, phase } => {
                 self.process_mouse(*pos, *button, *phase, &mut actions);
             }

@@ -3,10 +3,9 @@
 //! This demonstrates real-time CRDT synchronization with Apple Pencil input.
 
 use bevy::prelude::*;
-// use bevy_egui::EguiPlugin;  // Disabled - needs WinitPlugin which we own directly
 use libmarathon::{
     engine::{EngineBridge, EngineCore},
-    persistence::{PersistenceConfig, PersistencePlugin},
+    persistence::PersistenceConfig,
 };
 use std::path::PathBuf;
 
@@ -21,14 +20,13 @@ mod session;
 mod session_ui;
 mod setup;
 
+use debug_ui::DebugUiPlugin;
 use engine_bridge::EngineBridgePlugin;
 
 mod input;
 
 use camera::*;
 use cube::*;
-use debug_ui::*;
-use input::*;
 use rendering::*;
 use selection::*;
 use session::*;
@@ -80,9 +78,8 @@ fn main() {
             .disable::<bevy::gilrs::GilrsPlugin>()  // We handle gamepad input ourselves
     );
 
-    // app.add_plugins(EguiPlugin::default());  // Disabled - needs WinitPlugin
-    app.add_plugins(EngineBridgePlugin);
-    app.add_plugins(PersistencePlugin::with_config(
+    // Marathon core plugins (networking, debug UI, persistence)
+    app.add_plugins(libmarathon::MarathonPlugin::new(
         db_path,
         PersistenceConfig {
             flush_interval_secs: 2,
@@ -91,13 +88,16 @@ fn main() {
             ..Default::default()
         },
     ));
+
+    // App-specific bridge for polling engine events
+    app.add_plugins(EngineBridgePlugin);
     app.add_plugins(CameraPlugin);
     app.add_plugins(RenderingPlugin);
     app.add_plugins(input::InputHandlerPlugin);
     app.add_plugins(CubePlugin);
     app.add_plugins(SelectionPlugin);
-    // app.add_plugins(DebugUiPlugin);  // Disabled - uses egui
-    // app.add_plugins(SessionUiPlugin);  // Disabled - uses egui
+    app.add_plugins(DebugUiPlugin);
+    app.add_plugins(SessionUiPlugin);
     app.add_systems(Startup, initialize_offline_resources);
 
     // Run with our executor (unbounded event loop)
