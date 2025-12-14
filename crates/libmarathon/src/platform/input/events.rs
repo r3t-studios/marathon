@@ -115,6 +115,34 @@ pub enum InputEvent {
         /// Current mouse position
         pos: Vec2,
     },
+
+    /// Raw mouse motion delta (for FPS camera, etc.)
+    /// This is unbounded mouse movement, separate from cursor position
+    MouseMotion {
+        /// Raw mouse delta
+        delta: Vec2,
+    },
+
+    /// Pinch gesture (trackpad/touch - zoom in/out)
+    PinchGesture {
+        /// Delta amount (positive = zoom in, negative = zoom out)
+        delta: f32,
+    },
+
+    /// Rotation gesture (trackpad/touch - rotate with two fingers)
+    RotationGesture {
+        /// Rotation delta in radians
+        delta: f32,
+    },
+
+    /// Pan gesture (trackpad/touch - swipe with two fingers)
+    PanGesture {
+        /// Pan delta
+        delta: Vec2,
+    },
+
+    /// Double-tap gesture (trackpad/touch)
+    DoubleTapGesture,
 }
 
 impl InputEvent {
@@ -126,7 +154,12 @@ impl InputEvent {
             InputEvent::MouseMove { pos } => Some(*pos),
             InputEvent::Touch { pos, .. } => Some(*pos),
             InputEvent::MouseWheel { pos, .. } => Some(*pos),
-            InputEvent::Keyboard { .. } => None,
+            InputEvent::Keyboard { .. } |
+            InputEvent::MouseMotion { .. } |
+            InputEvent::PinchGesture { .. } |
+            InputEvent::RotationGesture { .. } |
+            InputEvent::PanGesture { .. } |
+            InputEvent::DoubleTapGesture => None,
         }
     }
 
@@ -136,7 +169,14 @@ impl InputEvent {
             InputEvent::Stylus { phase, .. } => Some(*phase),
             InputEvent::Mouse { phase, .. } => Some(*phase),
             InputEvent::Touch { phase, .. } => Some(*phase),
-            InputEvent::Keyboard { .. } | InputEvent::MouseWheel { .. } | InputEvent::MouseMove { .. } => None,
+            InputEvent::Keyboard { .. } |
+            InputEvent::MouseWheel { .. } |
+            InputEvent::MouseMove { .. } |
+            InputEvent::MouseMotion { .. } |
+            InputEvent::PinchGesture { .. } |
+            InputEvent::RotationGesture { .. } |
+            InputEvent::PanGesture { .. } |
+            InputEvent::DoubleTapGesture => None,
         }
     }
 
@@ -144,7 +184,7 @@ impl InputEvent {
     pub fn is_active(&self) -> bool {
         match self.phase() {
             Some(phase) => !matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled),
-            None => true, // Keyboard and wheel events are considered instantaneous
+            None => true, // Gestures, keyboard, and wheel events are instantaneous
         }
     }
 }

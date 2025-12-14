@@ -25,7 +25,7 @@ use bevy::window::{CursorMoved, FileDragAndDrop, Ime, Window};
 use egui::Modifiers;
 
 // Import engine InputEvent types for custom input system
-use crate::engine::{InputEvent, InputEventBuffer, TouchPhase, MouseButton as EngineMouseButton, KeyCode as EngineKeyCode};
+use crate::platform::input::{InputEvent, InputEventBuffer, TouchPhase, MouseButton as EngineMouseButton, KeyCode as EngineKeyCode};
 
 /// Cached pointer position, used to populate [`egui::Event::PointerButton`] messages.
 #[derive(Component, Default)]

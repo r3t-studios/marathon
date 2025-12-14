@@ -3,7 +3,7 @@
 //! This module creates and manages the main window and event loop.
 //! It converts winit events to InputEvents and provides them to the engine.
 
-use super::winit_bridge;
+use super::input;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -46,7 +46,7 @@ impl ApplicationHandler for DesktopApp {
         event: WindowEvent,
     ) {
         // Forward all input events to the bridge first
-        winit_bridge::push_window_event(&event);
+        input::push_window_event(&event);
 
         match event {
             WindowEvent::CloseRequested => {

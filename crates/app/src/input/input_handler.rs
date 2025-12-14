@@ -4,7 +4,8 @@
 
 use bevy::prelude::*;
 use libmarathon::{
-    engine::{GameAction, InputController},
+    engine::GameAction,
+    platform::input::InputController,
     networking::{EntityLockRegistry, NetworkedEntity, NetworkedSelection, NodeVectorClock},
 };
 

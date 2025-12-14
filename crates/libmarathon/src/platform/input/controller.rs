@@ -5,8 +5,8 @@
 //! - Accessibility (alternative input methods)
 //! - Context-aware bindings (different actions in different modes)
 
-use super::game_actions::GameAction;
-use super::input_events::{InputEvent, KeyCode, MouseButton, TouchPhase};
+use crate::engine::GameAction;
+use super::events::{InputEvent, KeyCode, MouseButton, TouchPhase};
 use glam::Vec2;
 use std::collections::HashMap;
 
@@ -195,6 +195,55 @@ impl InputController {
 
             InputEvent::Touch { pos, phase, id: _ } => {
                 self.process_touch(*pos, *phase, &mut actions);
+            }
+
+            InputEvent::PinchGesture { delta } => {
+                // Pinch gesture - use for zoom/scale
+                // Positive delta = pinch out (zoom in), negative = pinch in (zoom out)
+                let adjusted_delta = delta * self.accessibility.scroll_sensitivity;
+                actions.push(GameAction::MoveEntityDepth { delta: adjusted_delta });
+            }
+
+            InputEvent::RotationGesture { delta } => {
+                // Rotation gesture - use for rotating entities or camera
+                let adjusted_delta = if self.accessibility.invert_y {
+                    -*delta
+                } else {
+                    *delta
+                };
+                // Convert rotation delta to 2D delta for rotation action
+                let delta_vec = Vec2::new(adjusted_delta, 0.0);
+                actions.push(GameAction::RotateEntity { delta: delta_vec });
+            }
+
+            InputEvent::PanGesture { delta } => {
+                // Pan gesture - use for camera movement or entity translation
+                let adjusted_delta = *delta * self.accessibility.mouse_sensitivity;
+                match self.current_context {
+                    InputContext::CameraControl => {
+                        actions.push(GameAction::MoveCamera { delta: adjusted_delta });
+                    }
+                    InputContext::EntityManipulation => {
+                        actions.push(GameAction::MoveEntity { delta: adjusted_delta });
+                    }
+                    _ => {}
+                }
+            }
+
+            InputEvent::DoubleTapGesture => {
+                // Double-tap gesture - quick reset/center action
+                actions.push(GameAction::ResetEntity);
+            }
+
+            InputEvent::MouseMotion { delta } => {
+                // Raw mouse motion delta - only used in CameraControl mode for FPS-style camera
+                // This is unbounded mouse movement (different from cursor position)
+                // and would conflict with normal cursor-based dragging if used elsewhere
+                if self.current_context == InputContext::CameraControl {
+                    let adjusted_delta = *delta * self.accessibility.mouse_sensitivity;
+                    actions.push(GameAction::MoveCamera { delta: adjusted_delta });
+                }
+                // In other contexts, ignore MouseMotion to avoid conflicts with cursor-based input
             }
         }
 
