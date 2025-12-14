@@ -40,6 +40,8 @@ pub mod sync;
 /// For simple integration, just add this single plugin to your Bevy app.
 /// Note: You'll still need to add your app-specific bridge/event handling.
 pub struct MarathonPlugin {
+    /// Application name (used for database filename)
+    pub app_name: String,
     /// Path to the persistence database
     pub db_path: std::path::PathBuf,
     /// Persistence configuration
@@ -47,9 +49,26 @@ pub struct MarathonPlugin {
 }
 
 impl MarathonPlugin {
-    /// Create a new MarathonPlugin with custom database path and config
-    pub fn new(db_path: impl Into<std::path::PathBuf>, config: persistence::PersistenceConfig) -> Self {
+    /// Create a new MarathonPlugin with app name and config
+    ///
+    /// The database will be created in the platform-appropriate location:
+    /// - iOS: app's Documents directory
+    /// - Desktop: current directory
+    pub fn new(app_name: impl Into<String>, config: persistence::PersistenceConfig) -> Self {
+        let app_name = app_name.into();
+        let db_path = platform::get_database_path(&app_name);
+
         Self {
+            app_name,
+            db_path,
+            persistence_config: config,
+        }
+    }
+
+    /// Create a new MarathonPlugin with custom database path and config
+    pub fn with_custom_db(app_name: impl Into<String>, db_path: impl Into<std::path::PathBuf>, config: persistence::PersistenceConfig) -> Self {
+        Self {
+            app_name: app_name.into(),
             db_path: db_path.into(),
             persistence_config: config,
         }
@@ -58,6 +77,7 @@ impl MarathonPlugin {
     /// Create with default settings (database in current directory)
     pub fn with_default_db() -> Self {
         Self {
+            app_name: "marathon".to_string(),
             db_path: "marathon.db".into(),
             persistence_config: Default::default(),
         }

@@ -41,9 +41,13 @@ fn main() {
         )
         .init();
 
-    // Database path
-    let db_path = PathBuf::from("cube_demo.db");
+    // Application configuration
+    const APP_NAME: &str = "Aspen";
+
+    // Get platform-appropriate database path
+    let db_path = libmarathon::platform::get_database_path(APP_NAME);
     let db_path_str = db_path.to_str().unwrap().to_string();
+    info!("Database path: {}", db_path_str);
 
     // Create EngineBridge (for communication between Bevy and EngineCore)
     let (engine_bridge, engine_handle) = EngineBridge::new();
@@ -79,7 +83,7 @@ fn main() {
 
     // Marathon core plugins (networking, debug UI, persistence)
     app.add_plugins(libmarathon::MarathonPlugin::new(
-        db_path,
+        APP_NAME,
         PersistenceConfig {
             flush_interval_secs: 2,
             checkpoint_interval_secs: 30,
@@ -99,6 +103,5 @@ fn main() {
     app.add_plugins(SessionUiPlugin);
     app.add_systems(Startup, initialize_offline_resources);
 
-    // Run with our executor (unbounded event loop)
-    libmarathon::platform::desktop::run_executor(app).expect("Failed to run executor");
+    libmarathon::platform::run_executor(app).expect("Failed to run executor");
 }

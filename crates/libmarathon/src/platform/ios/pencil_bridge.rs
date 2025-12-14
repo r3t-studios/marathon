@@ -3,7 +3,7 @@
 //! This module captures raw Apple Pencil input via Swift/UIKit and converts
 //! it to engine-agnostic InputEvents.
 
-use crate::engine::input_events::{InputEvent, TouchPhase};
+use crate::platform::input::{InputEvent, TouchPhase};
 use glam::Vec2;
 use std::sync::Mutex;
 
@@ -39,11 +39,17 @@ static BUFFER: Mutex<Vec<RawPencilPoint>> = Mutex::new(Vec::new());
 ///
 /// This is exposed as a C function so Swift can call it.
 /// The `#[no_mangle]` prevents Rust from changing the function name.
-#[no_mangle]
-pub extern "C" fn pencil_point_received(point: RawPencilPoint) {
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_push_pencil_point(point: RawPencilPoint) {
     if let Ok(mut buf) = BUFFER.lock() {
         buf.push(point);
     }
+}
+
+/// Legacy alias for compatibility
+#[unsafe(no_mangle)]
+pub extern "C" fn pencil_point_received(point: RawPencilPoint) {
+    rust_push_pencil_point(point);
 }
 
 /// Drain all buffered pencil points and convert to InputEvents
@@ -89,15 +95,20 @@ fn raw_to_input_event(p: RawPencilPoint) -> InputEvent {
     }
 }
 
-/// Attach the pencil capture system to a UIView
-///
-/// This is only available on iOS. On other platforms, it's a no-op.
 #[cfg(target_os = "ios")]
-extern "C" {
+unsafe extern "C" {
+    /// Attach the pencil capture system to a UIView
     pub fn swift_attach_pencil_capture(view: *mut std::ffi::c_void);
+    /// Detach the pencil capture system from a UIView
+    pub fn swift_detach_pencil_capture(view: *mut std::ffi::c_void);
 }
 
 #[cfg(not(target_os = "ios"))]
 pub unsafe fn swift_attach_pencil_capture(_: *mut std::ffi::c_void) {
+    // No-op on non-iOS platforms
+}
+
+#[cfg(not(target_os = "ios"))]
+pub unsafe fn swift_detach_pencil_capture(_: *mut std::ffi::c_void) {
     // No-op on non-iOS platforms
 }
