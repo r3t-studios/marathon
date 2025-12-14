@@ -1,28 +1,13 @@
-//! Input handling modules
+//! Input handling for Aspen
 //!
-//! This module contains platform-specific input adapters that bridge
-//! native input (Bevy/winit, iOS pencil) to libmarathon's InputEvent system.
+//! Input flow:
+//! 1. Platform executor (desktop/iOS) captures native input
+//! 2. Platform layer converts to InputEvents and populates InputEventBuffer
+//! 3. InputHandler reads buffer and converts to GameActions
+//! 4. GameActions are applied to entities
 
 pub mod event_buffer;
 pub mod input_handler;
 
-#[cfg(target_os = "ios")]
-pub mod pencil;
-
-#[cfg(not(target_os = "ios"))]
-pub mod desktop_bridge;
-
-#[cfg(not(target_os = "ios"))]
-pub mod mouse;
-
 pub use event_buffer::InputEventBuffer;
 pub use input_handler::InputHandlerPlugin;
-
-#[cfg(target_os = "ios")]
-pub use pencil::PencilInputPlugin;
-
-#[cfg(not(target_os = "ios"))]
-pub use desktop_bridge::DesktopInputBridgePlugin;
-
-#[cfg(not(target_os = "ios"))]
-pub use mouse::MouseInputPlugin;
