@@ -124,13 +124,14 @@ impl AppHandler {
         info!("iOS scale factor: {}", scale_factor);
 
         // Create window entity with all required components
+        // Convert physical pixels to logical pixels using proper floating-point division
+        let logical_width = (physical_size.width as f64 / scale_factor) as f32;
+        let logical_height = (physical_size.height as f64 / scale_factor) as f32;
+
         let mut window = bevy::window::Window {
             title: "Marathon".to_string(),
-            resolution: WindowResolution::new(
-                physical_size.width / scale_factor as u32,
-                physical_size.height / scale_factor as u32,
-            ),
-            mode: WindowMode::Windowed,
+            resolution: WindowResolution::new(logical_width, logical_height),
+            mode: WindowMode::BorderlessFullscreen,
             position: WindowPosition::Automatic,
             focused: true,
             ..Default::default()

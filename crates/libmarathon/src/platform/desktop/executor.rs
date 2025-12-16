@@ -178,12 +178,13 @@ impl AppHandler {
         set_scale_factor(scale_factor);
 
         // Create window entity with all required components (use logical size)
+        // Convert physical pixels to logical pixels using proper floating-point division
+        let logical_width = (physical_size.width as f64 / scale_factor) as f32;
+        let logical_height = (physical_size.height as f64 / scale_factor) as f32;
+
         let mut window = bevy::window::Window {
             title: "Marathon".to_string(),
-            resolution: WindowResolution::new(
-                physical_size.width / scale_factor as u32,
-                physical_size.height / scale_factor as u32,
-            ),
+            resolution: WindowResolution::new(logical_width, logical_height),
             mode: WindowMode::Windowed,
             position: WindowPosition::Automatic,
             focused: true,

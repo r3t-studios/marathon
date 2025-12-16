@@ -1,0 +1,94 @@
+name: Epic
+description: Define a large body of work spanning multiple features
+labels: ["epic"]
+type: "Epic"
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Thanks for creating an epic!
+
+    - type: textarea
+      id: description
+      attributes:
+          label: Description
+          description: Describe the epic and its business value
+          placeholder: |
+              In order to [achieve major goal/strategic benefit],
+              as [stakeholder/user type],
+              we need [high-level capability or outcome].
+
+              **Business Value:**
+              [Why is this important? What problem does it solve?]
+      validations:
+          required: true
+
+    - type: textarea
+      id: scope
+      attributes:
+          label: Scope
+          description: High-level scope and boundaries of this epic
+          placeholder: |
+              **In Scope:**
+              - [What's included]
+              - [Major capabilities]
+
+              **Out of Scope:**
+              - [What's explicitly excluded]
+              - [Future considerations]
+      validations:
+          required: true
+
+    - type: textarea
+      id: success-criteria
+      attributes:
+          label: Success Criteria
+          description: How will we know this epic is successful?
+          placeholder: |
+              ```gherkin
+              Scenario: Epic is complete
+                Given [all features are implemented]
+                When [users interact with the system]
+                Then [desired outcomes are achieved]
+              ```
+
+              **Metrics:**
+              - [Measurable success metric 1]
+              - [Measurable success metric 2]
+      validations:
+          required: true
+
+    - type: textarea
+      id: features
+      attributes:
+          label: Features & Tasks
+          description: List of features or tasks that make up this epic
+          placeholder: |
+              - [ ] #[issue-number] - [Feature/Task name]
+              - [ ] #[issue-number] - [Feature/Task name]
+              - [ ] #[issue-number] - [Feature/Task name]
+      validations:
+          required: false
+
+    - type: textarea
+      id: dependencies
+      attributes:
+          label: Dependencies & Risks
+          description: External dependencies, blockers, or risks
+          placeholder: |
+              **Dependencies:**
+              - [External system/team/resource]
+
+              **Risks:**
+              - [Potential risk or blocker]
+      validations:
+          required: false
+
+    - type: textarea
+      id: additional-context
+      attributes:
+          label: Additional Context
+          description: Any additional information, mockups, or references
+          placeholder: Add any other context, diagrams, or references here.
+      validations:
+          required: false

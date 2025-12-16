@@ -1,0 +1,57 @@
+name: Task
+description: Create a work item or implementation task
+labels: ["task"]
+type: "Task"
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Thanks for creating a task!
+
+    - type: textarea
+      id: description
+      attributes:
+          label: Description
+          description: Describe what needs to be done
+          placeholder: |
+              In order to [achieve some goal/benefit],
+              as a [type of user/developer],
+              I need [specific work to be completed].
+      validations:
+          required: true
+
+    - type: textarea
+      id: acceptance-criteria
+      attributes:
+          label: Acceptance Criteria
+          description: Define when this task is complete using Given/When/Then format
+          placeholder: |
+              ```gherkin
+              Scenario: Task is complete
+                Given [initial state]
+                When [implementation is done]
+                Then [expected result]
+              ```
+      validations:
+          required: true
+
+    - type: textarea
+      id: technical-notes
+      attributes:
+          label: Technical Notes
+          description: Implementation details, dependencies, or technical considerations
+          placeholder: |
+              - Dependencies: [any prerequisites or blocking issues]
+              - Approach: [high-level implementation approach]
+              - Files affected: [key files or modules to change]
+      validations:
+          required: false
+
+    - type: textarea
+      id: additional-context
+      attributes:
+          label: Additional Context
+          description: Any additional information or references
+          placeholder: Add any other context here.
+      validations:
+          required: false
