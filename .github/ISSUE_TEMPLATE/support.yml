@@ -1,0 +1,92 @@
+name: Support Request
+description: Get help with using the application or troubleshooting issues
+labels: ["support"]
+type: "Support"
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Thanks for reaching out! We'll help you as soon as possible.
+
+    - type: textarea
+      id: description
+      attributes:
+          label: Description
+          description: Describe what you're trying to do and what help you need
+          placeholder: |
+              In order to [achieve some goal],
+              as a [type of user],
+              I need help with [specific issue or question].
+      validations:
+          required: true
+
+    - type: textarea
+      id: current-situation
+      attributes:
+          label: Current Situation
+          description: What's happening now or what you've already tried
+          placeholder: |
+              ```gherkin
+              Scenario: Current situation
+                Given [what I have/where I am]
+                When [what I do/try]
+                Then [what happens]
+              ```
+
+              **What I've tried:**
+              - [Thing 1]
+              - [Thing 2]
+      validations:
+          required: true
+
+    - type: textarea
+      id: expected-outcome
+      attributes:
+          label: Expected Outcome
+          description: What are you trying to accomplish?
+          placeholder: |
+              ```gherkin
+              Scenario: What I'm trying to achieve
+                Given [starting point]
+                When [action I want to take]
+                Then [desired result]
+              ```
+      validations:
+          required: true
+
+    - type: dropdown
+      id: priority
+      attributes:
+          label: Priority
+          description: How urgent is this issue?
+          options:
+              - Low - I can work around this
+              - Medium - This is blocking some work
+              - High - This is blocking critical work
+              - Critical - System is down or unusable
+          default: 0
+      validations:
+          required: true
+
+    - type: textarea
+      id: environment
+      attributes:
+          label: Environment
+          description: System information that might be relevant
+          placeholder: |
+              - OS: [e.g., Ubuntu 24.04, macOS 14.0, Windows 11]
+              - Version: [e.g., v0.5.0]
+              - Browser: [if web-based]
+              - Other relevant details: [e.g., network setup, deployment environment]
+      validations:
+          required: false
+
+    - type: textarea
+      id: additional-context
+      attributes:
+          label: Additional Context
+          description: Logs, screenshots, error messages, or other helpful information
+          placeholder: |
+              Add any error messages, logs, screenshots, or other context here.
+      validations:
+          required: false

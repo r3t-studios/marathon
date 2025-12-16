@@ -1,0 +1,50 @@
+name: Feature
+description: Request a new feature or enhancement
+labels: ["enhancement"]
+type: "Feature"
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Thanks for taking the time to suggest a feature!
+
+    - type: textarea
+      id: description
+      attributes:
+          label: Description
+          description: Describe the feature using the "In order to" format
+          placeholder: |
+              In order to [achieve some goal/benefit],
+              as a [type of user],
+              I want [some feature/capability].
+      validations:
+          required: true
+
+    - type: textarea
+      id: acceptance-criteria
+      attributes:
+          label: Acceptance Criteria
+          description: Define the acceptance criteria using Given/When/Then format
+          placeholder: |
+              ```gherkin
+              Scenario: [Scenario name]
+                Given [initial context/state]
+                When [action is taken]
+                Then [expected outcome]
+
+              Scenario: [Another scenario name]
+                Given [initial context/state]
+                When [action is taken]
+                Then [expected outcome]
+              ```
+      validations:
+          required: true
+
+    - type: textarea
+      id: additional-context
+      attributes:
+          label: Additional Context
+          description: Any additional information, mockups, or references
+          placeholder: Add any other context, screenshots, or references here.
+      validations:
+          required: false
