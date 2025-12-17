@@ -91,8 +91,12 @@ impl Plugin for PersistencePlugin {
             .insert_resource(PendingFlushTasks::default())
             .init_resource::<ComponentTypeRegistryResource>();
 
-        // Add startup system
-        app.add_systems(Startup, persistence_startup_system);
+        // Add startup systems
+        // First initialize the database, then rehydrate entities
+        app.add_systems(Startup, (
+            persistence_startup_system,
+            rehydrate_entities_system,
+        ).chain());
 
         // Add systems in the appropriate schedule
         app.add_systems(
@@ -156,6 +160,19 @@ fn persistence_startup_system(db: Res<PersistenceDb>, mut metrics: ResMut<Persis
         error!("Failed to initialize persistence: {}", e);
     } else {
         info!("Persistence system initialized");
+    }
+}
+
+/// Exclusive startup system to rehydrate entities from database
+///
+/// This system runs after `persistence_startup_system` and loads all entities
+/// from SQLite, deserializing and spawning them into the Bevy world with all
+/// their components.
+fn rehydrate_entities_system(world: &mut World) {
+    if let Err(e) = crate::persistence::database::rehydrate_all_entities(world) {
+        error!("Failed to rehydrate entities from database: {}", e);
+    } else {
+        info!("Successfully rehydrated entities from database");
     }
 }
 
