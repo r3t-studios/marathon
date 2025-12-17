@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 APP_NAME="Aspen"
-BUNDLE_ID="io.r3t.aspen"
+BUNDLE_ID="G872CZV7WG.aspen"
 TARGET="aarch64-apple-ios-sim"
 BUILD_MODE="release"
 
