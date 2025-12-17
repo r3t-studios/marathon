@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/libmarathon", "crates/sync-macros", "crates/app"]
+members = ["crates/libmarathon", "crates/sync-macros", "crates/app", "crates/xtask"]
 resolver = "2"
 
 [workspace.package]
@@ -21,6 +21,7 @@ rusqlite = "0.37.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9"
+rkyv = { version = "0.8", features = ["uuid-1"] }
 
 # Error handling
 thiserror = "2.0"
@@ -49,3 +50,4 @@ bevy = "0.17"
 # Synchronization
 parking_lot = "0.12"
 crdts = "7.3"
+inventory = "0.3"

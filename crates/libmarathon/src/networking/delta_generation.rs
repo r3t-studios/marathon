@@ -94,7 +94,7 @@ pub fn generate_delta_system(world: &mut World) {
         // Phase 1: Check and update clocks, collect data
         let mut system_state: bevy::ecs::system::SystemState<(
             Res<GossipBridge>,
-            Res<AppTypeRegistry>,
+            Res<crate::persistence::ComponentTypeRegistryResource>,
             ResMut<NodeVectorClock>,
             ResMut<LastSyncVersions>,
             Option<ResMut<crate::networking::OperationLog>>,
@@ -120,17 +120,16 @@ pub fn generate_delta_system(world: &mut World) {
 
         // Phase 2: Build operations (needs world access without holding other borrows)
         let operations = {
-            let type_registry = world.resource::<AppTypeRegistry>().read();
-            let ops = build_entity_operations(
+            let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+            let type_registry = type_registry_res.0;
+            build_entity_operations(
                 entity,
                 world,
                 node_id,
                 vector_clock.clone(),
-                &type_registry,
+                type_registry,
                 None, // blob_store - will be added in later phases
-            );
-            drop(type_registry);
-            ops
+            )
         };
 
         if operations.is_empty() {
@@ -175,25 +174,34 @@ pub fn generate_delta_system(world: &mut World) {
 
         // Phase 4: Update component vector clocks for local modifications
         {
+            // Get type registry first before mutable borrow
+            let type_registry = {
+                let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+                type_registry_res.0
+            };
+            
             if let Some(mut component_clocks) =
                 world.get_resource_mut::<crate::networking::ComponentVectorClocks>()
             {
                 for op in &delta.operations {
                     if let crate::networking::ComponentOp::Set {
-                        component_type,
+                        discriminant,
                         vector_clock: op_clock,
                         ..
                     } = op
                     {
+                        let component_type_name = type_registry.get_type_name(*discriminant)
+                            .unwrap_or("unknown");
+                            
                         component_clocks.set(
                             network_id,
-                            component_type.clone(),
+                            component_type_name.to_string(),
                             op_clock.clone(),
                             node_id,
                         );
                         debug!(
                             "Updated local vector clock for {} on entity {:?} (node_id: {:?})",
-                            component_type, network_id, node_id
+                            component_type_name, network_id, node_id
                         );
                     }
                 }

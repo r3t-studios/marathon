@@ -64,7 +64,7 @@ pub const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_LOCKS_PER_NODE: usize = 100;
 
 /// Lock acquisition/release messages
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, PartialEq, Eq)]
 pub enum LockMessage {
     /// Request to acquire a lock on an entity
     LockRequest {
@@ -665,8 +665,8 @@ mod tests {
         ];
 
         for message in messages {
-            let bytes = bincode::serialize(&message).unwrap();
-            let deserialized: LockMessage = bincode::deserialize(&bytes).unwrap();
+            let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
+            let deserialized: LockMessage = rkyv::from_bytes::<LockMessage, rkyv::rancor::Failure>(&bytes).unwrap();
             assert_eq!(message, deserialized);
         }
     }

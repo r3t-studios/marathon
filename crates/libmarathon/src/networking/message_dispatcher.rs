@@ -239,41 +239,17 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
         } => {
             info!("Received FullState with {} entities", entities.len());
 
-            // Use SystemState to properly borrow multiple resources
-            let mut system_state: SystemState<(
-                Commands,
-                ResMut<NetworkEntityMap>,
-                Res<AppTypeRegistry>,
-                ResMut<NodeVectorClock>,
-                Option<Res<BlobStore>>,
-                Option<ResMut<TombstoneRegistry>>,
-            )> = SystemState::new(world);
+            let type_registry = {
+                let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+                registry_resource.0
+            };
 
-            {
-                let (
-                    mut commands,
-                    mut entity_map,
-                    type_registry,
-                    mut node_clock,
-                    blob_store,
-                    mut tombstone_registry,
-                ) = system_state.get_mut(world);
-                let registry = type_registry.read();
-
-                apply_full_state(
-                    entities,
-                    vector_clock,
-                    &mut commands,
-                    &mut entity_map,
-                    &registry,
-                    &mut node_clock,
-                    blob_store.as_deref(),
-                    tombstone_registry.as_deref_mut(),
-                );
-                // registry is dropped here
-            }
-
-            system_state.apply(world);
+            apply_full_state(
+                entities,
+                vector_clock,
+                world,
+                type_registry,
+            );
         },
 
         // SyncRequest - peer requesting missing operations
@@ -433,7 +409,7 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
 fn build_full_state_from_data(
     world: &World,
     networked_entities: &[(Entity, &NetworkedEntity)],
-    type_registry: &bevy::reflect::TypeRegistry,
+    _type_registry: &bevy::reflect::TypeRegistry,
     node_clock: &NodeVectorClock,
     blob_store: Option<&BlobStore>,
 ) -> crate::networking::VersionedMessage {
@@ -445,7 +421,6 @@ fn build_full_state_from_data(
                 EntityState,
             },
         },
-        persistence::reflection::serialize_component,
     };
 
     // Get tombstone registry to filter out deleted entities
@@ -464,18 +439,16 @@ fn build_full_state_from_data(
                 continue;
             }
         }
-        let entity_ref = world.entity(*entity);
         let mut components = Vec::new();
 
-        // Iterate over all type registrations to find components
-        for registration in type_registry.iter() {
-            // Skip if no ReflectComponent data
-            let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-                continue;
-            };
+        // Get component type registry
+        let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        let component_registry = type_registry_res.0;
 
-            let type_path = registration.type_info().type_path();
+        // Serialize all registered components on this entity
+        let serialized_components = component_registry.serialize_entity_components(world, *entity);
 
+        for (discriminant, type_path, serialized) in serialized_components {
             // Skip networked wrapper components
             if type_path.ends_with("::NetworkedEntity") ||
                 type_path.ends_with("::NetworkedTransform") ||
@@ -485,26 +458,20 @@ fn build_full_state_from_data(
                 continue;
             }
 
-            // Try to reflect this component from the entity
-            if let Some(reflected) = reflect_component.reflect(entity_ref) {
-                // Serialize the component
-                if let Ok(serialized) = serialize_component(reflected, type_registry) {
-                    // Create component data (inline or blob)
-                    let data = if let Some(store) = blob_store {
-                        match create_component_data(serialized, store) {
-                            | Ok(d) => d,
-                            | Err(_) => continue,
-                        }
-                    } else {
-                        crate::networking::ComponentData::Inline(serialized)
-                    };
-
-                    components.push(ComponentState {
-                        component_type: type_path.to_string(),
-                        data,
-                    });
+            // Create component data (inline or blob)
+            let data = if let Some(store) = blob_store {
+                match create_component_data(serialized, store) {
+                    | Ok(d) => d,
+                    | Err(_) => continue,
                 }
-            }
+            } else {
+                crate::networking::ComponentData::Inline(serialized)
+            };
+
+            components.push(ComponentState {
+                discriminant,
+                data,
+            });
         }
 
         entities.push(EntityState {

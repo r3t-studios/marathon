@@ -8,24 +8,21 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use uuid::Uuid;
 
-use crate::{
-    networking::{
-        VectorClock,
-        blob_support::{
-            BlobStore,
-            get_component_data,
-        },
-        delta_generation::NodeVectorClock,
-        entity_map::NetworkEntityMap,
-        merge::compare_operations_lww,
-        messages::{
-            ComponentData,
-            EntityDelta,
-            SyncMessage,
-        },
-        operations::ComponentOp,
+use crate::networking::{
+    VectorClock,
+    blob_support::{
+        BlobStore,
+        get_component_data,
     },
-    persistence::reflection::deserialize_component_typed,
+    delta_generation::NodeVectorClock,
+    entity_map::NetworkEntityMap,
+    merge::compare_operations_lww,
+    messages::{
+        ComponentData,
+        EntityDelta,
+        SyncMessage,
+    },
+    operations::ComponentOp,
 };
 
 /// Resource to track the last vector clock and originating node for each
@@ -177,35 +174,35 @@ pub fn apply_entity_delta(delta: &EntityDelta, world: &mut World) {
 fn apply_component_op(entity: Entity, op: &ComponentOp, incoming_node_id: Uuid, world: &mut World) {
     match op {
         | ComponentOp::Set {
-            component_type,
+            discriminant,
             data,
             vector_clock,
         } => {
             apply_set_operation_with_lww(
                 entity,
-                component_type,
+                *discriminant,
                 data,
                 vector_clock,
                 incoming_node_id,
                 world,
             );
         },
-        | ComponentOp::SetAdd { component_type, .. } => {
+        | ComponentOp::SetAdd { discriminant, .. } => {
             // OR-Set add - Phase 10 provides OrSet<T> type
             // Application code should use OrSet in components and handle SetAdd/SetRemove
             // Full integration will be in Phase 12 plugin
             debug!(
-                "SetAdd operation for {} (use OrSet<T> in components)",
-                component_type
+                "SetAdd operation for discriminant {} (use OrSet<T> in components)",
+                discriminant
             );
         },
-        | ComponentOp::SetRemove { component_type, .. } => {
+        | ComponentOp::SetRemove { discriminant, .. } => {
             // OR-Set remove - Phase 10 provides OrSet<T> type
             // Application code should use OrSet in components and handle SetAdd/SetRemove
             // Full integration will be in Phase 12 plugin
             debug!(
-                "SetRemove operation for {} (use OrSet<T> in components)",
-                component_type
+                "SetRemove operation for discriminant {} (use OrSet<T> in components)",
+                discriminant
             );
         },
         | ComponentOp::SequenceInsert { .. } => {
@@ -230,12 +227,26 @@ fn apply_component_op(entity: Entity, op: &ComponentOp, incoming_node_id: Uuid, 
 /// Uses node_id as a deterministic tiebreaker for concurrent operations.
 fn apply_set_operation_with_lww(
     entity: Entity,
-    component_type: &str,
+    discriminant: u16,
     data: &ComponentData,
     incoming_clock: &VectorClock,
     incoming_node_id: Uuid,
     world: &mut World,
 ) {
+    // Get component type name for logging and clock tracking
+    let type_registry = {
+        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        registry_resource.0
+    };
+    
+    let component_type_name = match type_registry.get_type_name(discriminant) {
+        | Some(name) => name,
+        | None => {
+            error!("Unknown discriminant {} - component not registered", discriminant);
+            return;
+        },
+    };
+
     // Get the network ID for this entity
     let entity_network_id = {
         if let Ok(entity_ref) = world.get_entity(entity) {
@@ -255,7 +266,7 @@ fn apply_set_operation_with_lww(
     let should_apply = {
         if let Some(component_clocks) = world.get_resource::<ComponentVectorClocks>() {
             if let Some((current_clock, current_node_id)) =
-                component_clocks.get(entity_network_id, component_type)
+                component_clocks.get(entity_network_id, component_type_name)
             {
                 // We have a current clock - do LWW comparison with real node IDs
                 let decision = compare_operations_lww(
@@ -269,14 +280,14 @@ fn apply_set_operation_with_lww(
                     | crate::networking::merge::MergeDecision::ApplyRemote => {
                         debug!(
                             "Applying remote Set for {} (remote is newer)",
-                            component_type
+                            component_type_name
                         );
                         true
                     },
                     | crate::networking::merge::MergeDecision::KeepLocal => {
                         debug!(
                             "Ignoring remote Set for {} (local is newer)",
-                            component_type
+                            component_type_name
                         );
                         false
                     },
@@ -287,19 +298,19 @@ fn apply_set_operation_with_lww(
                         if incoming_node_id > *current_node_id {
                             debug!(
                                 "Applying remote Set for {} (concurrent, remote node_id {:?} > local {:?})",
-                                component_type, incoming_node_id, current_node_id
+                                component_type_name, incoming_node_id, current_node_id
                             );
                             true
                         } else {
                             debug!(
                                 "Ignoring remote Set for {} (concurrent, local node_id {:?} >= remote {:?})",
-                                component_type, current_node_id, incoming_node_id
+                                component_type_name, current_node_id, incoming_node_id
                             );
                             false
                         }
                     },
                     | crate::networking::merge::MergeDecision::Equal => {
-                        debug!("Ignoring remote Set for {} (clocks equal)", component_type);
+                        debug!("Ignoring remote Set for {} (clocks equal)", component_type_name);
                         false
                     },
                 }
@@ -307,7 +318,7 @@ fn apply_set_operation_with_lww(
                 // No current clock - this is the first time we're setting this component
                 debug!(
                     "Applying remote Set for {} (no current clock)",
-                    component_type
+                    component_type_name
                 );
                 true
             }
@@ -323,19 +334,19 @@ fn apply_set_operation_with_lww(
     }
 
     // Apply the operation
-    apply_set_operation(entity, component_type, data, world);
+    apply_set_operation(entity, discriminant, data, world);
 
     // Update the stored vector clock with node_id
     if let Some(mut component_clocks) = world.get_resource_mut::<ComponentVectorClocks>() {
         component_clocks.set(
             entity_network_id,
-            component_type.to_string(),
+            component_type_name.to_string(),
             incoming_clock.clone(),
             incoming_node_id,
         );
         debug!(
             "Updated vector clock for {} on entity {:?} (node_id: {:?})",
-            component_type, entity_network_id, incoming_node_id
+            component_type_name, entity_network_id, incoming_node_id
         );
     }
 }
@@ -346,15 +357,12 @@ fn apply_set_operation_with_lww(
 /// Handles both inline data and blob references.
 fn apply_set_operation(
     entity: Entity,
-    component_type: &str,
+    discriminant: u16,
     data: &ComponentData,
     world: &mut World,
 ) {
-    let type_registry = {
-        let registry_resource = world.resource::<AppTypeRegistry>();
-        registry_resource.read()
-    };
     let blob_store = world.get_resource::<BlobStore>();
+    
     // Get the actual data (resolve blob if needed)
     let data_bytes = match data {
         | ComponentData::Inline(bytes) => bytes.clone(),
@@ -364,61 +372,58 @@ fn apply_set_operation(
                     | Ok(bytes) => bytes,
                     | Err(e) => {
                         error!(
-                            "Failed to retrieve blob for component {}: {}",
-                            component_type, e
+                            "Failed to retrieve blob for discriminant {}: {}",
+                            discriminant, e
                         );
                         return;
                     },
                 }
             } else {
                 error!(
-                    "Blob reference for {} but no blob store available",
-                    component_type
+                    "Blob reference for discriminant {} but no blob store available",
+                    discriminant
                 );
                 return;
             }
         },
     };
 
-    let reflected = match deserialize_component_typed(&data_bytes, component_type, &type_registry) {
-        | Ok(reflected) => reflected,
+    // Get component type registry
+    let type_registry = {
+        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        registry_resource.0
+    };
+
+    // Look up deserialize and insert functions by discriminant
+    let deserialize_fn = type_registry.get_deserialize_fn(discriminant);
+    let insert_fn = type_registry.get_insert_fn(discriminant);
+
+    let (deserialize_fn, insert_fn) = match (deserialize_fn, insert_fn) {
+        | (Some(d), Some(i)) => (d, i),
+        | _ => {
+            error!("Discriminant {} not registered in ComponentTypeRegistry", discriminant);
+            return;
+        },
+    };
+
+    // Deserialize the component
+    let boxed_component = match deserialize_fn(&data_bytes) {
+        | Ok(component) => component,
         | Err(e) => {
-            error!("Failed to deserialize component {}: {}", component_type, e);
+            error!("Failed to deserialize discriminant {}: {}", discriminant, e);
             return;
         },
     };
 
-    let registration = match type_registry.get_with_type_path(component_type) {
-        | Some(reg) => reg,
-        | None => {
-            error!("Component type {} not registered", component_type);
-            return;
-        },
-    };
-
-    let reflect_component = match registration.data::<ReflectComponent>() {
-        | Some(rc) => rc.clone(),
-        | None => {
-            error!(
-                "Component type {} does not have ReflectComponent data",
-                component_type
-            );
-            return;
-        },
-    };
-
-    drop(type_registry);
-
-    let type_registry_arc = world.resource::<AppTypeRegistry>().clone();
-    let type_registry_guard = type_registry_arc.read();
-
+    // Insert the component into the entity
     if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-        reflect_component.insert(&mut entity_mut, &*reflected, &type_registry_guard);
-        debug!("Applied Set operation for {}", component_type);
+        insert_fn(&mut entity_mut, boxed_component);
+        debug!("Applied Set operation for discriminant {}", discriminant);
 
         // If we just inserted a Transform component, also add NetworkedTransform
         // This ensures remote entities can have their Transform changes detected
-        if component_type == "bevy_transform::components::transform::Transform" {
+        let type_path = type_registry.get_type_path(discriminant);
+        if type_path == Some("bevy_transform::components::transform::Transform") {
             if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
                 if entity_mut
                     .get::<crate::networking::NetworkedTransform>()
@@ -431,8 +436,8 @@ fn apply_set_operation(
         }
     } else {
         error!(
-            "Entity {:?} not found when applying component {}",
-            entity, component_type
+            "Entity {:?} not found when applying discriminant {}",
+            entity, discriminant
         );
     }
 }

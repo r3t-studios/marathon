@@ -127,9 +127,8 @@ impl SyncAttributes {
 /// use libmarathon::networking::Synced;
 /// use sync_macros::Synced as SyncedDerive;
 ///
-/// #[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize)]
-/// #[reflect(Component)]
-/// #[derive(SyncedDerive)]
+/// #[derive(Component, Clone)]
+/// #[derive(Synced)]
 /// #[sync(version = 1, strategy = "LastWriteWins")]
 /// struct Health(f32);
 ///
@@ -149,6 +148,7 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     };
 
     let name = &input.ident;
+    let name_str = name.to_string();
     let version = attrs.version;
     let strategy_tokens = attrs.strategy.to_tokens();
 
@@ -159,7 +159,40 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     // Generate merge method based on strategy
     let merge_impl = generate_merge(&input, &attrs.strategy);
 
+    // Note: Users must add #[derive(rkyv::Archive, rkyv::Serialize,
+    // rkyv::Deserialize)] to their struct
     let expanded = quote! {
+        // Register component with inventory for type registry
+        // Build type path at compile time using concat! and module_path!
+        // since std::any::type_name() is not yet const
+        const _: () = {
+            const TYPE_PATH: &str = concat!(module_path!(), "::", stringify!(#name));
+
+            inventory::submit! {
+                libmarathon::persistence::ComponentMeta {
+                    type_name: #name_str,
+                    type_path: TYPE_PATH,
+                    type_id: std::any::TypeId::of::<#name>(),
+                deserialize_fn: |bytes: &[u8]| -> anyhow::Result<Box<dyn std::any::Any>> {
+                    let component: #name = rkyv::from_bytes::<#name, rkyv::rancor::Failure>(bytes)?;
+                    Ok(Box::new(component))
+                },
+                serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<Vec<u8>> {
+                    world.get::<#name>(entity).and_then(|component| {
+                        rkyv::to_bytes::<rkyv::rancor::Failure>(component)
+                            .map(|bytes| bytes.to_vec())
+                            .ok()
+                    })
+                },
+                insert_fn: |entity_mut: &mut bevy::ecs::world::EntityWorldMut, boxed: Box<dyn std::any::Any>| {
+                    if let Ok(component) = boxed.downcast::<#name>() {
+                        entity_mut.insert(*component);
+                    }
+                },
+            }
+            };
+        };
+
         impl libmarathon::networking::SyncComponent for #name {
             const VERSION: u32 = #version;
             const STRATEGY: libmarathon::networking::SyncStrategy = #strategy_tokens;
@@ -186,17 +219,17 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
 
 /// Generate specialized serialization code
 fn generate_serialize(_input: &DeriveInput) -> proc_macro2::TokenStream {
-    // For now, use bincode for all types
+    // Use rkyv for zero-copy serialization
     // Later we can optimize for specific types (e.g., f32 -> to_le_bytes)
     quote! {
-        bincode::serialize(self).map_err(|e| anyhow::anyhow!("Serialization failed: {}", e))
+        rkyv::to_bytes::<rkyv::rancor::Failure>(self).map(|bytes| bytes.to_vec()).map_err(|e| anyhow::anyhow!("Serialization failed: {}", e))
     }
 }
 
 /// Generate specialized deserialization code
 fn generate_deserialize(_input: &DeriveInput, _name: &syn::Ident) -> proc_macro2::TokenStream {
     quote! {
-        bincode::deserialize(data).map_err(|e| anyhow::anyhow!("Deserialization failed: {}", e))
+        rkyv::from_bytes::<Self, rkyv::rancor::Failure>(data).map_err(|e| anyhow::anyhow!("Deserialization failed: {}", e))
     }
 }
 
@@ -217,11 +250,11 @@ fn generate_merge(input: &DeriveInput, strategy: &SyncStrategy) -> proc_macro2::
 fn generate_hash_tiebreaker() -> proc_macro2::TokenStream {
     quote! {
         let local_hash = {
-            let bytes = bincode::serialize(self).unwrap_or_default();
+            let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(self).map(|b| b.to_vec()).unwrap_or_default();
             bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
         };
         let remote_hash = {
-            let bytes = bincode::serialize(&remote).unwrap_or_default();
+            let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&remote).map(|b| b.to_vec()).unwrap_or_default();
             bytes.iter().fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64))
         };
     }

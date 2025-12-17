@@ -88,7 +88,8 @@ impl Plugin for PersistencePlugin {
             .insert_resource(PersistenceMetrics::default())
             .insert_resource(CheckpointTimer::default())
             .insert_resource(PersistenceHealth::default())
-            .insert_resource(PendingFlushTasks::default());
+            .insert_resource(PendingFlushTasks::default())
+            .init_resource::<ComponentTypeRegistryResource>();
 
         // Add startup system
         app.add_systems(Startup, persistence_startup_system);
@@ -206,18 +207,17 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
 
         // Serialize all components on this entity (generic tracking)
         let components = {
-            let type_registry = world.resource::<AppTypeRegistry>().read();
-            let comps = serialize_all_components_from_entity(entity, world, &type_registry);
-            drop(type_registry);
-            comps
+            let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+            let type_registry = type_registry_res.0;
+            type_registry.serialize_entity_components(world, entity)
         };
 
         // Add operations for each component
-        for (component_type, data) in components {
+        for (_discriminant, type_path, data) in components {
             // Get mutable access to dirty and mark it
             {
                 let mut dirty = world.resource_mut::<DirtyEntitiesResource>();
-                dirty.mark_dirty(network_id, &component_type);
+                dirty.mark_dirty(network_id, type_path);
             }
 
             // Get mutable access to write_buffer and add the operation
@@ -225,12 +225,12 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
                 let mut write_buffer = world.resource_mut::<WriteBufferResource>();
                 if let Err(e) = write_buffer.add(PersistenceOp::UpsertComponent {
                     entity_id: network_id,
-                    component_type: component_type.clone(),
+                    component_type: type_path.to_string(),
                     data,
                 }) {
                     error!(
                         "Failed to add UpsertComponent operation for entity {} component {}: {}",
-                        network_id, component_type, e
+                        network_id, type_path, e
                     );
                     // Continue with other components even if one fails
                 }

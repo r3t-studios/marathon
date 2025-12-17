@@ -11,10 +11,7 @@
 //! **NOTE:** This is a simplified implementation for Phase 7. Full security
 //! and session management will be enhanced in Phase 13.
 
-use bevy::{
-    prelude::*,
-    reflect::TypeRegistry,
-};
+use bevy::prelude::*;
 
 use crate::networking::{
     GossipBridge,
@@ -76,7 +73,7 @@ pub fn build_join_request(
 ///
 /// - `world`: Bevy world containing entities
 /// - `query`: Query for all NetworkedEntity components
-/// - `type_registry`: Type registry for serialization
+/// - `type_registry`: Component type registry for serialization
 /// - `node_clock`: Current node vector clock
 /// - `blob_store`: Optional blob store for large components
 ///
@@ -86,7 +83,7 @@ pub fn build_join_request(
 pub fn build_full_state(
     world: &World,
     networked_entities: &Query<(Entity, &NetworkedEntity)>,
-    type_registry: &TypeRegistry,
+    type_registry: &crate::persistence::ComponentTypeRegistry,
     node_clock: &NodeVectorClock,
     blob_store: Option<&BlobStore>,
 ) -> VersionedMessage {
@@ -95,53 +92,31 @@ pub fn build_full_state(
             blob_support::create_component_data,
             messages::ComponentState,
         },
-        persistence::reflection::serialize_component,
     };
 
     let mut entities = Vec::new();
 
     for (entity, networked) in networked_entities.iter() {
-        let entity_ref = world.entity(entity);
         let mut components = Vec::new();
 
-        // Iterate over all type registrations to find components
-        for registration in type_registry.iter() {
-            // Skip if no ReflectComponent data
-            let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-                continue;
+        // Serialize all registered Synced components on this entity
+        let serialized_components = type_registry.serialize_entity_components(world, entity);
+
+        for (discriminant, _type_path, serialized) in serialized_components {
+            // Create component data (inline or blob)
+            let data = if let Some(store) = blob_store {
+                match create_component_data(serialized, store) {
+                    | Ok(d) => d,
+                    | Err(_) => continue,
+                }
+            } else {
+                crate::networking::ComponentData::Inline(serialized)
             };
 
-            let type_path = registration.type_info().type_path();
-
-            // Skip networked wrapper components
-            if type_path.ends_with("::NetworkedEntity") ||
-                type_path.ends_with("::NetworkedTransform") ||
-                type_path.ends_with("::NetworkedSelection") ||
-                type_path.ends_with("::NetworkedDrawingPath")
-            {
-                continue;
-            }
-
-            // Try to reflect this component from the entity
-            if let Some(reflected) = reflect_component.reflect(entity_ref) {
-                // Serialize the component
-                if let Ok(serialized) = serialize_component(reflected, type_registry) {
-                    // Create component data (inline or blob)
-                    let data = if let Some(store) = blob_store {
-                        match create_component_data(serialized, store) {
-                            | Ok(d) => d,
-                            | Err(_) => continue,
-                        }
-                    } else {
-                        crate::networking::ComponentData::Inline(serialized)
-                    };
-
-                    components.push(ComponentState {
-                        component_type: type_path.to_string(),
-                        data,
-                    });
-                }
-            }
+            components.push(ComponentState {
+                discriminant,
+                data,
+            });
         }
 
         entities.push(EntityState {
@@ -175,36 +150,32 @@ pub fn build_full_state(
 /// - `vector_clock`: Vector clock from FullState
 /// - `commands`: Bevy commands for spawning entities
 /// - `entity_map`: Entity map to populate
-/// - `type_registry`: Type registry for deserialization
+/// - `type_registry`: Component type registry for deserialization
 /// - `node_clock`: Our node's vector clock to update
 /// - `blob_store`: Optional blob store for resolving blob references
 /// - `tombstone_registry`: Optional tombstone registry for deletion tracking
 pub fn apply_full_state(
     entities: Vec<EntityState>,
     remote_clock: crate::networking::VectorClock,
-    commands: &mut Commands,
-    entity_map: &mut NetworkEntityMap,
-    type_registry: &TypeRegistry,
-    node_clock: &mut NodeVectorClock,
-    blob_store: Option<&BlobStore>,
-    mut tombstone_registry: Option<&mut crate::networking::TombstoneRegistry>,
+    world: &mut World,
+    type_registry: &crate::persistence::ComponentTypeRegistry,
 ) {
-    use crate::{
-        networking::blob_support::get_component_data,
-        persistence::reflection::deserialize_component,
-    };
+    use crate::networking::blob_support::get_component_data;
 
     info!("Applying FullState with {} entities", entities.len());
 
     // Merge the remote vector clock
-    node_clock.clock.merge(&remote_clock);
+    {
+        let mut node_clock = world.resource_mut::<NodeVectorClock>();
+        node_clock.clock.merge(&remote_clock);
+    }
 
     // Spawn all entities and apply their state
     for entity_state in entities {
         // Handle deleted entities (tombstones)
         if entity_state.is_deleted {
             // Record tombstone
-            if let Some(ref mut registry) = tombstone_registry {
+            if let Some(mut registry) = world.get_resource_mut::<crate::networking::TombstoneRegistry>() {
                 registry.record_deletion(
                     entity_state.entity_id,
                     entity_state.owner_node_id,
@@ -216,7 +187,7 @@ pub fn apply_full_state(
 
         // Spawn entity with NetworkedEntity and Persisted components
         // This ensures entities received via FullState are persisted locally
-        let entity = commands
+        let entity = world
             .spawn((
                 NetworkedEntity::with_id(entity_state.entity_id, entity_state.owner_node_id),
                 crate::persistence::Persisted::with_id(entity_state.entity_id),
@@ -224,7 +195,10 @@ pub fn apply_full_state(
             .id();
 
         // Register in entity map
-        entity_map.insert(entity_state.entity_id, entity);
+        {
+            let mut entity_map = world.resource_mut::<NetworkEntityMap>();
+            entity_map.insert(entity_state.entity_id, entity);
+        }
 
         let num_components = entity_state.components.len();
 
@@ -234,82 +208,56 @@ pub fn apply_full_state(
             let data_bytes = match &component_state.data {
                 | crate::networking::ComponentData::Inline(bytes) => bytes.clone(),
                 | blob_ref @ crate::networking::ComponentData::BlobRef { .. } => {
-                    if let Some(store) = blob_store {
+                    let blob_store = world.get_resource::<BlobStore>();
+                    if let Some(store) = blob_store.as_deref() {
                         match get_component_data(blob_ref, store) {
                             | Ok(bytes) => bytes,
                             | Err(e) => {
                                 error!(
-                                    "Failed to retrieve blob for {}: {}",
-                                    component_state.component_type, e
+                                    "Failed to retrieve blob for discriminant {}: {}",
+                                    component_state.discriminant, e
                                 );
                                 continue;
                             },
                         }
                     } else {
                         error!(
-                            "Blob reference for {} but no blob store available",
-                            component_state.component_type
+                            "Blob reference for discriminant {} but no blob store available",
+                            component_state.discriminant
                         );
                         continue;
                     }
                 },
             };
 
+            // Use the discriminant directly from ComponentState
+            let discriminant = component_state.discriminant;
+
             // Deserialize the component
-            let reflected = match deserialize_component(&data_bytes, type_registry) {
-                | Ok(r) => r,
+            let boxed_component = match type_registry.deserialize(discriminant, &data_bytes) {
+                | Ok(component) => component,
                 | Err(e) => {
                     error!(
-                        "Failed to deserialize {}: {}",
-                        component_state.component_type, e
+                        "Failed to deserialize discriminant {}: {}",
+                        discriminant, e
                     );
                     continue;
                 },
             };
 
-            // Get the type registration
-            let registration =
-                match type_registry.get_with_type_path(&component_state.component_type) {
-                    | Some(reg) => reg,
-                    | None => {
-                        error!(
-                            "Component type {} not registered",
-                            component_state.component_type
-                        );
-                        continue;
-                    },
-                };
-
-            // Get ReflectComponent data
-            let reflect_component = match registration.data::<ReflectComponent>() {
-                | Some(rc) => rc.clone(),
-                | None => {
-                    error!(
-                        "Component type {} does not have ReflectComponent data",
-                        component_state.component_type
-                    );
-                    continue;
-                },
+            // Get the insert function for this discriminant
+            let Some(insert_fn) = type_registry.get_insert_fn(discriminant) else {
+                error!("No insert function for discriminant {}", discriminant);
+                continue;
             };
 
-            // Insert the component
-            let component_type_owned = component_state.component_type.clone();
-            commands.queue(move |world: &mut World| {
-                let type_registry_arc = {
-                    let Some(type_registry_res) = world.get_resource::<AppTypeRegistry>() else {
-                        error!("AppTypeRegistry not found in world");
-                        return;
-                    };
-                    type_registry_res.clone()
-                };
-
-                let type_registry = type_registry_arc.read();
-
-                if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-                    reflect_component.insert(&mut entity_mut, &*reflected, &type_registry);
-                    debug!("Applied component {} from FullState", component_type_owned);
-                }
-            });
+            // Insert the component directly
+            let type_name_for_log = type_registry.get_type_name(discriminant)
+                .unwrap_or("unknown");
+            if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                insert_fn(&mut entity_mut, boxed_component);
+                debug!("Applied component {} from FullState", type_name_for_log);
+            }
         }
 
         debug!(
@@ -337,7 +285,7 @@ pub fn handle_join_requests_system(
     world: &World,
     bridge: Option<Res<GossipBridge>>,
     networked_entities: Query<(Entity, &NetworkedEntity)>,
-    type_registry: Res<AppTypeRegistry>,
+    type_registry: Res<crate::persistence::ComponentTypeRegistryResource>,
     node_clock: Res<NodeVectorClock>,
     blob_store: Option<Res<BlobStore>>,
 ) {
@@ -345,7 +293,7 @@ pub fn handle_join_requests_system(
         return;
     };
 
-    let registry = type_registry.read();
+    let registry = type_registry.0;
     let blob_store_ref = blob_store.as_deref();
 
     // Poll for incoming JoinRequest messages
@@ -422,21 +370,17 @@ pub fn handle_join_requests_system(
 ///
 /// This system should run BEFORE receive_and_apply_deltas_system to ensure
 /// we're fully initialized before processing deltas.
-pub fn handle_full_state_system(
-    mut commands: Commands,
-    bridge: Option<Res<GossipBridge>>,
-    mut entity_map: ResMut<NetworkEntityMap>,
-    type_registry: Res<AppTypeRegistry>,
-    mut node_clock: ResMut<NodeVectorClock>,
-    blob_store: Option<Res<BlobStore>>,
-    mut tombstone_registry: Option<ResMut<crate::networking::TombstoneRegistry>>,
-) {
-    let Some(bridge) = bridge else {
+pub fn handle_full_state_system(world: &mut World) {
+    // Check if bridge exists
+    if world.get_resource::<GossipBridge>().is_none() {
         return;
-    };
+    }
 
-    let registry = type_registry.read();
-    let blob_store_ref = blob_store.as_deref();
+    let bridge = world.resource::<GossipBridge>().clone();
+    let type_registry = {
+        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        registry_resource.0
+    };
 
     // Poll for FullState messages
     while let Some(message) = bridge.try_recv() {
@@ -450,12 +394,8 @@ pub fn handle_full_state_system(
                 apply_full_state(
                     entities,
                     vector_clock,
-                    &mut commands,
-                    &mut entity_map,
-                    &registry,
-                    &mut node_clock,
-                    blob_store_ref,
-                    tombstone_registry.as_deref_mut(),
+                    world,
+                    type_registry,
                 );
             },
             | _ => {
@@ -582,29 +522,25 @@ mod tests {
     #[test]
     fn test_apply_full_state_empty() {
         let node_id = uuid::Uuid::new_v4();
-        let mut node_clock = NodeVectorClock::new(node_id);
         let remote_clock = VectorClock::new();
+        let type_registry = crate::persistence::component_registry();
 
-        // Create minimal setup for testing
-        let mut entity_map = NetworkEntityMap::new();
-        let type_registry = TypeRegistry::new();
-
-        // Need a minimal Bevy app for Commands
+        // Need a minimal Bevy app for testing
         let mut app = App::new();
-        let mut commands = app.world_mut().commands();
+        
+        // Insert required resources
+        app.insert_resource(NetworkEntityMap::new());
+        app.insert_resource(NodeVectorClock::new(node_id));
 
         apply_full_state(
             vec![],
             remote_clock.clone(),
-            &mut commands,
-            &mut entity_map,
-            &type_registry,
-            &mut node_clock,
-            None,
-            None, // tombstone_registry
+            app.world_mut(),
+            type_registry,
         );
 
         // Should have merged clocks
+        let node_clock = app.world().resource::<NodeVectorClock>();
         assert_eq!(node_clock.clock, remote_clock);
     }
 }

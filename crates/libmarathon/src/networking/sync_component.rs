@@ -71,12 +71,12 @@ pub trait SyncComponent: Component + Reflect + Sized {
 
     /// Serialize this component to bytes
     ///
-    /// Uses bincode for efficient binary serialization.
+    /// Uses rkyv for zero-copy binary serialization.
     fn serialize_sync(&self) -> anyhow::Result<Vec<u8>>;
 
     /// Deserialize this component from bytes
     ///
-    /// Uses bincode to deserialize from the format created by `serialize_sync`.
+    /// Uses rkyv to deserialize from the format created by `serialize_sync`.
     fn deserialize_sync(data: &[u8]) -> anyhow::Result<Self>;
 
     /// Merge remote state with local state

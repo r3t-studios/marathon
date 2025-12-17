@@ -1,38 +1,88 @@
 //! iOS application executor - owns winit and drives Bevy ECS
 //!
-//! iOS-specific implementation of the executor pattern, adapted for UIKit integration.
-//! See platform/desktop/executor.rs for detailed architecture documentation.
+//! iOS-specific implementation of the executor pattern, adapted for UIKit
+//! integration. See platform/desktop/executor.rs for detailed architecture
+//! documentation.
 
-use bevy::prelude::*;
-use bevy::app::AppExit;
-use bevy::input::{
-    ButtonInput,
-    mouse::MouseButton as BevyMouseButton,
-    keyboard::KeyCode as BevyKeyCode,
-    touch::{Touches, TouchInput},
-    gestures::*,
-    keyboard::KeyboardInput,
-    mouse::{MouseButtonInput, MouseMotion, MouseWheel},
-};
-use bevy::window::{
-    PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged, WindowClosing,
-    WindowResolution, WindowMode, WindowPosition, WindowEvent as BevyWindowEvent,
-    RawHandleWrapper, WindowWrapper,
-    CursorMoved, CursorEntered, CursorLeft,
-    WindowFocused, WindowOccluded, WindowMoved, WindowThemeChanged, WindowDestroyed,
-    FileDragAndDrop, Ime, WindowCloseRequested,
-};
-use bevy::ecs::message::Messages;
-use crate::platform::input::{InputEvent, InputEventBuffer};
 use std::sync::Arc;
-use winit::application::ApplicationHandler;
-use winit::event::{Event as WinitEvent, WindowEvent as WinitWindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::window::{Window as WinitWindow, WindowId, WindowAttributes};
+
+use bevy::{
+    app::AppExit,
+    ecs::message::Messages,
+    input::{
+        ButtonInput,
+        gestures::*,
+        keyboard::{
+            KeyCode as BevyKeyCode,
+            KeyboardInput,
+        },
+        mouse::{
+            MouseButton as BevyMouseButton,
+            MouseButtonInput,
+            MouseMotion,
+            MouseWheel,
+        },
+        touch::{
+            TouchInput,
+            Touches,
+        },
+    },
+    prelude::*,
+    window::{
+        CursorEntered,
+        CursorLeft,
+        CursorMoved,
+        FileDragAndDrop,
+        Ime,
+        PrimaryWindow,
+        RawHandleWrapper,
+        WindowCloseRequested,
+        WindowClosing,
+        WindowCreated,
+        WindowDestroyed,
+        WindowEvent as BevyWindowEvent,
+        WindowFocused,
+        WindowMode,
+        WindowMoved,
+        WindowOccluded,
+        WindowPosition,
+        WindowResized,
+        WindowResolution,
+        WindowScaleFactorChanged,
+        WindowThemeChanged,
+        WindowWrapper,
+    },
+};
+use glam;
+use winit::{
+    application::ApplicationHandler,
+    event::{
+        Event as WinitEvent,
+        WindowEvent as WinitWindowEvent,
+    },
+    event_loop::{
+        ActiveEventLoop,
+        ControlFlow,
+        EventLoop,
+        EventLoopProxy,
+    },
+    window::{
+        Window as WinitWindow,
+        WindowAttributes,
+        WindowId,
+    },
+};
+
+use crate::platform::input::{
+    InputEvent,
+    InputEventBuffer,
+};
 
 /// Application handler state machine
 enum AppHandler {
-    Initializing { app: Option<App> },
+    Initializing {
+        app: Option<App>,
+    },
     Running {
         window: Arc<WinitWindow>,
         bevy_window_entity: Entity,
@@ -107,11 +157,12 @@ impl AppHandler {
         bevy_app.init_resource::<Messages<TouchInput>>();
 
         // Create the winit window BEFORE finishing the app
+        // Let winit choose the default size for iOS
         let window_attributes = WindowAttributes::default()
-            .with_title("Marathon")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
+            .with_title("Marathon");
 
-        let winit_window = event_loop.create_window(window_attributes)
+        let winit_window = event_loop
+            .create_window(window_attributes)
             .map_err(|e| format!("Failed to create window: {}", e))?;
         let winit_window = Arc::new(winit_window);
         info!("Created iOS window before app.finish()");
@@ -119,37 +170,41 @@ impl AppHandler {
         let physical_size = winit_window.inner_size();
         let scale_factor = winit_window.scale_factor();
 
-        // iOS-specific: High DPI screens (Retina)
-        // iPad Pro has scale factors of 2.0, some models 3.0
-        info!("iOS scale factor: {}", scale_factor);
+        // Log everything for debugging
+        info!("iOS window diagnostics:");
+        info!("  Physical size (pixels): {}×{}", physical_size.width, physical_size.height);
+        info!("  Scale factor: {}", scale_factor);
 
-        // Create window entity with all required components
-        // Convert physical pixels to logical pixels using proper floating-point division
-        let logical_width = (physical_size.width as f64 / scale_factor) as f32;
-        let logical_height = (physical_size.height as f64 / scale_factor) as f32;
-
+        // WindowResolution::new() expects PHYSICAL size
         let mut window = bevy::window::Window {
             title: "Marathon".to_string(),
-            resolution: WindowResolution::new(logical_width, logical_height),
-            mode: WindowMode::BorderlessFullscreen,
+            resolution: WindowResolution::new(physical_size.width, physical_size.height),
+            mode: WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current),
             position: WindowPosition::Automatic,
             focused: true,
             ..Default::default()
         };
-        window
-            .resolution
-            .set_scale_factor_and_apply_to_physical_size(scale_factor as f32);
+
+        // Set scale factor so Bevy can calculate logical size
+        window.resolution.set_scale_factor(scale_factor as f32);
+
+        // Log final window state
+        info!("  Final window resolution: {:.1}×{:.1} (logical)",
+              window.resolution.width(), window.resolution.height());
+        info!("  Final physical resolution: {}×{}",
+              window.resolution.physical_width(), window.resolution.physical_height());
+        info!("  Final scale factor: {}", window.resolution.scale_factor());
+        info!("  Window mode: BorderlessFullscreen");
 
         // Create WindowWrapper and RawHandleWrapper for renderer
         let window_wrapper = WindowWrapper::new(winit_window.clone());
         let raw_handle_wrapper = RawHandleWrapper::new(&window_wrapper)
             .map_err(|e| format!("Failed to create RawHandleWrapper: {}", e))?;
 
-        let window_entity = bevy_app.world_mut().spawn((
-            window,
-            PrimaryWindow,
-            raw_handle_wrapper,
-        )).id();
+        let window_entity = bevy_app
+            .world_mut()
+            .spawn((window, PrimaryWindow, raw_handle_wrapper))
+            .id();
         info!("Created window entity {}", window_entity);
 
         // Send initialization event
@@ -193,13 +248,16 @@ impl AppHandler {
 
 impl ApplicationHandler for AppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        eprintln!(">>> iOS executor: resumed() callback called");
         // Initialize on first resumed() call
         if let Err(e) = self.initialize(event_loop) {
             error!("Failed to initialize iOS app: {}", e);
+            eprintln!(">>> iOS executor: Initialization failed: {}", e);
             event_loop.exit();
             return;
         }
         info!("iOS app resumed");
+        eprintln!(">>> iOS executor: App resumed successfully");
     }
 
     fn window_event(
@@ -219,13 +277,15 @@ impl ApplicationHandler for AppHandler {
         };
 
         match event {
-            WinitWindowEvent::CloseRequested => {
+            | WinitWindowEvent::CloseRequested => {
                 self.shutdown(event_loop);
-            }
+            },
 
-            WinitWindowEvent::Resized(physical_size) => {
+            | WinitWindowEvent::Resized(physical_size) => {
                 // Update the Bevy Window component's physical resolution
-                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                if let Some(mut window_component) =
+                    bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity)
+                {
                     window_component
                         .resolution
                         .set_physical_resolution(physical_size.width, physical_size.height);
@@ -234,9 +294,30 @@ impl ApplicationHandler for AppHandler {
                 // Notify Bevy systems of window resize
                 let scale_factor = window.scale_factor();
                 send_window_resized(bevy_app, *bevy_window_entity, physical_size, scale_factor);
-            }
+            },
 
-            WinitWindowEvent::RedrawRequested => {
+            | WinitWindowEvent::RedrawRequested => {
+                // Log viewport/window dimensions every 60 frames
+                static mut FRAME_COUNT: u32 = 0;
+                let should_log = unsafe {
+                    FRAME_COUNT += 1;
+                    FRAME_COUNT % 60 == 0
+                };
+
+                if should_log {
+                    if let Some(window_component) = bevy_app.world().get::<Window>(*bevy_window_entity) {
+                        let frame_num = unsafe { FRAME_COUNT };
+                        info!("Frame {} - Window state:", frame_num);
+                        info!("  Logical: {:.1}×{:.1}",
+                              window_component.resolution.width(),
+                              window_component.resolution.height());
+                        info!("  Physical: {}×{}",
+                              window_component.resolution.physical_width(),
+                              window_component.resolution.physical_height());
+                        info!("  Scale: {}", window_component.resolution.scale_factor());
+                    }
+                }
+
                 // iOS-specific: Get pencil input from the bridge
                 #[cfg(target_os = "ios")]
                 let pencil_events = super::drain_as_input_events();
@@ -262,11 +343,13 @@ impl ApplicationHandler for AppHandler {
 
                 // Request next frame immediately (unbounded loop)
                 window.request_redraw();
-            }
+            },
 
-            WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            | WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 // Update the Bevy Window component's scale factor
-                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                if let Some(mut window_component) =
+                    bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity)
+                {
                     let prior_factor = window_component.resolution.scale_factor();
 
                     window_component
@@ -280,9 +363,102 @@ impl ApplicationHandler for AppHandler {
                         prior_factor, scale_factor, bevy_window_entity
                     );
                 }
-            }
+            },
 
-            _ => {}
+            // Mouse support for iPad simulator (simulator uses mouse, not touch)
+            | WinitWindowEvent::CursorMoved { position, .. } => {
+                let scale_factor = window.scale_factor();
+                let mut buffer = bevy_app.world_mut().resource_mut::<InputEventBuffer>();
+                buffer
+                    .events
+                    .push(crate::platform::input::InputEvent::MouseMove {
+                        pos: glam::Vec2::new(
+                            (position.x / scale_factor) as f32,
+                            (position.y / scale_factor) as f32,
+                        ),
+                    });
+            },
+
+            | WinitWindowEvent::MouseInput { state, button, .. } => {
+                use crate::platform::input::{
+                    MouseButton as EngineButton,
+                    TouchPhase,
+                };
+
+                let (engine_button, phase) = match (button, state) {
+                    | (winit::event::MouseButton::Left, winit::event::ElementState::Pressed) => {
+                        (EngineButton::Left, TouchPhase::Started)
+                    },
+                    | (winit::event::MouseButton::Left, winit::event::ElementState::Released) => {
+                        (EngineButton::Left, TouchPhase::Ended)
+                    },
+                    | (winit::event::MouseButton::Right, winit::event::ElementState::Pressed) => {
+                        (EngineButton::Right, TouchPhase::Started)
+                    },
+                    | (winit::event::MouseButton::Right, winit::event::ElementState::Released) => {
+                        (EngineButton::Right, TouchPhase::Ended)
+                    },
+                    | (winit::event::MouseButton::Middle, winit::event::ElementState::Pressed) => {
+                        (EngineButton::Middle, TouchPhase::Started)
+                    },
+                    | (winit::event::MouseButton::Middle, winit::event::ElementState::Released) => {
+                        (EngineButton::Middle, TouchPhase::Ended)
+                    },
+                    | _ => return, // Ignore other buttons
+                };
+
+                let mut buffer = bevy_app.world_mut().resource_mut::<InputEventBuffer>();
+                // Use last known cursor position - extract position first to avoid borrow issues
+                let last_pos = buffer
+                    .events
+                    .iter()
+                    .rev()
+                    .find_map(|e| match e {
+                        crate::platform::input::InputEvent::MouseMove { pos } => Some(*pos),
+                        _ => None,
+                    });
+
+                if let Some(pos) = last_pos {
+                    buffer.events.push(crate::platform::input::InputEvent::Mouse {
+                        pos,
+                        button: engine_button,
+                        phase,
+                    });
+                }
+            },
+
+            | WinitWindowEvent::MouseWheel { delta, .. } => {
+                let (delta_x, delta_y) = match delta {
+                    | winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        (x * 20.0, y * 20.0) // Convert lines to pixels
+                    },
+                    | winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        (pos.x as f32, pos.y as f32)
+                    },
+                };
+
+                let mut buffer = bevy_app.world_mut().resource_mut::<InputEventBuffer>();
+                // Use last known cursor position
+                let pos = buffer
+                    .events
+                    .iter()
+                    .rev()
+                    .find_map(|e| match e {
+                        | crate::platform::input::InputEvent::MouseMove { pos } => Some(*pos),
+                        | crate::platform::input::InputEvent::MouseWheel { pos, .. } => Some(*pos),
+                        | _ => None,
+                    })
+                    .unwrap_or(glam::Vec2::ZERO);
+
+                buffer
+                    .events
+                    .push(crate::platform::input::InputEvent::MouseWheel {
+                        delta: glam::Vec2::new(delta_x, delta_y),
+                        pos,
+                    });
+            },
+
+            | _ => {},
         }
     }
 
@@ -324,17 +500,26 @@ impl ApplicationHandler for AppHandler {
 /// - Window creation fails during initialization
 /// - The event loop encounters a fatal error
 pub fn run_executor(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!(">>> iOS executor: run_executor() called");
+
+    eprintln!(">>> iOS executor: Creating event loop");
     let event_loop = EventLoop::new()?;
+    eprintln!(">>> iOS executor: Event loop created");
 
     // Run as fast as possible (unbounded)
+    eprintln!(">>> iOS executor: Setting control flow");
     event_loop.set_control_flow(ControlFlow::Poll);
 
     info!("Starting iOS executor (unbounded mode)");
+    eprintln!(">>> iOS executor: Starting (unbounded mode)");
 
     // Create handler in Initializing state with the app
+    eprintln!(">>> iOS executor: Creating AppHandler");
     let mut handler = AppHandler::Initializing { app: Some(app) };
 
+    eprintln!(">>> iOS executor: Running event loop (blocking call)");
     event_loop.run_app(&mut handler)?;
 
+    eprintln!(">>> iOS executor: Event loop returned (should never reach here)");
     Ok(())
 }

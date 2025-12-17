@@ -22,7 +22,7 @@ use crate::networking::{
 ///
 /// All messages sent over the network are wrapped in this envelope to support
 /// protocol version negotiation and future compatibility.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct VersionedMessage {
     /// Protocol version (currently 1)
     pub version: u32,
@@ -45,7 +45,7 @@ impl VersionedMessage {
 }
 
 /// Join request type - distinguishes fresh joins from rejoin attempts
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum JoinType {
     /// Fresh join - never connected to this session before
     Fresh,
@@ -70,7 +70,7 @@ pub enum JoinType {
 /// 2. **Normal Operation**: Peers broadcast `EntityDelta` on changes
 /// 3. **Anti-Entropy**: Periodic `SyncRequest` to detect missing operations
 /// 4. **Recovery**: `MissingDeltas` sent in response to `SyncRequest`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum SyncMessage {
     /// Request to join the network and receive full state
     ///
@@ -156,7 +156,7 @@ pub enum SyncMessage {
 /// Complete state of a single entity
 ///
 /// Used in `FullState` messages to transfer all components of an entity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct EntityState {
     /// Network ID of the entity
     pub entity_id: uuid::Uuid,
@@ -176,21 +176,20 @@ pub struct EntityState {
 
 /// State of a single component
 ///
-/// Contains the component type and its serialized data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Contains the component discriminant and its serialized data.
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ComponentState {
-    /// Type path of the component (e.g.,
-    /// "bevy_transform::components::Transform")
-    pub component_type: String,
+    /// Discriminant identifying the component type
+    pub discriminant: u16,
 
-    /// Serialized component data (bincode)
+    /// Serialized component data (rkyv)
     pub data: ComponentData,
 }
 
 /// Component data - either inline or a blob reference
 ///
 /// Components larger than 64KB are stored as blobs and referenced by hash.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, PartialEq, Eq)]
 pub enum ComponentData {
     /// Inline data for small components (<64KB)
     Inline(Vec<u8>),
@@ -248,7 +247,7 @@ impl ComponentData {
 ///
 /// This struct exists because EntityDelta is defined as an enum variant
 /// but we sometimes need to work with it as a standalone type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct EntityDelta {
     /// Network ID of the entity being updated
     pub entity_id: uuid::Uuid,
@@ -343,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn test_message_serialization() -> bincode::Result<()> {
+    fn test_message_serialization() -> anyhow::Result<()> {
         let node_id = uuid::Uuid::new_v4();
         let session_id = SessionId::new();
         let message = SyncMessage::JoinRequest {
@@ -355,8 +354,8 @@ mod tests {
         };
 
         let versioned = VersionedMessage::new(message);
-        let bytes = bincode::serialize(&versioned)?;
-        let deserialized: VersionedMessage = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned).map(|b| b.to_vec())?;
+        let deserialized: VersionedMessage = rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.version, versioned.version);
 
@@ -364,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn test_full_state_serialization() -> bincode::Result<()> {
+    fn test_full_state_serialization() -> anyhow::Result<()> {
         let entity_id = uuid::Uuid::new_v4();
         let owner_node = uuid::Uuid::new_v4();
 
@@ -381,8 +380,8 @@ mod tests {
             vector_clock: VectorClock::new(),
         };
 
-        let bytes = bincode::serialize(&message)?;
-        let _deserialized: SyncMessage = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec())?;
+        let _deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
 
         Ok(())
     }
@@ -392,8 +391,8 @@ mod tests {
         let join_type = JoinType::Fresh;
 
         // Fresh join should serialize correctly
-        let bytes = bincode::serialize(&join_type).unwrap();
-        let deserialized: JoinType = bincode::deserialize(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type).map(|b| b.to_vec()).unwrap();
+        let deserialized: JoinType = rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
 
         assert!(matches!(deserialized, JoinType::Fresh));
     }
@@ -406,8 +405,8 @@ mod tests {
         };
 
         // Rejoin should serialize correctly
-        let bytes = bincode::serialize(&join_type).unwrap();
-        let deserialized: JoinType = bincode::deserialize(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type).map(|b| b.to_vec()).unwrap();
+        let deserialized: JoinType = rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | JoinType::Rejoin {
@@ -434,8 +433,8 @@ mod tests {
             join_type: JoinType::Fresh,
         };
 
-        let bytes = bincode::serialize(&message).unwrap();
-        let deserialized: SyncMessage = bincode::deserialize(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
+        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | SyncMessage::JoinRequest {
@@ -467,8 +466,8 @@ mod tests {
             },
         };
 
-        let bytes = bincode::serialize(&message).unwrap();
-        let deserialized: SyncMessage = bincode::deserialize(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
+        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | SyncMessage::JoinRequest {
@@ -484,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_deltas_serialization() -> bincode::Result<()> {
+    fn test_missing_deltas_serialization() -> anyhow::Result<()> {
         // Test that MissingDeltas message serializes correctly
         let node_id = uuid::Uuid::new_v4();
         let entity_id = uuid::Uuid::new_v4();
@@ -501,8 +500,8 @@ mod tests {
             deltas: vec![delta],
         };
 
-        let bytes = bincode::serialize(&message)?;
-        let deserialized: SyncMessage = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec())?;
+        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
 
         match deserialized {
             | SyncMessage::MissingDeltas { deltas } => {

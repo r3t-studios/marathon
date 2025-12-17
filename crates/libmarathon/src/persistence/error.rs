@@ -12,7 +12,7 @@ pub enum PersistenceError {
     Database(rusqlite::Error),
 
     /// Serialization failed
-    Serialization(bincode::Error),
+    Serialization(String),
 
     /// Deserialization failed
     Deserialization(String),
@@ -85,7 +85,6 @@ impl std::error::Error for PersistenceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             | Self::Database(err) => Some(err),
-            | Self::Serialization(err) => Some(err),
             | Self::Io(err) => Some(err),
             | _ => None,
         }
@@ -96,12 +95,6 @@ impl std::error::Error for PersistenceError {
 impl From<rusqlite::Error> for PersistenceError {
     fn from(err: rusqlite::Error) -> Self {
         Self::Database(err)
-    }
-}
-
-impl From<bincode::Error> for PersistenceError {
-    fn from(err: bincode::Error) -> Self {
-        Self::Serialization(err)
     }
 }
 
