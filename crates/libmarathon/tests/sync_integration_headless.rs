@@ -60,7 +60,6 @@ use libmarathon::{
     },
 };
 // Note: Test components use rkyv instead of serde
-use sync_macros::Synced as SyncedDerive;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -69,20 +68,18 @@ use uuid::Uuid;
 // ============================================================================
 
 /// Simple position component for testing sync
-#[derive(Component, Reflect, Clone, Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
+#[derive(Component, Reflect, Clone, Debug, PartialEq)]
 #[reflect(Component)]
-#[derive(SyncedDerive)]
-#[sync(version = 1, strategy = "LastWriteWins")]
 struct TestPosition {
     x: f32,
     y: f32,
 }
 
 /// Simple health component for testing sync
-#[derive(Component, Reflect, Clone, Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
+#[derive(Component, Reflect, Clone, Debug, PartialEq)]
 #[reflect(Component)]
-#[derive(SyncedDerive)]
-#[sync(version = 1, strategy = "LastWriteWins")]
 struct TestHealth {
     current: f32,
     max: f32,
@@ -93,10 +90,7 @@ struct TestHealth {
 // ============================================================================
 
 mod test_utils {
-    use rusqlite::{
-        Connection,
-        OptionalExtension,
-    };
+    use rusqlite::Connection;
 
     use super::*;
 

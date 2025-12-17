@@ -3,10 +3,7 @@
 //! This module defines the protocol messages used for distributed
 //! synchronization according to RFC 0001.
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
 
 use crate::networking::{
     locks::LockMessage,

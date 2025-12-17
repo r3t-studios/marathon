@@ -181,7 +181,7 @@ impl WindowToEguiContextMap {
         // NOTE: We don't use bevy_winit since we own the event loop
         // event_loop_proxy: Res<bevy_winit::EventLoopProxyWrapper<bevy_winit::WakeUp>>,
     ) {
-        for (egui_context_entity, camera, egui_context) in added_contexts {
+        for (egui_context_entity, camera, _egui_context) in added_contexts {
             if let bevy::camera::RenderTarget::Window(window_ref) = camera.target
                 && let Some(window_ref) = window_ref.normalize(primary_window.single().ok())
             {

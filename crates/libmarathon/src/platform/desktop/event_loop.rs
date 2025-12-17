@@ -77,7 +77,7 @@ impl ApplicationHandler for DesktopApp {
 ///
 /// This takes ownership of the main thread and runs the winit event loop.
 /// The update_fn is called each frame to update game logic.
-pub fn run(mut update_fn: impl FnMut() + 'static) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(_update_fn: impl FnMut() + 'static) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll); // Run as fast as possible
 

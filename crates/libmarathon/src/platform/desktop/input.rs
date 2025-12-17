@@ -51,11 +51,11 @@ use glam::Vec2;
 use std::sync::{Mutex, OnceLock};
 use std::path::PathBuf;
 use winit::event::{
-    DeviceEvent, ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent,
-    Touch as WinitTouch, Force as WinitForce, TouchPhase as WinitTouchPhase,
+    ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent,
+    Force as WinitForce, TouchPhase as WinitTouchPhase,
     Ime as WinitIme,
 };
-use winit::keyboard::{PhysicalKey, Key as LogicalKey, NamedKey};
+use winit::keyboard::{PhysicalKey, Key as LogicalKey};
 use winit::window::Theme as WinitTheme;
 
 /// Raw winit input events before conversion

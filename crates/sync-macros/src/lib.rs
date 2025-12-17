@@ -2,6 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
     DeriveInput,
+    ItemStruct,
     parse_macro_input,
 };
 
@@ -44,16 +45,12 @@ impl SyncStrategy {
 struct SyncAttributes {
     version: u32,
     strategy: SyncStrategy,
-    persist: bool,
-    lazy: bool,
 }
 
 impl SyncAttributes {
     fn parse(input: &DeriveInput) -> Result<Self, syn::Error> {
         let mut version: Option<u32> = None;
         let mut strategy: Option<SyncStrategy> = None;
-        let mut persist = true; // default
-        let mut lazy = false; // default
 
         // Find the #[sync(...)] attribute
         for attr in &input.attrs {
@@ -74,14 +71,6 @@ impl SyncAttributes {
                             .map_err(|e| syn::Error::new_spanned(&value, e))?,
                     );
                     Ok(())
-                } else if meta.path.is_ident("persist") {
-                    let value: syn::LitBool = meta.value()?.parse()?;
-                    persist = value.value;
-                    Ok(())
-                } else if meta.path.is_ident("lazy") {
-                    let value: syn::LitBool = meta.value()?.parse()?;
-                    lazy = value.value;
-                    Ok(())
                 } else {
                     Err(meta.error("unrecognized sync attribute"))
                 }
@@ -92,29 +81,20 @@ impl SyncAttributes {
         let version = version.ok_or_else(|| {
             syn::Error::new(
                 proc_macro2::Span::call_site(),
-                "Missing required attribute `version`\n\
-                 \n\
-                 = help: Add #[sync(version = 1, strategy = \"...\")] to your struct\n\
-                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
+                "Missing required attribute `version`\n\n                 \n\n                 = help: Add #[sync(version = 1, strategy = \"...\")] to your struct\n\n                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
             )
         })?;
 
         let strategy = strategy.ok_or_else(|| {
             syn::Error::new(
                 proc_macro2::Span::call_site(),
-                "Missing required attribute `strategy`\n\
-                 \n\
-                 = help: Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"\n\
-                 = help: Add #[sync(version = 1, strategy = \"LastWriteWins\")] to your struct\n\
-                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
+                "Missing required attribute `strategy`\n\n                 \n\n                 = help: Choose one of: \"LastWriteWins\", \"Set\", \"Sequence\", \"Custom\"\n\n                 = help: Add #[sync(version = 1, strategy = \"LastWriteWins\")] to your struct\n\n                 = note: See documentation: https://docs.rs/lonni/sync/strategies.html",
             )
         })?;
 
         Ok(SyncAttributes {
             version,
             strategy,
-            persist,
-            lazy,
         })
     }
 }
@@ -159,9 +139,35 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
     // Generate merge method based on strategy
     let merge_impl = generate_merge(&input, &attrs.strategy);
 
-    // Note: Users must add #[derive(rkyv::Archive, rkyv::Serialize,
-    // rkyv::Deserialize)] to their struct
+    // Extract struct attributes and visibility for re-emission
+    let vis = &input.vis;
+    let attrs_without_sync: Vec<_> = input
+        .attrs
+        .iter()
+        .filter(|attr| !attr.path().is_ident("sync"))
+        .collect();
+    let struct_token = match &input.data {
+        | syn::Data::Struct(_) => quote! { struct },
+        | _ => quote! {},
+    };
+
+    // Re-emit the struct with rkyv derives added
+    let rkyv_struct = match &input.data {
+        | syn::Data::Struct(data_struct) => {
+            let fields = &data_struct.fields;
+            quote! {
+                #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+                #(#attrs_without_sync)*
+                #vis #struct_token #name #fields
+            }
+        },
+        | _ => quote! {},
+    };
+
     let expanded = quote! {
+        // Re-emit struct with rkyv derives
+        #rkyv_struct
+
         // Register component with inventory for type registry
         // Build type path at compile time using concat! and module_path!
         // since std::any::type_name() is not yet const
@@ -406,4 +412,167 @@ fn generate_custom_merge(input: &DeriveInput) -> proc_macro2::TokenStream {
         );
         libmarathon::networking::ComponentMergeDecision::KeptLocal
     }
+}
+
+
+/// Attribute macro for synced components
+///
+/// This is an alternative to the derive macro that automatically adds rkyv derives.
+///
+/// # Example
+/// ```ignore
+/// #[synced(version = 1, strategy = "LastWriteWins")]
+/// struct Health(f32);
+/// ```
+#[proc_macro_attribute]
+pub fn synced(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input_struct = match syn::parse::<ItemStruct>(item.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            return syn::Error::new_spanned(
+                proc_macro2::TokenStream::from(item),
+                format!("synced attribute can only be applied to structs: {}", e),
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    // Parse the attribute arguments manually
+    let attr_str = attr.to_string();
+    let (version, strategy) = parse_attr_string(&attr_str);
+
+    // Generate the same implementations as the derive macro
+    let name = &input_struct.ident;
+    let name_str = name.to_string();
+    let strategy_tokens = strategy.to_tokens();
+    let vis = &input_struct.vis;
+    let attrs = &input_struct.attrs;
+    let generics = &input_struct.generics;
+    let fields = &input_struct.fields;
+
+    // Convert ItemStruct to DeriveInput for compatibility with existing functions
+    // Build it manually to avoid parse_quote issues with tuple structs
+    let derive_input = DeriveInput {
+        attrs: attrs.clone(),
+        vis: vis.clone(),
+        ident: name.clone(),
+        generics: generics.clone(),
+        data: syn::Data::Struct(syn::DataStruct {
+            struct_token: syn::token::Struct::default(),
+            fields: fields.clone(),
+            semi_token: if matches!(fields, syn::Fields::Unit) {
+                Some(syn::token::Semi::default())
+            } else {
+                None
+            },
+        }),
+    };
+
+    let serialize_impl = generate_serialize(&derive_input);
+    let deserialize_impl = generate_deserialize(&derive_input, name);
+    let merge_impl = generate_merge(&derive_input, &strategy);
+
+    // Add semicolon for tuple/unit structs
+    let semi = if matches!(fields, syn::Fields::Named(_)) {
+        quote! {}
+    } else {
+        quote! { ; }
+    };
+
+    let expanded = quote! {
+        // Output the struct with rkyv derives added
+        #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+        #(#attrs)*
+        #vis struct #name #generics #fields #semi
+
+        // Register component with inventory for type registry
+        const _: () = {
+            const TYPE_PATH: &str = concat!(module_path!(), "::", stringify!(#name));
+
+            inventory::submit! {
+                libmarathon::persistence::ComponentMeta {
+                    type_name: #name_str,
+                    type_path: TYPE_PATH,
+                    type_id: std::any::TypeId::of::<#name>(),
+                    deserialize_fn: |bytes: &[u8]| -> anyhow::Result<Box<dyn std::any::Any>> {
+                        let component: #name = rkyv::from_bytes::<#name, rkyv::rancor::Failure>(bytes)?;
+                        Ok(Box::new(component))
+                    },
+                    serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<Vec<u8>> {
+                        world.get::<#name>(entity).and_then(|component| {
+                            rkyv::to_bytes::<rkyv::rancor::Failure>(component)
+                                .map(|bytes| bytes.to_vec())
+                                .ok()
+                        })
+                    },
+                    insert_fn: |entity_mut: &mut bevy::ecs::world::EntityWorldMut, boxed: Box<dyn std::any::Any>| {
+                        if let Ok(component) = boxed.downcast::<#name>() {
+                            entity_mut.insert(*component);
+                        }
+                    },
+                }
+            };
+        };
+
+        impl libmarathon::networking::SyncComponent for #name {
+            const VERSION: u32 = #version;
+            const STRATEGY: libmarathon::networking::SyncStrategy = #strategy_tokens;
+
+            #[inline]
+            fn serialize_sync(&self) -> anyhow::Result<Vec<u8>> {
+                #serialize_impl
+            }
+
+            #[inline]
+            fn deserialize_sync(data: &[u8]) -> anyhow::Result<Self> {
+                #deserialize_impl
+            }
+
+            #[inline]
+            fn merge(&mut self, remote: Self, clock_cmp: libmarathon::networking::ClockComparison) -> libmarathon::networking::ComponentMergeDecision {
+                #merge_impl
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Parse attribute string (simple parser for version and strategy)
+fn parse_attr_string(attr: &str) -> (u32, SyncStrategy) {
+    let mut version = 1;
+    let mut strategy = SyncStrategy::LastWriteWins;
+    
+    // Simple parsing - look for version = N and strategy = "..."
+    if let Some(v_pos) = attr.find("version") {
+        if let Some(eq_pos) = attr[v_pos..].find('=') {
+            let start = v_pos + eq_pos + 1;
+            let rest = &attr[start..].trim();
+            if let Some(comma_pos) = rest.find(',') {
+                if let Ok(v) = rest[..comma_pos].trim().parse() {
+                    version = v;
+                }
+            } else if let Ok(v) = rest.trim().parse() {
+                version = v;
+            }
+        }
+    }
+    
+    if let Some(s_pos) = attr.find("strategy") {
+        if let Some(eq_pos) = attr[s_pos..].find('=') {
+            let start = s_pos + eq_pos + 1;
+            let rest = &attr[start..].trim();
+            if let Some(quote_start) = rest.find('"') {
+                if let Some(quote_end) = rest[quote_start + 1..].find('"') {
+                    let strategy_str = &rest[quote_start + 1..quote_start + 1 + quote_end];
+                    if let Ok(s) = SyncStrategy::from_str(strategy_str) {
+                        strategy = s;
+                    }
+                }
+            }
+        }
+    }
+    
+    (version, strategy)
 }

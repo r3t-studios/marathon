@@ -51,31 +51,24 @@
 //! Note: Battery-aware adaptive frame limiting is planned for production use.
 
 use bevy::prelude::*;
-use bevy::app::AppExit;
 use bevy::input::{
     ButtonInput,
     mouse::MouseButton as BevyMouseButton,
     keyboard::KeyCode as BevyKeyCode,
     touch::{Touches, TouchInput},
-    gestures::*,
-    keyboard::KeyboardInput,
-    mouse::{MouseButtonInput, MouseMotion, MouseWheel},
 };
 use bevy::window::{
     PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged, WindowClosing,
     WindowResolution, WindowMode, WindowPosition, WindowEvent as BevyWindowEvent,
     RawHandleWrapper, WindowWrapper,
-    CursorMoved, CursorEntered, CursorLeft,
-    WindowFocused, WindowOccluded, WindowMoved, WindowThemeChanged, WindowDestroyed,
-    FileDragAndDrop, Ime, WindowCloseRequested,
 };
 use bevy::ecs::message::Messages;
-use crate::platform::input::{InputEvent, InputEventBuffer};
+use crate::platform::input::InputEventBuffer;
 use super::{push_window_event, push_device_event, drain_as_input_events, set_scale_factor};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
-use winit::event::{Event as WinitEvent, WindowEvent as WinitWindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::event::WindowEvent as WinitWindowEvent;
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window as WinitWindow, WindowId, WindowAttributes};
 
 /// Application handler state machine
