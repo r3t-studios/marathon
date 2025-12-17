@@ -242,7 +242,7 @@ fn screen_to_world_ray(
     screen_pos: glam::Vec2,
     camera: &Camera,
     camera_transform: &GlobalTransform,
-    window: &Window,
+    _window: &Window,
 ) -> Option<Ray> {
     // Convert screen position to viewport position (0..1 range)
     let viewport_pos = Vec2::new(screen_pos.x, screen_pos.y);

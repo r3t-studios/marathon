@@ -114,6 +114,7 @@ mod test_utils {
     }
 
     /// Count entities with CubeMarker component
+    #[allow(dead_code)]
     pub fn count_cubes(world: &mut World) -> usize {
         let mut query = world.query::<&CubeMarker>();
         query.iter(world).count()
@@ -308,7 +309,7 @@ mod test_utils {
                         "[Node {}] Sending message #{} via gossip",
                         node_id, msg_count
                     );
-                    match bincode::serialize(&versioned_msg) {
+                    match rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned_msg).map(|b| b.to_vec()) {
                         | Ok(bytes) => {
                             if let Err(e) = sender.broadcast(Bytes::from(bytes)).await {
                                 eprintln!("[Node {}] Failed to broadcast message: {}", node_id, e);
@@ -349,7 +350,7 @@ mod test_utils {
                                 "[Node {}] Received message #{} from gossip",
                                 node_id, msg_count
                             );
-                            match bincode::deserialize::<VersionedMessage>(&msg.content) {
+                            match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content) {
                                 | Ok(versioned_msg) => {
                                     if let Err(e) = bridge_in.push_incoming(versioned_msg) {
                                         eprintln!(

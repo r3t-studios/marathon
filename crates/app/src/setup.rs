@@ -285,7 +285,7 @@ fn spawn_bridge_tasks(
 
         loop {
             if let Some(msg) = bridge_out.try_recv_outgoing() {
-                if let Ok(bytes) = bincode::serialize(&msg) {
+                if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec()) {
                     if let Err(e) = sender.broadcast(Bytes::from(bytes)).await {
                         error!("[Node {}] Broadcast failed: {}", node_id, e);
                     }
@@ -303,7 +303,7 @@ fn spawn_bridge_tasks(
                 | Ok(Some(Ok(event))) => {
                     if let iroh_gossip::api::Event::Received(msg) = event {
                         if let Ok(versioned_msg) =
-                            bincode::deserialize::<VersionedMessage>(&msg.content)
+                            rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content)
                         {
                             if let Err(e) = bridge_in.push_incoming(versioned_msg) {
                                 error!("[Node {}] Push incoming failed: {}", node_id, e);

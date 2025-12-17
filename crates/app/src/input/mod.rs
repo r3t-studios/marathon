@@ -9,5 +9,4 @@
 pub mod event_buffer;
 pub mod input_handler;
 
-pub use event_buffer::InputEventBuffer;
 pub use input_handler::InputHandlerPlugin;
