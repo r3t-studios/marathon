@@ -105,14 +105,14 @@ pub enum PersistenceOp {
     UpsertComponent {
         entity_id: EntityId,
         component_type: String,
-        data: Vec<u8>,
+        data: bytes::Bytes,
     },
 
     /// Log an operation for CRDT sync
     LogOperation {
         node_id: NodeId,
         sequence: u64,
-        operation: Vec<u8>,
+        operation: bytes::Bytes,
     },
 
     /// Update vector clock for causality tracking
@@ -473,7 +473,7 @@ mod tests {
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id,
             component_type: "Transform".to_string(),
-            data: vec![1, 2, 3],
+            data: bytes::Bytes::from(vec![1, 2, 3]),
         })?;
         assert_eq!(buffer.len(), 1);
 
@@ -481,7 +481,7 @@ mod tests {
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id,
             component_type: "Transform".to_string(),
-            data: vec![4, 5, 6],
+            data: bytes::Bytes::from(vec![4, 5, 6]),
         })?;
         assert_eq!(buffer.len(), 1);
 
@@ -489,7 +489,7 @@ mod tests {
         let ops = buffer.take_operations();
         assert_eq!(ops.len(), 1);
         if let PersistenceOp::UpsertComponent { data, .. } = &ops[0] {
-            assert_eq!(data, &vec![4, 5, 6]);
+            assert_eq!(data.as_ref(), &[4, 5, 6]);
         } else {
             panic!("Expected UpsertComponent");
         }
@@ -506,7 +506,7 @@ mod tests {
             .add(PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type: "Transform".to_string(),
-                data: vec![1, 2, 3],
+                data: bytes::Bytes::from(vec![1, 2, 3]),
             })
             .expect("Should successfully add Transform");
 
@@ -515,7 +515,7 @@ mod tests {
             .add(PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type: "Velocity".to_string(),
-                data: vec![4, 5, 6],
+                data: bytes::Bytes::from(vec![4, 5, 6]),
             })
             .expect("Should successfully add Velocity");
 
@@ -652,7 +652,7 @@ mod tests {
         let log_op = PersistenceOp::LogOperation {
             node_id,
             sequence: 1,
-            operation: vec![1, 2, 3],
+            operation: bytes::Bytes::from(vec![1, 2, 3]),
         };
 
         let vector_clock_op = PersistenceOp::UpdateVectorClock {
@@ -689,7 +689,7 @@ mod tests {
             buffer.add(PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type: "Transform".to_string(),
-                data: vec![i],
+                data: bytes::Bytes::from(vec![i]),
             })?;
         }
 
@@ -700,7 +700,7 @@ mod tests {
         let ops = buffer.take_operations();
         assert_eq!(ops.len(), 1);
         if let PersistenceOp::UpsertComponent { data, .. } = &ops[0] {
-            assert_eq!(data, &vec![9]);
+            assert_eq!(data.as_ref(), &[9]);
         } else {
             panic!("Expected UpsertComponent");
         }
@@ -709,7 +709,7 @@ mod tests {
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id,
             component_type: "Transform".to_string(),
-            data: vec![100],
+            data: bytes::Bytes::from(vec![100]),
         })?;
 
         assert_eq!(buffer.len(), 1);
@@ -726,13 +726,13 @@ mod tests {
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id: entity1,
             component_type: "Transform".to_string(),
-            data: vec![1],
+            data: bytes::Bytes::from(vec![1]),
         })?;
 
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id: entity2,
             component_type: "Transform".to_string(),
-            data: vec![2],
+            data: bytes::Bytes::from(vec![2]),
         })?;
 
         // Should have 2 operations (different entities)
@@ -742,7 +742,7 @@ mod tests {
         buffer.add(PersistenceOp::UpsertComponent {
             entity_id: entity1,
             component_type: "Transform".to_string(),
-            data: vec![3],
+            data: bytes::Bytes::from(vec![3]),
         })?;
 
         // Still 2 operations (first was replaced in-place)
@@ -761,7 +761,7 @@ mod tests {
             .add_with_default_priority(PersistenceOp::LogOperation {
                 node_id,
                 sequence: 1,
-                operation: vec![1, 2, 3],
+                operation: bytes::Bytes::from(vec![1, 2, 3]),
             })
             .unwrap();
 
@@ -776,7 +776,7 @@ mod tests {
         let entity_id = EntityId::new_v4();
 
         // Create 11MB component (exceeds 10MB limit)
-        let oversized_data = vec![0u8; 11 * 1024 * 1024];
+        let oversized_data = bytes::Bytes::from(vec![0u8; 11 * 1024 * 1024]);
 
         let result = buffer.add(PersistenceOp::UpsertComponent {
             entity_id,
@@ -809,7 +809,7 @@ mod tests {
         let entity_id = EntityId::new_v4();
 
         // Create exactly 10MB component (at limit)
-        let max_data = vec![0u8; 10 * 1024 * 1024];
+        let max_data = bytes::Bytes::from(vec![0u8; 10 * 1024 * 1024]);
 
         let result = buffer.add(PersistenceOp::UpsertComponent {
             entity_id,
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn test_oversized_operation_returns_error() {
         let mut buffer = WriteBuffer::new(100);
-        let oversized_op = vec![0u8; 11 * 1024 * 1024];
+        let oversized_op = bytes::Bytes::from(vec![0u8; 11 * 1024 * 1024]);
 
         let result = buffer.add(PersistenceOp::LogOperation {
             node_id: uuid::Uuid::new_v4(),
@@ -860,7 +860,7 @@ mod tests {
 
         for size in sizes {
             let mut buffer = WriteBuffer::new(100);
-            let data = vec![0u8; size];
+            let data = bytes::Bytes::from(vec![0u8; size]);
 
             let result = buffer.add(PersistenceOp::UpsertComponent {
                 entity_id: uuid::Uuid::new_v4(),

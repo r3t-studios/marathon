@@ -27,7 +27,7 @@ pub struct ComponentMeta {
     pub deserialize_fn: fn(&[u8]) -> Result<Box<dyn std::any::Any>>,
 
     /// Serialization function that reads from an entity (returns None if entity doesn't have this component)
-    pub serialize_fn: fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<Vec<u8>>,
+    pub serialize_fn: fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>,
 
     /// Insert function that takes a boxed component and inserts it into an entity
     pub insert_fn: fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>),
@@ -47,7 +47,7 @@ pub struct ComponentTypeRegistry {
     discriminant_to_deserializer: HashMap<u16, fn(&[u8]) -> Result<Box<dyn std::any::Any>>>,
 
     /// Discriminant to serialization function
-    discriminant_to_serializer: HashMap<u16, fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<Vec<u8>>>,
+    discriminant_to_serializer: HashMap<u16, fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>>,
 
     /// Discriminant to insert function
     discriminant_to_inserter: HashMap<u16, fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
@@ -196,7 +196,7 @@ impl ComponentTypeRegistry {
         &self,
         world: &bevy::ecs::world::World,
         entity: bevy::ecs::entity::Entity,
-    ) -> Vec<(u16, &'static str, Vec<u8>)> {
+    ) -> Vec<(u16, &'static str, bytes::Bytes)> {
         let mut results = Vec::new();
 
         for (&discriminant, &serialize_fn) in &self.discriminant_to_serializer {

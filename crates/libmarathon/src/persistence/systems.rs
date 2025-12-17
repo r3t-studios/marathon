@@ -479,7 +479,7 @@ mod tests {
             .add(PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type: "Transform".to_string(),
-                data: vec![1, 2, 3],
+                data: bytes::Bytes::from(vec![1, 2, 3]),
             })
             .unwrap();
 

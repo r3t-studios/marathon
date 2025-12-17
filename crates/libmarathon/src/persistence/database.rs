@@ -201,7 +201,7 @@ pub fn flush_to_sqlite(ops: &[PersistenceOp], conn: &mut Connection) -> Result<u
                     rusqlite::params![
                         entity_id.as_bytes(),
                         component_type,
-                        data,
+                        data.as_ref(),
                         current_timestamp(),
                     ],
                 )?;
@@ -219,7 +219,7 @@ pub fn flush_to_sqlite(ops: &[PersistenceOp], conn: &mut Connection) -> Result<u
                     rusqlite::params![
                         &node_id.to_string(), // Convert UUID to string for SQLite TEXT column
                         sequence,
-                        operation,
+                        operation.as_ref(),
                         current_timestamp(),
                     ],
                 )?;
@@ -613,6 +613,368 @@ pub fn load_session_vector_clock(
     Ok(clock)
 }
 
+/// Loaded entity data from database
+#[derive(Debug)]
+pub struct LoadedEntity {
+    pub id: uuid::Uuid,
+    pub entity_type: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub components: Vec<LoadedComponent>,
+}
+
+/// Loaded component data from database
+#[derive(Debug)]
+pub struct LoadedComponent {
+    pub component_type: String,
+    pub data: bytes::Bytes,
+}
+
+/// Load all components for a single entity from the database
+pub fn load_entity_components(
+    conn: &Connection,
+    entity_id: uuid::Uuid,
+) -> Result<Vec<LoadedComponent>> {
+    let mut stmt = conn.prepare(
+        "SELECT component_type, data
+         FROM components
+         WHERE entity_id = ?1",
+    )?;
+
+    let components: Vec<LoadedComponent> = stmt
+        .query_map([entity_id.as_bytes()], |row| {
+            let data_vec: Vec<u8> = row.get(1)?;
+            Ok(LoadedComponent {
+                component_type: row.get(0)?,
+                data: bytes::Bytes::from(data_vec),
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(components)
+}
+
+/// Load a single entity by network ID from the database
+///
+/// Returns None if the entity doesn't exist.
+pub fn load_entity_by_network_id(
+    conn: &Connection,
+    network_id: uuid::Uuid,
+) -> Result<Option<LoadedEntity>> {
+    // Load entity metadata
+    let entity_data = conn
+        .query_row(
+            "SELECT id, entity_type, created_at, updated_at
+             FROM entities
+             WHERE id = ?1",
+            [network_id.as_bytes()],
+            |row| {
+                let id_bytes: Vec<u8> = row.get(0)?;
+                let mut id_array = [0u8; 16];
+                id_array.copy_from_slice(&id_bytes);
+                let id = uuid::Uuid::from_bytes(id_array);
+
+                Ok((
+                    id,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+
+    let Some((id, entity_type, created_at_ts, updated_at_ts)) = entity_data else {
+        return Ok(None);
+    };
+
+    // Load all components for this entity
+    let components = load_entity_components(conn, id)?;
+
+    Ok(Some(LoadedEntity {
+        id,
+        entity_type,
+        created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+            .unwrap_or_else(chrono::Utc::now),
+        updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+            .unwrap_or_else(chrono::Utc::now),
+        components,
+    }))
+}
+
+/// Load all entities from the database
+///
+/// This loads all entity metadata and their components.
+/// Used during startup to rehydrate the game state.
+pub fn load_all_entities(conn: &Connection) -> Result<Vec<LoadedEntity>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, entity_type, created_at, updated_at
+         FROM entities
+         ORDER BY created_at ASC",
+    )?;
+
+    let entity_rows = stmt.query_map([], |row| {
+        let id_bytes: Vec<u8> = row.get(0)?;
+        let mut id_array = [0u8; 16];
+        id_array.copy_from_slice(&id_bytes);
+        let id = uuid::Uuid::from_bytes(id_array);
+
+        Ok((
+            id,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+
+    let mut entities = Vec::new();
+
+    for row in entity_rows {
+        let (id, entity_type, created_at_ts, updated_at_ts) = row?;
+
+        // Load all components for this entity
+        let components = load_entity_components(conn, id)?;
+
+        entities.push(LoadedEntity {
+            id,
+            entity_type,
+            created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            components,
+        });
+    }
+
+    Ok(entities)
+}
+
+/// Load entities by entity type from the database
+///
+/// Returns all entities matching the specified entity_type.
+pub fn load_entities_by_type(conn: &Connection, entity_type: &str) -> Result<Vec<LoadedEntity>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, entity_type, created_at, updated_at
+         FROM entities
+         WHERE entity_type = ?1
+         ORDER BY created_at ASC",
+    )?;
+
+    let entity_rows = stmt.query_map([entity_type], |row| {
+        let id_bytes: Vec<u8> = row.get(0)?;
+        let mut id_array = [0u8; 16];
+        id_array.copy_from_slice(&id_bytes);
+        let id = uuid::Uuid::from_bytes(id_array);
+
+        Ok((
+            id,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+
+    let mut entities = Vec::new();
+
+    for row in entity_rows {
+        let (id, entity_type, created_at_ts, updated_at_ts) = row?;
+
+        // Load all components for this entity
+        let components = load_entity_components(conn, id)?;
+
+        entities.push(LoadedEntity {
+            id,
+            entity_type,
+            created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+                .unwrap_or_else(chrono::Utc::now),
+            components,
+        });
+    }
+
+    Ok(entities)
+}
+
+/// Rehydrate a loaded entity into the Bevy world
+///
+/// Takes a `LoadedEntity` from the database and spawns it as a new Bevy entity,
+/// deserializing and inserting all components using the ComponentTypeRegistry.
+///
+/// # Arguments
+///
+/// * `loaded_entity` - The entity data loaded from SQLite
+/// * `world` - The Bevy world to spawn the entity into
+/// * `component_registry` - Type registry for component deserialization
+///
+/// # Returns
+///
+/// The spawned Bevy `Entity` on success
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Component deserialization fails
+/// - Component type is not registered
+/// - Component insertion fails
+pub fn rehydrate_entity(
+    loaded_entity: LoadedEntity,
+    world: &mut bevy::prelude::World,
+    component_registry: &crate::persistence::ComponentTypeRegistry,
+) -> Result<bevy::prelude::Entity> {
+    use bevy::prelude::*;
+
+    use crate::networking::NetworkedEntity;
+
+    // Spawn a new entity
+    let entity = world.spawn_empty().id();
+
+    info!(
+        "Rehydrating entity {:?} with type {} and {} components",
+        loaded_entity.id,
+        loaded_entity.entity_type,
+        loaded_entity.components.len()
+    );
+
+    // Deserialize and insert each component
+    for component in &loaded_entity.components {
+        // Get deserialization function for this component type
+        let deserialize_fn = component_registry
+            .get_deserialize_fn_by_path(&component.component_type)
+            .ok_or_else(|| {
+                PersistenceError::Deserialization(format!(
+                    "No deserialize function registered for component type: {}",
+                    component.component_type
+                ))
+            })?;
+
+        // Get insert function for this component type
+        let insert_fn = component_registry
+            .get_insert_fn_by_path(&component.component_type)
+            .ok_or_else(|| {
+                PersistenceError::Deserialization(format!(
+                    "No insert function registered for component type: {}",
+                    component.component_type
+                ))
+            })?;
+
+        // Deserialize the component from bytes
+        let deserialized = deserialize_fn(&component.data).map_err(|e| {
+            PersistenceError::Deserialization(format!(
+                "Failed to deserialize component {}: {}",
+                component.component_type, e
+            ))
+        })?;
+
+        // Insert the component into the entity
+        // Get an EntityWorldMut to pass to the insert function
+        let mut entity_mut = world.entity_mut(entity);
+        insert_fn(&mut entity_mut, deserialized);
+
+        debug!(
+            "Inserted component {} into entity {:?}",
+            component.component_type, entity
+        );
+    }
+
+    // Add the NetworkedEntity component with the persisted network_id
+    // This ensures the entity maintains its identity across restarts
+    world.entity_mut(entity).insert(NetworkedEntity {
+        network_id: loaded_entity.id,
+        owner_node_id: uuid::Uuid::nil(), // Will be set by network system if needed
+    });
+
+    // Add the Persisted marker component
+    world
+        .entity_mut(entity)
+        .insert(crate::persistence::Persisted {
+            network_id: loaded_entity.id,
+        });
+
+    info!(
+        "Successfully rehydrated entity {:?} as Bevy entity {:?}",
+        loaded_entity.id, entity
+    );
+
+    Ok(entity)
+}
+
+/// Rehydrate all entities from the database into the Bevy world
+///
+/// This function is called during startup to restore the entire persisted
+/// state. It loads all entities from SQLite and spawns them into the Bevy world
+/// with all their components.
+///
+/// # Arguments
+///
+/// * `world` - The Bevy world to spawn entities into
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Database connection fails
+/// - Entity loading fails
+/// - Entity rehydration fails
+pub fn rehydrate_all_entities(world: &mut bevy::prelude::World) -> Result<()> {
+    use bevy::prelude::*;
+
+    // Get database connection from resource
+    let loaded_entities = {
+        let db_res = world.resource::<crate::persistence::PersistenceDb>();
+        let conn = db_res
+            .conn
+            .lock()
+            .map_err(|e| PersistenceError::Other(format!("Failed to lock database: {}", e)))?;
+
+        // Load all entities from database
+        load_all_entities(&conn)?
+    };
+
+    info!("Loaded {} entities from database", loaded_entities.len());
+
+    if loaded_entities.is_empty() {
+        info!("No entities to rehydrate");
+        return Ok(());
+    }
+
+    // Get component registry
+    let component_registry = {
+        let registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        registry_res.0
+    };
+
+    // Rehydrate each entity
+    let mut rehydrated_count = 0;
+    let mut failed_count = 0;
+
+    for loaded_entity in loaded_entities {
+        match rehydrate_entity(loaded_entity, world, component_registry) {
+            | Ok(entity) => {
+                rehydrated_count += 1;
+                debug!("Rehydrated entity {:?}", entity);
+            },
+            | Err(e) => {
+                failed_count += 1;
+                error!("Failed to rehydrate entity: {}", e);
+            },
+        }
+    }
+
+    info!(
+        "Entity rehydration complete: {} succeeded, {} failed",
+        rehydrated_count, failed_count
+    );
+
+    if failed_count > 0 {
+        warn!(
+            "{} entities failed to rehydrate - check logs for details",
+            failed_count
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,7 +1018,7 @@ mod tests {
             PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type: "Transform".to_string(),
-                data: vec![1, 2, 3, 4],
+                data: bytes::Bytes::from(vec![1, 2, 3, 4]),
             },
         ];
 
