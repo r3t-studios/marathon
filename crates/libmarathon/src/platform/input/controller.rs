@@ -386,6 +386,7 @@ impl Default for InputController {
     }
 }
 
-#[cfg(test)]
-#[path = "input_controller_tests.rs"]
-mod tests;
+// Tests are in crates/libmarathon/src/engine/input_controller_tests.rs
+// #[cfg(test)]
+// #[path = "input_controller_tests.rs"]
+// mod tests;

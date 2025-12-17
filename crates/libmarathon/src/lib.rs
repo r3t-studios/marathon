@@ -28,6 +28,7 @@ pub mod engine;
 pub mod networking;
 pub mod persistence;
 pub mod platform;
+pub mod utils;
 pub mod sync;
 
 /// Unified Marathon plugin that bundles all core functionality.

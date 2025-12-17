@@ -64,12 +64,6 @@ impl fmt::Display for NetworkingError {
 
 impl std::error::Error for NetworkingError {}
 
-impl From<bincode::Error> for NetworkingError {
-    fn from(e: bincode::Error) -> Self {
-        NetworkingError::Serialization(e.to_string())
-    }
-}
-
 impl From<crate::persistence::PersistenceError> for NetworkingError {
     fn from(e: crate::persistence::PersistenceError) -> Self {
         NetworkingError::Other(format!("Persistence error: {}", e))

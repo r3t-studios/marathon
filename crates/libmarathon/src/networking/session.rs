@@ -18,7 +18,7 @@ use crate::networking::VectorClock;
 ///
 /// Session IDs provide both technical uniqueness (UUID) and human usability
 /// (abc-def-123 codes). All peers in a session share the same session ID.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct SessionId {
     uuid: Uuid,
     code: String,
@@ -134,7 +134,7 @@ impl fmt::Display for SessionId {
 }
 
 /// Session lifecycle states
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum SessionState {
     /// Session exists in database but hasn't connected to network yet
     Created,
@@ -178,7 +178,7 @@ impl SessionState {
 ///
 /// Tracks session identity, creation time, entity count, and lifecycle state.
 /// Persisted to database for crash recovery and auto-rejoin.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Session {
     /// Unique session identifier
     pub id: SessionId,

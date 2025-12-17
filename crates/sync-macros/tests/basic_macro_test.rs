@@ -10,7 +10,8 @@ use libmarathon::networking::{
 use sync_macros::Synced as SyncedDerive;
 
 // Test 1: Basic struct with LWW strategy compiles
-#[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+#[derive(Component, Reflect, Clone, Debug, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[reflect(Component)]
 #[derive(SyncedDerive)]
 #[sync(version = 1, strategy = "LastWriteWins")]
@@ -65,7 +66,8 @@ fn test_health_lww_merge_concurrent() {
 }
 
 // Test 2: Struct with multiple fields
-#[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+#[derive(Component, Reflect, Clone, Debug, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[reflect(Component)]
 #[derive(SyncedDerive)]
 #[sync(version = 1, strategy = "LastWriteWins")]

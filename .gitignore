@@ -76,3 +76,5 @@ target/doc/
 # Project-specific (based on your untracked files)
 emotion-gradient-config-*.json
 **/*.csv
+.op/
+.sere

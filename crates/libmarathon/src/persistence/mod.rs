@@ -40,6 +40,7 @@ mod migrations;
 mod plugin;
 pub mod reflection;
 mod systems;
+mod type_registry;
 mod types;
 
 pub use config::*;
@@ -52,4 +53,5 @@ pub use migrations::*;
 pub use plugin::*;
 pub use reflection::*;
 pub use systems::*;
+pub use type_registry::*;
 pub use types::*;

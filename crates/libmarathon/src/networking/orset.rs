@@ -87,7 +87,7 @@ pub struct OrElement<T> {
 ///
 /// An element is "present" if it has an operation ID in `elements` that's
 /// not in `tombstones`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OrSet<T> {
     /// Map from operation ID to (value, adding_node)
     elements: HashMap<uuid::Uuid, (T, NodeId)>,
@@ -471,15 +471,15 @@ mod tests {
     }
 
     #[test]
-    fn test_orset_serialization() -> bincode::Result<()> {
+    fn test_orset_serialization() -> anyhow::Result<()> {
         let node = uuid::Uuid::new_v4();
         let mut set: OrSet<String> = OrSet::new();
 
         set.add("foo".to_string(), node);
         set.add("bar".to_string(), node);
 
-        let bytes = bincode::serialize(&set)?;
-        let deserialized: OrSet<String> = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&set).map(|b| b.to_vec())?;
+        let deserialized: OrSet<String> = rkyv::from_bytes::<OrSet<String>, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.len(), 2);
         assert!(deserialized.contains(&"foo".to_string()));

@@ -55,7 +55,7 @@ use crate::networking::vector_clock::{
 ///
 /// Each element has a unique ID and tracks its logical position in the sequence
 /// via the "after" pointer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct RgaElement<T> {
     /// Unique ID for this element
     pub id: uuid::Uuid,
@@ -90,7 +90,7 @@ pub struct RgaElement<T> {
 /// Elements are stored in a HashMap by ID. Each element tracks which element
 /// it was inserted after, forming a linked list structure. Deleted elements
 /// remain as tombstones to preserve positions for concurrent operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Rga<T> {
     /// Map from element ID to element
     elements: HashMap<uuid::Uuid, RgaElement<T>>,
@@ -98,7 +98,7 @@ pub struct Rga<T> {
 
 impl<T> Rga<T>
 where
-    T: Clone + Serialize + for<'de> Deserialize<'de>,
+    T: Clone + rkyv::Archive,
 {
     /// Create a new empty RGA sequence
     pub fn new() -> Self {
@@ -416,7 +416,7 @@ where
 
 impl<T> Default for Rga<T>
 where
-    T: Clone + Serialize + for<'de> Deserialize<'de>,
+    T: Clone + rkyv::Archive,
 {
     fn default() -> Self {
         Self::new()
@@ -612,15 +612,15 @@ mod tests {
     }
 
     #[test]
-    fn test_rga_serialization() -> bincode::Result<()> {
+    fn test_rga_serialization() -> anyhow::Result<()> {
         let node = uuid::Uuid::new_v4();
         let mut seq: Rga<String> = Rga::new();
 
         let (id_a, _) = seq.insert_at_beginning("foo".to_string(), node);
         seq.insert_after(Some(id_a), "bar".to_string(), node);
 
-        let bytes = bincode::serialize(&seq)?;
-        let deserialized: Rga<String> = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&seq).map(|b| b.to_vec())?;
+        let deserialized: Rga<String> = rkyv::from_bytes::<Rga<String>, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.len(), 2);
         let values: Vec<String> = deserialized.values().cloned().collect();

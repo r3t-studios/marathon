@@ -145,7 +145,7 @@ impl NetworkingManager {
 
     async fn handle_sync_message(&mut self, msg_bytes: &[u8], event_tx: &mpsc::UnboundedSender<EngineEvent>) {
         // Deserialize SyncMessage
-        let versioned: VersionedMessage = match bincode::deserialize(msg_bytes) {
+        let versioned: VersionedMessage = match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(msg_bytes) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("Failed to deserialize sync message: {}", e);
@@ -214,7 +214,7 @@ impl NetworkingManager {
                 holder: self.node_id,
             }));
 
-            if let Ok(bytes) = bincode::serialize(&msg) {
+            if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec()) {
                 let _ = self.sender.broadcast(Bytes::from(bytes)).await;
             }
         }

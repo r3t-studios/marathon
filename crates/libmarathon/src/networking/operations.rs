@@ -39,7 +39,7 @@ use crate::networking::{
 /// - Maintains ordering across concurrent inserts
 /// - Uses RGA (Replicated Growable Array) algorithm
 /// - Example: Collaborative drawing paths
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum ComponentOp {
     /// Set a component value (Last-Write-Wins)
     ///
@@ -50,8 +50,8 @@ pub enum ComponentOp {
     /// The data field can be either inline (for small components) or a blob
     /// reference (for components >64KB).
     Set {
-        /// Type path of the component
-        component_type: String,
+        /// Discriminant identifying the component type
+        discriminant: u16,
 
         /// Component data (inline or blob reference)
         data: ComponentData,
@@ -65,8 +65,8 @@ pub enum ComponentOp {
     /// Adds an element to a set that supports concurrent add/remove. Each add
     /// has a unique ID so that removes can reference specific adds.
     SetAdd {
-        /// Type path of the component
-        component_type: String,
+        /// Discriminant identifying the component type
+        discriminant: u16,
 
         /// Unique ID for this add operation
         operation_id: uuid::Uuid,
@@ -83,8 +83,8 @@ pub enum ComponentOp {
     /// Removes an element by referencing the add operation IDs that added it.
     /// If concurrent with an add, the add wins (observed-remove semantics).
     SetRemove {
-        /// Type path of the component
-        component_type: String,
+        /// Discriminant identifying the component type
+        discriminant: u16,
 
         /// IDs of the add operations being removed
         removed_ids: Vec<uuid::Uuid>,
@@ -99,8 +99,8 @@ pub enum ComponentOp {
     /// (Replicated Growable Array) to maintain consistent ordering across
     /// concurrent inserts.
     SequenceInsert {
-        /// Type path of the component
-        component_type: String,
+        /// Discriminant identifying the component type
+        discriminant: u16,
 
         /// Unique ID for this insert operation
         operation_id: uuid::Uuid,
@@ -120,8 +120,8 @@ pub enum ComponentOp {
     /// Marks an element as deleted in the sequence. The element remains in the
     /// structure (tombstone) to preserve ordering for concurrent operations.
     SequenceDelete {
-        /// Type path of the component
-        component_type: String,
+        /// Discriminant identifying the component type
+        discriminant: u16,
 
         /// ID of the element to delete
         element_id: uuid::Uuid,
@@ -141,14 +141,14 @@ pub enum ComponentOp {
 }
 
 impl ComponentOp {
-    /// Get the component type for this operation
-    pub fn component_type(&self) -> Option<&str> {
+    /// Get the component discriminant for this operation
+    pub fn discriminant(&self) -> Option<u16> {
         match self {
-            | ComponentOp::Set { component_type, .. } |
-            ComponentOp::SetAdd { component_type, .. } |
-            ComponentOp::SetRemove { component_type, .. } |
-            ComponentOp::SequenceInsert { component_type, .. } |
-            ComponentOp::SequenceDelete { component_type, .. } => Some(component_type),
+            | ComponentOp::Set { discriminant, .. } |
+            ComponentOp::SetAdd { discriminant, .. } |
+            ComponentOp::SetRemove { discriminant, .. } |
+            ComponentOp::SequenceInsert { discriminant, .. } |
+            ComponentOp::SequenceDelete { discriminant, .. } => Some(*discriminant),
             | ComponentOp::Delete { .. } => None,
         }
     }
@@ -211,20 +211,20 @@ impl ComponentOpBuilder {
     }
 
     /// Build a Set operation (LWW)
-    pub fn set(mut self, component_type: String, data: ComponentData) -> ComponentOp {
+    pub fn set(mut self, discriminant: u16, data: ComponentData) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::Set {
-            component_type,
+            discriminant,
             data,
             vector_clock: self.vector_clock,
         }
     }
 
     /// Build a SetAdd operation (OR-Set)
-    pub fn set_add(mut self, component_type: String, element: Vec<u8>) -> ComponentOp {
+    pub fn set_add(mut self, discriminant: u16, element: Vec<u8>) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SetAdd {
-            component_type,
+            discriminant,
             operation_id: uuid::Uuid::new_v4(),
             element,
             vector_clock: self.vector_clock,
@@ -234,12 +234,12 @@ impl ComponentOpBuilder {
     /// Build a SetRemove operation (OR-Set)
     pub fn set_remove(
         mut self,
-        component_type: String,
+        discriminant: u16,
         removed_ids: Vec<uuid::Uuid>,
     ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SetRemove {
-            component_type,
+            discriminant,
             removed_ids,
             vector_clock: self.vector_clock,
         }
@@ -248,13 +248,13 @@ impl ComponentOpBuilder {
     /// Build a SequenceInsert operation (RGA)
     pub fn sequence_insert(
         mut self,
-        component_type: String,
+        discriminant: u16,
         after_id: Option<uuid::Uuid>,
         element: Vec<u8>,
     ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SequenceInsert {
-            component_type,
+            discriminant,
             operation_id: uuid::Uuid::new_v4(),
             after_id,
             element,
@@ -265,12 +265,12 @@ impl ComponentOpBuilder {
     /// Build a SequenceDelete operation (RGA)
     pub fn sequence_delete(
         mut self,
-        component_type: String,
+        discriminant: u16,
         element_id: uuid::Uuid,
     ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SequenceDelete {
-            component_type,
+            discriminant,
             element_id,
             vector_clock: self.vector_clock,
         }
@@ -290,29 +290,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_component_type() {
+    fn test_discriminant() {
         let op = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(vec![1, 2, 3]),
             vector_clock: VectorClock::new(),
         };
 
-        assert_eq!(op.component_type(), Some("Transform"));
+        assert_eq!(op.discriminant(), Some(1));
     }
 
     #[test]
-    fn test_component_type_delete() {
+    fn test_discriminant_delete() {
         let op = ComponentOp::Delete {
             vector_clock: VectorClock::new(),
         };
 
-        assert_eq!(op.component_type(), None);
+        assert_eq!(op.discriminant(), None);
     }
 
     #[test]
     fn test_is_set() {
         let op = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(vec![1, 2, 3]),
             vector_clock: VectorClock::new(),
         };
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn test_is_or_set() {
         let op = ComponentOp::SetAdd {
-            component_type: "Selection".to_string(),
+            discriminant: 2,
             operation_id: uuid::Uuid::new_v4(),
             element: vec![1, 2, 3],
             vector_clock: VectorClock::new(),
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn test_is_sequence() {
         let op = ComponentOp::SequenceInsert {
-            component_type: "DrawingPath".to_string(),
+            discriminant: 3,
             operation_id: uuid::Uuid::new_v4(),
             after_id: None,
             element: vec![1, 2, 3],
@@ -361,7 +361,7 @@ mod tests {
 
         let builder = ComponentOpBuilder::new(node_id, clock);
         let op = builder.set(
-            "Transform".to_string(),
+            1,
             ComponentData::Inline(vec![1, 2, 3]),
         );
 
@@ -375,22 +375,22 @@ mod tests {
         let clock = VectorClock::new();
 
         let builder = ComponentOpBuilder::new(node_id, clock);
-        let op = builder.set_add("Selection".to_string(), vec![1, 2, 3]);
+        let op = builder.set_add(2, vec![1, 2, 3]);
 
         assert!(op.is_or_set());
         assert_eq!(op.vector_clock().get(node_id), 1);
     }
 
     #[test]
-    fn test_serialization() -> bincode::Result<()> {
+    fn test_serialization() -> anyhow::Result<()> {
         let op = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(vec![1, 2, 3]),
             vector_clock: VectorClock::new(),
         };
 
-        let bytes = bincode::serialize(&op)?;
-        let deserialized: ComponentOp = bincode::deserialize(&bytes)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&op).map(|b| b.to_vec())?;
+        let deserialized: ComponentOp = rkyv::from_bytes::<ComponentOp, rkyv::rancor::Failure>(&bytes)?;
 
         assert!(deserialized.is_set());
 

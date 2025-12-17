@@ -217,13 +217,13 @@ mod tests {
         let data = vec![1, 2, 3];
 
         let op1 = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(data.clone()),
             vector_clock: clock.clone(),
         };
 
         let op2 = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(data.clone()),
             vector_clock: clock,
         };
@@ -244,13 +244,13 @@ mod tests {
         clock2.increment(node_id);
 
         let op1 = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(vec![1, 2, 3]),
             vector_clock: clock1,
         };
 
         let op2 = ComponentOp::Set {
-            component_type: "Transform".to_string(),
+            discriminant: 1,
             data: ComponentData::Inline(vec![4, 5, 6]),
             vector_clock: clock2,
         };
