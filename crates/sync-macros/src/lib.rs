@@ -183,10 +183,10 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
                     let component: #name = rkyv::from_bytes::<#name, rkyv::rancor::Failure>(bytes)?;
                     Ok(Box::new(component))
                 },
-                serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<Vec<u8>> {
+                serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<bytes::Bytes> {
                     world.get::<#name>(entity).and_then(|component| {
                         rkyv::to_bytes::<rkyv::rancor::Failure>(component)
-                            .map(|bytes| bytes.to_vec())
+                            .map(|vec| bytes::Bytes::from(vec.to_vec()))
                             .ok()
                     })
                 },
@@ -204,7 +204,7 @@ pub fn derive_synced(input: TokenStream) -> TokenStream {
             const STRATEGY: libmarathon::networking::SyncStrategy = #strategy_tokens;
 
             #[inline]
-            fn serialize_sync(&self) -> anyhow::Result<Vec<u8>> {
+            fn serialize_sync(&self) -> anyhow::Result<bytes::Bytes> {
                 #serialize_impl
             }
 
@@ -228,7 +228,7 @@ fn generate_serialize(_input: &DeriveInput) -> proc_macro2::TokenStream {
     // Use rkyv for zero-copy serialization
     // Later we can optimize for specific types (e.g., f32 -> to_le_bytes)
     quote! {
-        rkyv::to_bytes::<rkyv::rancor::Failure>(self).map(|bytes| bytes.to_vec()).map_err(|e| anyhow::anyhow!("Serialization failed: {}", e))
+        rkyv::to_bytes::<rkyv::rancor::Failure>(self).map(|bytes| bytes::Bytes::from(bytes.to_vec())).map_err(|e| anyhow::anyhow!("Serialization failed: {}", e))
     }
 }
 
@@ -499,10 +499,10 @@ pub fn synced(attr: TokenStream, item: TokenStream) -> TokenStream {
                         let component: #name = rkyv::from_bytes::<#name, rkyv::rancor::Failure>(bytes)?;
                         Ok(Box::new(component))
                     },
-                    serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<Vec<u8>> {
+                    serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<bytes::Bytes> {
                         world.get::<#name>(entity).and_then(|component| {
                             rkyv::to_bytes::<rkyv::rancor::Failure>(component)
-                                .map(|bytes| bytes.to_vec())
+                                .map(|vec| bytes::Bytes::from(vec.to_vec()))
                                 .ok()
                         })
                     },
@@ -520,7 +520,7 @@ pub fn synced(attr: TokenStream, item: TokenStream) -> TokenStream {
             const STRATEGY: libmarathon::networking::SyncStrategy = #strategy_tokens;
 
             #[inline]
-            fn serialize_sync(&self) -> anyhow::Result<Vec<u8>> {
+            fn serialize_sync(&self) -> anyhow::Result<bytes::Bytes> {
                 #serialize_impl
             }
 

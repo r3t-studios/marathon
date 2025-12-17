@@ -27,7 +27,7 @@
 //! let builder = ComponentOpBuilder::new(node_id, clock.clone());
 //! let op = builder.set(
 //!     "Transform".to_string(),
-//!     ComponentData::Inline(vec![1, 2, 3]),
+//!     ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
 //! );
 //! ```
 

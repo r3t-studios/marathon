@@ -30,7 +30,7 @@ use crate::networking::{
 pub const BLOB_THRESHOLD: usize = 64 * 1024;
 
 /// Hash type for blob references
-pub type BlobHash = Vec<u8>;
+pub type BlobHash = bytes::Bytes;
 
 /// Bevy resource for managing blobs
 ///
@@ -40,7 +40,7 @@ pub type BlobHash = Vec<u8>;
 #[derive(Resource, Clone)]
 pub struct BlobStore {
     /// In-memory cache of blobs (hash -> data)
-    cache: Arc<Mutex<HashMap<BlobHash, Vec<u8>>>>,
+    cache: Arc<Mutex<HashMap<BlobHash, bytes::Bytes>>>,
 }
 
 impl BlobStore {
@@ -72,7 +72,7 @@ impl BlobStore {
         self.cache
             .lock()
             .map_err(|e| NetworkingError::Blob(format!("Failed to lock cache: {}", e)))?
-            .insert(hash.clone(), data);
+            .insert(hash.clone(), bytes::Bytes::from(data));
 
         Ok(hash)
     }
@@ -80,7 +80,7 @@ impl BlobStore {
     /// Retrieve a blob by its hash
     ///
     /// Returns `None` if the blob is not in the cache.
-    pub fn get_blob(&self, hash: &BlobHash) -> Result<Option<Vec<u8>>> {
+    pub fn get_blob(&self, hash: &BlobHash) -> Result<Option<bytes::Bytes>> {
         Ok(self
             .cache
             .lock()
@@ -104,7 +104,7 @@ impl BlobStore {
     ///
     /// This is safer than calling `has_blob()` followed by `get_blob()` because
     /// it's atomic - the blob can't be removed between the check and get.
-    pub fn get_blob_if_exists(&self, hash: &BlobHash) -> Result<Option<Vec<u8>>> {
+    pub fn get_blob_if_exists(&self, hash: &BlobHash) -> Result<Option<bytes::Bytes>> {
         Ok(self
             .cache
             .lock()
@@ -142,7 +142,7 @@ impl BlobStore {
 
         let mut hasher = Sha256::new();
         hasher.update(data);
-        hasher.finalize().to_vec()
+        bytes::Bytes::from(hasher.finalize().to_vec())
     }
 }
 
@@ -192,11 +192,11 @@ pub fn should_use_blob(data: &[u8]) -> bool {
 /// let large_data = vec![0u8; 100_000];
 /// let component_data = create_component_data(large_data, &store).unwrap();
 /// ```
-pub fn create_component_data(data: Vec<u8>, blob_store: &BlobStore) -> Result<ComponentData> {
+pub fn create_component_data(data: bytes::Bytes, blob_store: &BlobStore) -> Result<ComponentData> {
     if should_use_blob(&data) {
         let size = data.len() as u64;
-        let hash = blob_store.store_blob(data)?;
-        Ok(ComponentData::BlobRef { hash, size })
+        let hash = blob_store.store_blob(data.to_vec())?;
+        Ok(ComponentData::BlobRef { hash: bytes::Bytes::from(hash), size })
     } else {
         Ok(ComponentData::Inline(data))
     }
@@ -218,11 +218,11 @@ pub fn create_component_data(data: Vec<u8>, blob_store: &BlobStore) -> Result<Co
 /// let store = BlobStore::new();
 ///
 /// // Inline data
-/// let inline = ComponentData::Inline(vec![1, 2, 3]);
+/// let inline = ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3]));
 /// let data = get_component_data(&inline, &store).unwrap();
 /// assert_eq!(data, vec![1, 2, 3]);
 /// ```
-pub fn get_component_data(data: &ComponentData, blob_store: &BlobStore) -> Result<Vec<u8>> {
+pub fn get_component_data(data: &ComponentData, blob_store: &BlobStore) -> Result<bytes::Bytes> {
     match data {
         | ComponentData::Inline(bytes) => Ok(bytes.clone()),
         | ComponentData::BlobRef { hash, size: _ } => blob_store
@@ -268,7 +268,7 @@ mod tests {
         let hash = store.store_blob(data.clone()).unwrap();
         let retrieved = store.get_blob(&hash).unwrap();
 
-        assert_eq!(retrieved, Some(data));
+        assert_eq!(retrieved, Some(bytes::Bytes::from(data)));
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
         assert!(store.has_blob(&hash).unwrap());
 
         let fake_hash = vec![0; 32];
-        assert!(!store.has_blob(&fake_hash).unwrap());
+        assert!(!store.has_blob(&bytes::Bytes::from(fake_hash)).unwrap());
     }
 
     #[test]
@@ -326,7 +326,7 @@ mod tests {
         let store = BlobStore::new();
         let small_data = vec![1, 2, 3];
 
-        let component_data = create_component_data(small_data.clone(), &store).unwrap();
+        let component_data = create_component_data(bytes::Bytes::from(small_data.clone()), &store).unwrap();
 
         match component_data {
             | ComponentData::Inline(data) => assert_eq!(data, small_data),
@@ -339,7 +339,7 @@ mod tests {
         let store = BlobStore::new();
         let large_data = vec![0u8; 100_000];
 
-        let component_data = create_component_data(large_data.clone(), &store).unwrap();
+        let component_data = create_component_data(bytes::Bytes::from(large_data.clone()), &store).unwrap();
 
         match component_data {
             | ComponentData::BlobRef { hash, size } => {
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_get_component_data_inline() {
         let store = BlobStore::new();
-        let inline = ComponentData::Inline(vec![1, 2, 3]);
+        let inline = ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3]));
 
         let data = get_component_data(&inline, &store).unwrap();
         assert_eq!(data, vec![1, 2, 3]);
@@ -380,7 +380,7 @@ mod tests {
         let fake_hash = vec![0; 32];
 
         let blob_ref = ComponentData::BlobRef {
-            hash: fake_hash,
+            hash: bytes::Bytes::from(fake_hash),
             size: 1000,
         };
 

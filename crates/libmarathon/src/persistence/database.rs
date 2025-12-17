@@ -485,7 +485,7 @@ pub fn save_session(conn: &mut Connection, session: &crate::networking::Session)
             session.last_active,
             session.entity_count as i64,
             session.state.to_string(),
-            session.secret,
+            session.secret.as_ref().map(|b| b.as_ref()),
         ],
     )?;
     Ok(())
@@ -517,7 +517,8 @@ pub fn load_session(
                 last_active: row.get(3)?,
                 entity_count: row.get::<_, i64>(4)? as usize,
                 state,
-                secret: row.get(6)?,
+                secret: row.get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
+                    .map(|cow| bytes::Bytes::copy_from_slice(&cow)),
             })
         },
     )
@@ -548,7 +549,8 @@ pub fn get_last_active_session(conn: &Connection) -> Result<Option<crate::networ
                 last_active: row.get(3)?,
                 entity_count: row.get::<_, i64>(4)? as usize,
                 state,
-                secret: row.get(6)?,
+                secret: row.get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
+                    .map(|cow| bytes::Bytes::copy_from_slice(&cow)),
             })
         },
     )
@@ -643,10 +645,10 @@ pub fn load_entity_components(
 
     let components: Vec<LoadedComponent> = stmt
         .query_map([entity_id.as_bytes()], |row| {
-            let data_vec: Vec<u8> = row.get(1)?;
+            let data_cow: std::borrow::Cow<'_, [u8]> = row.get(1)?;
             Ok(LoadedComponent {
                 component_type: row.get(0)?,
-                data: bytes::Bytes::from(data_vec),
+                data: bytes::Bytes::copy_from_slice(&data_cow),
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -669,7 +671,7 @@ pub fn load_entity_by_network_id(
              WHERE id = ?1",
             [network_id.as_bytes()],
             |row| {
-                let id_bytes: Vec<u8> = row.get(0)?;
+                let id_bytes: std::borrow::Cow<'_, [u8]> = row.get(0)?;
                 let mut id_array = [0u8; 16];
                 id_array.copy_from_slice(&id_bytes);
                 let id = uuid::Uuid::from_bytes(id_array);
@@ -714,7 +716,7 @@ pub fn load_all_entities(conn: &Connection) -> Result<Vec<LoadedEntity>> {
     )?;
 
     let entity_rows = stmt.query_map([], |row| {
-        let id_bytes: Vec<u8> = row.get(0)?;
+        let id_bytes: std::borrow::Cow<'_, [u8]> = row.get(0)?;
         let mut id_array = [0u8; 16];
         id_array.copy_from_slice(&id_bytes);
         let id = uuid::Uuid::from_bytes(id_array);
@@ -761,7 +763,7 @@ pub fn load_entities_by_type(conn: &Connection, entity_type: &str) -> Result<Vec
     )?;
 
     let entity_rows = stmt.query_map([entity_type], |row| {
-        let id_bytes: Vec<u8> = row.get(0)?;
+        let id_bytes: std::borrow::Cow<'_, [u8]> = row.get(0)?;
         let mut id_array = [0u8; 16];
         id_array.copy_from_slice(&id_bytes);
         let id = uuid::Uuid::from_bytes(id_array);

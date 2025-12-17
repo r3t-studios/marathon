@@ -128,12 +128,12 @@ impl Default for NetworkingConfig {
 ///     .run();
 /// ```
 #[derive(Resource, Clone)]
-pub struct SessionSecret(Vec<u8>);
+pub struct SessionSecret(bytes::Bytes);
 
 impl SessionSecret {
     /// Create a new session secret from bytes
     pub fn new(secret: impl Into<Vec<u8>>) -> Self {
-        Self(secret.into())
+        Self(bytes::Bytes::from(secret.into()))
     }
 
     /// Get the secret as a byte slice
