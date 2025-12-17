@@ -42,10 +42,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
 use uuid::Uuid;
 
 use crate::networking::{

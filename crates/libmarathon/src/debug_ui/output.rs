@@ -35,7 +35,7 @@ pub fn process_output_system(
     egui_global_settings: Res<EguiGlobalSettings>,
     window_to_egui_context_map: Res<WindowToEguiContextMap>,
 ) {
-    let mut should_request_redraw = false;
+    let mut _should_request_redraw = false;
 
     for (entity, mut context, mut full_output, mut render_output, mut egui_output, settings) in
         context_query.iter_mut()
@@ -115,7 +115,7 @@ pub fn process_output_system(
         }
 
         let needs_repaint = !render_output.is_empty();
-        should_request_redraw |= ctx.has_requested_repaint() && needs_repaint;
+        _should_request_redraw |= ctx.has_requested_repaint() && needs_repaint;
     }
 
     // NOTE: RequestRedraw not needed - we own winit and run unbounded (continuous redraws)

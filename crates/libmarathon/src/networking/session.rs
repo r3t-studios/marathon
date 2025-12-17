@@ -6,10 +6,7 @@ use std::fmt;
 /// human-readable ! session codes, ALPN-based network isolation, and persistent
 /// session tracking.
 use bevy::prelude::*;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+
 use uuid::Uuid;
 
 use crate::networking::VectorClock;

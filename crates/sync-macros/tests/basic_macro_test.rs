@@ -1,20 +1,16 @@
-/// Basic tests for the Synced derive macro
+/// Basic tests for the Synced attribute macro
 use bevy::prelude::*;
 use libmarathon::networking::{
     ClockComparison,
     ComponentMergeDecision,
     SyncComponent,
-    SyncStrategy,
-    Synced,
 };
-use sync_macros::Synced as SyncedDerive;
 
 // Test 1: Basic struct with LWW strategy compiles
+// Note: No need to manually derive rkyv traits - synced attribute adds them automatically!
+#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
 #[derive(Component, Reflect, Clone, Debug, PartialEq)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[reflect(Component)]
-#[derive(SyncedDerive)]
-#[sync(version = 1, strategy = "LastWriteWins")]
 struct Health(f32);
 
 #[test]
@@ -66,11 +62,10 @@ fn test_health_lww_merge_concurrent() {
 }
 
 // Test 2: Struct with multiple fields
+// rkyv traits are automatically added by the synced attribute!
+#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
 #[derive(Component, Reflect, Clone, Debug, PartialEq)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[reflect(Component)]
-#[derive(SyncedDerive)]
-#[sync(version = 1, strategy = "LastWriteWins")]
 struct Position {
     x: f32,
     y: f32,
