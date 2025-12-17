@@ -82,7 +82,7 @@ pub enum SyncMessage {
         session_id: SessionId,
 
         /// Optional session secret for authentication
-        session_secret: Option<Vec<u8>>,
+        session_secret: Option<bytes::Bytes>,
 
         /// Vector clock from when we last left this session
         /// None = fresh join, Some = rejoin
@@ -189,12 +189,12 @@ pub struct ComponentState {
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, PartialEq, Eq)]
 pub enum ComponentData {
     /// Inline data for small components (<64KB)
-    Inline(Vec<u8>),
+    Inline(bytes::Bytes),
 
     /// Reference to a blob for large components (>64KB)
     BlobRef {
         /// iroh-blobs hash
-        hash: Vec<u8>,
+        hash: bytes::Bytes,
 
         /// Size of the blob in bytes
         size: u64,
@@ -206,11 +206,11 @@ impl ComponentData {
     pub const BLOB_THRESHOLD: usize = 64 * 1024;
 
     /// Create component data, automatically choosing inline vs blob
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new(data: bytes::Bytes) -> Self {
         if data.len() > Self::BLOB_THRESHOLD {
             // Will be populated later when uploaded to iroh-blobs
             Self::BlobRef {
-                hash: Vec::new(),
+                hash: bytes::Bytes::new(),
                 size: data.len() as u64,
             }
         } else {
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_component_data_inline() {
         let data = vec![1, 2, 3, 4];
-        let component_data = ComponentData::new(data.clone());
+        let component_data = ComponentData::new(bytes::Bytes::from(data.clone()));
 
         assert!(!component_data.is_blob());
         assert_eq!(component_data.as_inline(), Some(data.as_slice()));
@@ -319,7 +319,7 @@ mod tests {
     fn test_component_data_blob() {
         // Create data larger than threshold
         let data = vec![0u8; ComponentData::BLOB_THRESHOLD + 1];
-        let component_data = ComponentData::new(data.clone());
+        let component_data = ComponentData::new(bytes::Bytes::from(data.clone()));
 
         assert!(component_data.is_blob());
         assert_eq!(component_data.as_inline(), None);

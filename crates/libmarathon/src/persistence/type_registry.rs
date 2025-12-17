@@ -1,8 +1,8 @@
-//! Zero-copy component type registry using rkyv and inventory
+//! Type registry using rkyv and inventory
 //!
-//! This module provides a runtime type registry that collects all synced components
-//! via the `inventory` crate and assigns them numeric discriminants for efficient
-//! serialization.
+//! This module provides a runtime type registry that collects all synced
+//! components via the `inventory` crate and assigns them numeric discriminants
+//! for efficient serialization.
 
 use std::{
     any::TypeId,
@@ -26,10 +26,13 @@ pub struct ComponentMeta {
     /// Deserialization function that returns a boxed component
     pub deserialize_fn: fn(&[u8]) -> Result<Box<dyn std::any::Any>>,
 
-    /// Serialization function that reads from an entity (returns None if entity doesn't have this component)
-    pub serialize_fn: fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>,
+    /// Serialization function that reads from an entity (returns None if entity
+    /// doesn't have this component)
+    pub serialize_fn:
+        fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>,
 
-    /// Insert function that takes a boxed component and inserts it into an entity
+    /// Insert function that takes a boxed component and inserts it into an
+    /// entity
     pub insert_fn: fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>),
 }
 
@@ -47,10 +50,14 @@ pub struct ComponentTypeRegistry {
     discriminant_to_deserializer: HashMap<u16, fn(&[u8]) -> Result<Box<dyn std::any::Any>>>,
 
     /// Discriminant to serialization function
-    discriminant_to_serializer: HashMap<u16, fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>>,
+    discriminant_to_serializer: HashMap<
+        u16,
+        fn(&bevy::ecs::world::World, bevy::ecs::entity::Entity) -> Option<bytes::Bytes>,
+    >,
 
     /// Discriminant to insert function
-    discriminant_to_inserter: HashMap<u16, fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
+    discriminant_to_inserter:
+        HashMap<u16, fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
 
     /// Discriminant to type name (for debugging)
     discriminant_to_name: HashMap<u16, &'static str>,
@@ -138,7 +145,10 @@ impl ComponentTypeRegistry {
     }
 
     /// Get the insert function for a discriminant
-    pub fn get_insert_fn(&self, discriminant: u16) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
+    pub fn get_insert_fn(
+        &self,
+        discriminant: u16,
+    ) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
         self.discriminant_to_inserter.get(&discriminant).copied()
     }
 
@@ -148,8 +158,13 @@ impl ComponentTypeRegistry {
     }
 
     /// Get the deserialize function for a discriminant
-    pub fn get_deserialize_fn(&self, discriminant: u16) -> Option<fn(&[u8]) -> Result<Box<dyn std::any::Any>>> {
-        self.discriminant_to_deserializer.get(&discriminant).copied()
+    pub fn get_deserialize_fn(
+        &self,
+        discriminant: u16,
+    ) -> Option<fn(&[u8]) -> Result<Box<dyn std::any::Any>>> {
+        self.discriminant_to_deserializer
+            .get(&discriminant)
+            .copied()
     }
 
     /// Get type path for a discriminant
@@ -158,7 +173,10 @@ impl ComponentTypeRegistry {
     }
 
     /// Get the deserialize function by type path
-    pub fn get_deserialize_fn_by_path(&self, type_path: &str) -> Option<fn(&[u8]) -> Result<Box<dyn std::any::Any>>> {
+    pub fn get_deserialize_fn_by_path(
+        &self,
+        type_path: &str,
+    ) -> Option<fn(&[u8]) -> Result<Box<dyn std::any::Any>>> {
         // Linear search through discriminant_to_path to find matching type_path
         for (discriminant, path) in &self.discriminant_to_path {
             if *path == type_path {
@@ -169,7 +187,10 @@ impl ComponentTypeRegistry {
     }
 
     /// Get the insert function by type path
-    pub fn get_insert_fn_by_path(&self, type_path: &str) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
+    pub fn get_insert_fn_by_path(
+        &self,
+        type_path: &str,
+    ) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
         // Linear search through discriminant_to_path to find matching type_path
         for (discriminant, path) in &self.discriminant_to_path {
             if *path == type_path {
@@ -191,7 +212,8 @@ impl ComponentTypeRegistry {
 
     /// Serialize all registered components from an entity
     ///
-    /// Returns Vec<(discriminant, type_path, serialized_bytes)> for all components that exist on the entity.
+    /// Returns Vec<(discriminant, type_path, serialized_bytes)> for all
+    /// components that exist on the entity.
     pub fn serialize_entity_components(
         &self,
         world: &bevy::ecs::world::World,

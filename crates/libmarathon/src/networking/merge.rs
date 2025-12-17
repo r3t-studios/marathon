@@ -218,13 +218,13 @@ mod tests {
 
         let op1 = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(data.clone()),
+            data: ComponentData::Inline(bytes::Bytes::from(data.clone())),
             vector_clock: clock.clone(),
         };
 
         let op2 = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(data.clone()),
+            data: ComponentData::Inline(bytes::Bytes::from(data.clone())),
             vector_clock: clock,
         };
 
@@ -245,13 +245,13 @@ mod tests {
 
         let op1 = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(vec![1, 2, 3]),
+            data: ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
             vector_clock: clock1,
         };
 
         let op2 = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(vec![4, 5, 6]),
+            data: ComponentData::Inline(bytes::Bytes::from(vec![4, 5, 6])),
             vector_clock: clock2,
         };
 

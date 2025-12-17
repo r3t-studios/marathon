@@ -196,7 +196,7 @@ pub struct Session {
     pub state: SessionState,
 
     /// Optional encrypted session secret for access control
-    pub secret: Option<Vec<u8>>,
+    pub secret: Option<bytes::Bytes>,
 }
 
 impl Session {

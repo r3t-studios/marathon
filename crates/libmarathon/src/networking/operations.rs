@@ -69,7 +69,7 @@ pub enum ComponentOp {
         operation_id: uuid::Uuid,
 
         /// Element being added (serialized)
-        element: Vec<u8>,
+        element: bytes::Bytes,
 
         /// Vector clock when this add was created
         vector_clock: VectorClock,
@@ -106,7 +106,7 @@ pub enum ComponentOp {
         after_id: Option<uuid::Uuid>,
 
         /// Element being inserted (serialized)
-        element: Vec<u8>,
+        element: bytes::Bytes,
 
         /// Vector clock when this insert was created
         vector_clock: VectorClock,
@@ -218,7 +218,7 @@ impl ComponentOpBuilder {
     }
 
     /// Build a SetAdd operation (OR-Set)
-    pub fn set_add(mut self, discriminant: u16, element: Vec<u8>) -> ComponentOp {
+    pub fn set_add(mut self, discriminant: u16, element: bytes::Bytes) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SetAdd {
             discriminant,
@@ -247,7 +247,7 @@ impl ComponentOpBuilder {
         mut self,
         discriminant: u16,
         after_id: Option<uuid::Uuid>,
-        element: Vec<u8>,
+        element: bytes::Bytes,
     ) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SequenceInsert {
@@ -290,7 +290,7 @@ mod tests {
     fn test_discriminant() {
         let op = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(vec![1, 2, 3]),
+            data: ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
             vector_clock: VectorClock::new(),
         };
 
@@ -310,7 +310,7 @@ mod tests {
     fn test_is_set() {
         let op = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(vec![1, 2, 3]),
+            data: ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
             vector_clock: VectorClock::new(),
         };
 
@@ -325,7 +325,7 @@ mod tests {
         let op = ComponentOp::SetAdd {
             discriminant: 2,
             operation_id: uuid::Uuid::new_v4(),
-            element: vec![1, 2, 3],
+            element: bytes::Bytes::from(vec![1, 2, 3]),
             vector_clock: VectorClock::new(),
         };
 
@@ -341,7 +341,7 @@ mod tests {
             discriminant: 3,
             operation_id: uuid::Uuid::new_v4(),
             after_id: None,
-            element: vec![1, 2, 3],
+            element: bytes::Bytes::from(vec![1, 2, 3]),
             vector_clock: VectorClock::new(),
         };
 
@@ -359,7 +359,7 @@ mod tests {
         let builder = ComponentOpBuilder::new(node_id, clock);
         let op = builder.set(
             1,
-            ComponentData::Inline(vec![1, 2, 3]),
+            ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
         );
 
         assert!(op.is_set());
@@ -372,7 +372,7 @@ mod tests {
         let clock = VectorClock::new();
 
         let builder = ComponentOpBuilder::new(node_id, clock);
-        let op = builder.set_add(2, vec![1, 2, 3]);
+        let op = builder.set_add(2, bytes::Bytes::from(vec![1, 2, 3]));
 
         assert!(op.is_or_set());
         assert_eq!(op.vector_clock().get(node_id), 1);
@@ -382,7 +382,7 @@ mod tests {
     fn test_serialization() -> anyhow::Result<()> {
         let op = ComponentOp::Set {
             discriminant: 1,
-            data: ComponentData::Inline(vec![1, 2, 3]),
+            data: ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
             vector_clock: VectorClock::new(),
         };
 

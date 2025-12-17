@@ -51,7 +51,7 @@ use crate::networking::{
 pub fn build_join_request(
     node_id: uuid::Uuid,
     session_id: SessionId,
-    session_secret: Option<Vec<u8>>,
+    session_secret: Option<bytes::Bytes>,
     last_known_clock: Option<VectorClock>,
     join_type: JoinType,
 ) -> VersionedMessage {
@@ -442,7 +442,7 @@ mod tests {
         let request = build_join_request(
             node_id,
             session_id.clone(),
-            Some(secret.clone()),
+            Some(bytes::Bytes::from(secret.clone())),
             None,
             JoinType::Fresh,
         );
@@ -456,7 +456,7 @@ mod tests {
                 join_type,
             } => {
                 assert_eq!(req_session_id, session_id);
-                assert_eq!(session_secret, Some(secret));
+                assert_eq!(session_secret, Some(bytes::Bytes::from(secret)));
                 assert!(last_known_clock.is_none());
                 assert!(matches!(join_type, JoinType::Fresh));
             },

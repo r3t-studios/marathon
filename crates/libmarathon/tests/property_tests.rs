@@ -178,7 +178,7 @@ proptest! {
             let op = PersistenceOp::UpsertComponent {
                 entity_id,
                 component_type,
-                data,
+                data: bytes::Bytes::from(data),
             };
 
             // Should never fail for valid data
@@ -205,7 +205,7 @@ proptest! {
         let op1 = PersistenceOp::UpsertComponent {
             entity_id,
             component_type: component_type.clone(),
-            data: data1.clone(),
+            data: bytes::Bytes::from(data1.clone()),
         };
         prop_assert!(buffer.add(op1).is_ok());
 
@@ -213,7 +213,7 @@ proptest! {
         let op2 = PersistenceOp::UpsertComponent {
             entity_id,
             component_type: component_type.clone(),
-            data: data2.clone(),
+            data: bytes::Bytes::from(data2.clone()),
         };
         prop_assert!(buffer.add(op2).is_ok());
 
@@ -247,7 +247,7 @@ proptest! {
         let op = PersistenceOp::UpsertComponent {
             entity_id,
             component_type,
-            data: oversized_data,
+            data: bytes::Bytes::from(oversized_data),
         };
 
         let result = buffer.add(op);
