@@ -28,6 +28,7 @@ pub mod engine;
 pub mod networking;
 pub mod persistence;
 pub mod platform;
+pub mod render;  // Vendored Bevy rendering (bevy_render + bevy_core_pipeline + bevy_pbr)
 pub mod utils;
 pub mod sync;
 
