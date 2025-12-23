@@ -17,8 +17,8 @@ use serde::{
     Deserialize,
     Serialize,
 };
-// Re-export the Synced derive macro
-pub use sync_macros::Synced;
+// TODO: Re-export the Synced derive macro (not part of bevy_render_macros)
+// pub use macros::Synced;
 
 pub type NodeId = uuid::Uuid;
 

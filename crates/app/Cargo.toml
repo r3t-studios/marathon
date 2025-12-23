@@ -12,9 +12,7 @@ headless = []
 [dependencies]
 libmarathon = { path = "../libmarathon" }
 bevy = { version = "0.17", default-features = false, features = [
-    "bevy_render",
-    "bevy_core_pipeline",
-    "bevy_pbr",
+    # bevy_render, bevy_core_pipeline, bevy_pbr are now vendored in libmarathon
     "bevy_ui",
     "bevy_text",
     "png",

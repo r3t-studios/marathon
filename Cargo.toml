@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/libmarathon", "crates/sync-macros", "crates/app", "crates/xtask"]
+members = ["crates/libmarathon", "crates/macros", "crates/app", "crates/xtask"]
 resolver = "2"
 
 [workspace.package]

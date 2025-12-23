@@ -8,6 +8,47 @@ anyhow.workspace = true
 arboard = "3.4"
 bevy.workspace = true
 rkyv.workspace = true
+
+# Bevy subcrates required by vendored rendering (bevy_render, bevy_core_pipeline, bevy_pbr)
+bevy_app = "0.17.2"
+bevy_asset = "0.17.2"
+bevy_camera = "0.17.2"
+bevy_color = "0.17.2"
+bevy_derive = "0.17.2"
+bevy_diagnostic = "0.17.2"
+bevy_ecs = "0.17.2"
+bevy_encase_derive = "0.17.2"
+bevy_image = "0.17.2"
+bevy_light = "0.17.2"
+bevy_math = "0.17.2"
+bevy_mesh = "0.17.2"
+bevy_platform = { version = "0.17.2", default-features = false }
+bevy_reflect = "0.17.2"
+macros = { path = "../macros" }
+bevy_shader = "0.17.2"
+bevy_tasks = "0.17.2"
+bevy_time = "0.17.2"
+bevy_transform = "0.17.2"
+bevy_utils = "0.17.2"
+bevy_window = "0.17.2"
+
+# Additional dependencies required by vendored rendering crates
+wgpu = { version = "26", default-features = false, features = ["dx12", "metal"] }
+naga = { version = "26", features = ["wgsl-in"] }
+downcast-rs = { version = "2", default-features = false, features = ["std"] }
+derive_more = { version = "2", default-features = false, features = ["from"] }
+image = { version = "0.25.2", default-features = false }
+bitflags = { version = "2.3", features = ["bytemuck"] }
+fixedbitset = "0.5"
+radsort = "0.1"
+nonmax = "0.5"
+smallvec = { version = "1", default-features = false }
+indexmap = "2.0"
+async-channel = "2.3"
+offset-allocator = "0.2"
+variadics_please = "1.1"
+static_assertions = "1.1"
+
 blake3 = "1.5"
 blocking = "1.6"
 bytemuck = { version = "1.14", features = ["derive"] }
@@ -17,7 +58,7 @@ crdts.workspace = true
 crossbeam-channel = "0.5"
 dirs = "5.0"
 egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
-encase = { version = "0.10", features = ["glam"] }
+encase = { version = "0.11", features = ["glam"] }
 futures-lite = "2.0"
 glam = "0.29"
 inventory.workspace = true
@@ -30,7 +71,6 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json.workspace = true
 sha2 = "0.10"
-sync-macros = { path = "../sync-macros" }
 thiserror = "2.0"
 tokio.workspace = true
 toml.workspace = true
