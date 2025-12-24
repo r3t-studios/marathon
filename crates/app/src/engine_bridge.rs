@@ -42,6 +42,7 @@ fn detect_changes_and_tick(
 /// 1. Polls all available events from the EngineBridge
 /// 2. Dispatches them to update Bevy resources and state
 fn poll_engine_events(
+    mut commands: Commands,
     bridge: Res<EngineBridge>,
     mut current_session: ResMut<CurrentSession>,
     mut node_clock: ResMut<NodeVectorClock>,
@@ -51,9 +52,13 @@ fn poll_engine_events(
     if !events.is_empty() {
         for event in events {
             match event {
-                EngineEvent::NetworkingStarted { session_id, node_id } => {
+                EngineEvent::NetworkingStarted { session_id, node_id, bridge: gossip_bridge } => {
                     info!("Networking started: session={}, node={}",
                         session_id.to_code(), node_id);
+
+                    // Insert GossipBridge for Bevy systems to use
+                    commands.insert_resource(gossip_bridge);
+                    info!("Inserted GossipBridge resource");
 
                     // Update session to use the new session ID and set state to Active
                     current_session.session = Session::new(session_id.clone());

@@ -4,13 +4,13 @@ use crate::networking::{NodeId, SessionId, VectorClock};
 use bevy::prelude::*;
 use uuid::Uuid;
 
-/// Events that the Core Engine emits to Bevy
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
     // Networking status
     NetworkingStarted {
         session_id: SessionId,
         node_id: NodeId,
+        bridge: crate::networking::GossipBridge,
     },
     NetworkingFailed {
         error: String,

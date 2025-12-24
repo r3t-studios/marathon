@@ -4,7 +4,6 @@ use crate::networking::SessionId;
 use bevy::prelude::*;
 use uuid::Uuid;
 
-/// Commands that Bevy sends to the Core Engine
 #[derive(Debug, Clone)]
 pub enum EngineCommand {
     // Networking lifecycle
