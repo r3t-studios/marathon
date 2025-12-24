@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use libmarathon::{
     debug_ui::{egui, EguiContexts, EguiPrimaryContextPass},
     engine::{EngineBridge, EngineCommand},
-    networking::{CurrentSession, NodeVectorClock, SessionId},
+    networking::{CurrentSession, NodeVectorClock, SessionId, SessionState},
 };
 
 pub struct SessionUiPlugin;
@@ -28,10 +28,15 @@ struct SessionUiState {
 fn session_ui_panel(
     mut contexts: EguiContexts,
     mut ui_state: ResMut<SessionUiState>,
-    current_session: Option<Res<CurrentSession>>,
+    current_session: Res<CurrentSession>,
     node_clock: Option<Res<NodeVectorClock>>,
     bridge: Res<EngineBridge>,
 ) {
+    // Log session state for debugging
+    debug!("Session UI: state={:?}, id={}", 
+        current_session.session.state, 
+        current_session.session.id.to_code());
+
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
@@ -40,21 +45,22 @@ fn session_ui_panel(
         .default_pos([320.0, 10.0])
         .default_width(280.0)
         .show(ctx, |ui| {
-            if let Some(session) = current_session.as_ref() {
-                // ONLINE MODE: Session exists, networking is active
+            // Check if networking is active based on session state
+            if current_session.session.state == SessionState::Active {
+                // ONLINE MODE: Networking is active
                 ui.heading("Session (Online)");
                 ui.separator();
 
                 ui.horizontal(|ui| {
                     ui.label("Code:");
-                    ui.code(session.session.id.to_code());
+                    ui.code(current_session.session.id.to_code());
                     if ui.small_button("📋").clicked() {
                         // TODO: Copy to clipboard (requires clipboard API)
-                        info!("Session code: {}", session.session.id.to_code());
+                        info!("Session code: {}", current_session.session.id.to_code());
                     }
                 });
 
-                ui.label(format!("State: {:?}", session.session.state));
+                ui.label(format!("State: {:?}", current_session.session.state));
 
                 if let Some(clock) = node_clock.as_ref() {
                     ui.label(format!("Connected nodes: {}", clock.clock.clocks.len()));
@@ -68,7 +74,7 @@ fn session_ui_panel(
                     bridge.send_command(EngineCommand::StopNetworking);
                 }
             } else {
-                // OFFLINE MODE: No session, networking not started
+                // OFFLINE MODE: Networking not started or disconnected
                 ui.heading("Offline Mode");
                 ui.separator();
 

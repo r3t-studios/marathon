@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 use libmarathon::{
     engine::{EngineBridge, EngineCommand, EngineEvent},
-    networking::{CurrentSession, NetworkedEntity, NodeVectorClock, Session, SessionState, VectorClock},
+    networking::{CurrentSession, NetworkedEntity, NodeVectorClock, Session, SessionState},
 };
 
 pub struct EngineBridgePlugin;
@@ -42,9 +42,8 @@ fn detect_changes_and_tick(
 /// 1. Polls all available events from the EngineBridge
 /// 2. Dispatches them to update Bevy resources and state
 fn poll_engine_events(
-    mut commands: Commands,
     bridge: Res<EngineBridge>,
-    mut current_session: Option<ResMut<CurrentSession>>,
+    mut current_session: ResMut<CurrentSession>,
     mut node_clock: ResMut<NodeVectorClock>,
 ) {
     let events = (*bridge).poll_events();
@@ -53,70 +52,77 @@ fn poll_engine_events(
         for event in events {
             match event {
                 EngineEvent::NetworkingStarted { session_id, node_id } => {
-                    info!("🌐 Networking started: session={}, node={}",
+                    info!("Networking started: session={}, node={}",
                         session_id.to_code(), node_id);
 
-                    // Create session if it doesn't exist
-                    if current_session.is_none() {
-                        let mut session = Session::new(session_id.clone());
-                        session.state = SessionState::Active;
-                        commands.insert_resource(CurrentSession::new(session, VectorClock::new()));
-                        info!("Created new session resource: {}", session_id.to_code());
-                    } else if let Some(ref mut session) = current_session {
-                        // Update existing session state to Active
-                        session.session.state = SessionState::Active;
-                    }
+                    // Update session to use the new session ID and set state to Active
+                    current_session.session = Session::new(session_id.clone());
+                    current_session.session.state = SessionState::Active;
+                    info!("Updated CurrentSession to Active: {}", session_id.to_code());
 
                     // Update node ID in clock
                     node_clock.node_id = node_id;
                 }
                 EngineEvent::NetworkingFailed { error } => {
-                    error!("❌ Networking failed: {}", error);
+                    error!("Networking failed: {}", error);
 
-                    // Keep session state as Created (if session exists)
-                    if let Some(ref mut session) = current_session {
-                        session.session.state = SessionState::Created;
-                    }
+                    // Keep session state as Created
+                    current_session.session.state = SessionState::Created;
                 }
                 EngineEvent::NetworkingStopped => {
-                    info!("🔌 Networking stopped");
+                    info!("Networking stopped");
 
-                    // Update session state to Disconnected (if session exists)
-                    if let Some(ref mut session) = current_session {
-                        session.session.state = SessionState::Disconnected;
-                    }
+                    // Update session state to Disconnected
+                    current_session.session.state = SessionState::Disconnected;
                 }
                 EngineEvent::PeerJoined { node_id } => {
-                    info!("👋 Peer joined: {}", node_id);
+                    info!("Peer joined: {}", node_id);
                     // TODO(Phase 3.3): Trigger sync
                 }
                 EngineEvent::PeerLeft { node_id } => {
-                    info!("👋 Peer left: {}", node_id);
+                    info!("Peer left: {}", node_id);
                 }
                 EngineEvent::LockAcquired { entity_id, holder } => {
-                    debug!("🔒 Lock acquired: entity={}, holder={}", entity_id, holder);
+                    debug!("Lock acquired: entity={}, holder={}", entity_id, holder);
                     // TODO(Phase 3.4): Update lock visuals
                 }
                 EngineEvent::LockReleased { entity_id } => {
-                    debug!("🔓 Lock released: entity={}", entity_id);
+                    debug!("Lock released: entity={}", entity_id);
                     // TODO(Phase 3.4): Update lock visuals
+                }
+                EngineEvent::ClockTicked { sequence, clock: _ } => {
+                    debug!("Clock ticked: sequence={}", sequence);
+                    // Clock tick confirmed - no action needed
+                }
+                EngineEvent::SessionJoined { session_id } => {
+                    info!("Session joined: {}", session_id.to_code());
+                    // Update session state
+                    current_session.session.state = SessionState::Joining;
+                }
+                EngineEvent::SessionLeft => {
+                    info!("Session left");
+                    // Update session state
+                    current_session.session.state = SessionState::Left;
+                }
+                EngineEvent::EntitySpawned { entity_id, position, rotation, version: _ } => {
+                    debug!("Entity spawned: id={}, pos={:?}, rot={:?}", entity_id, position, rotation);
+                    // TODO: Spawn entity in Bevy
+                }
+                EngineEvent::EntityUpdated { entity_id, position, rotation, version: _ } => {
+                    debug!("Entity updated: id={}, pos={:?}, rot={:?}", entity_id, position, rotation);
+                    // TODO: Update entity in Bevy
+                }
+                EngineEvent::EntityDeleted { entity_id, version: _ } => {
+                    debug!("Entity deleted: id={}", entity_id);
+                    // TODO: Delete entity in Bevy
                 }
                 EngineEvent::LockDenied { entity_id, current_holder } => {
-                    debug!("⛔ Lock denied: entity={}, holder={}", entity_id, current_holder);
-                    // TODO(Phase 3.4): Show visual feedback
+                    debug!("Lock denied: entity={}, current_holder={}", entity_id, current_holder);
+                    // TODO: Show lock denied feedback
                 }
                 EngineEvent::LockExpired { entity_id } => {
-                    debug!("⏰ Lock expired: entity={}", entity_id);
-                    // TODO(Phase 3.4): Update lock visuals
-                }
-                EngineEvent::ClockTicked { sequence, clock } => {
-                    debug!("🕐 Clock ticked to {}", sequence);
-
-                    // Update the NodeVectorClock resource with the new clock state
-                    node_clock.clock = clock;
-                }
-                _ => {
-                    debug!("Unhandled engine event: {:?}", event);
+                    debug!("Lock expired: entity={}", entity_id);
+                    // TODO: Update lock visuals
                 }
             }
         }
