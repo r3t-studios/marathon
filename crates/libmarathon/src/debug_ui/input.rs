@@ -1509,6 +1509,17 @@ pub fn custom_input_system(
                 }
             }
 
+            InputEvent::Text { text } => {
+                // Send text input to egui
+                for (entity, _settings, _pointer_pos) in egui_contexts.iter() {
+                    egui_input_message_writer.write(EguiInputEvent {
+                        context: entity,
+                        event: egui::Event::Text(text.clone()),
+                    });
+                    messages_written += 1;
+                }
+            }
+
             _ => {
                 // Ignore stylus and touch events for now
             }

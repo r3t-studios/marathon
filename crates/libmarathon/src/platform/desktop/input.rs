@@ -437,25 +437,18 @@ pub fn push_device_event(event: &winit::event::DeviceEvent) {
     }
 }
 
-/// Drain all buffered winit events and convert to InputEvents
-///
-/// Call this from your engine's input processing to consume events.
-/// This uses a lock-free channel so it never blocks and can't silently drop events.
 pub fn drain_as_input_events() -> Vec<InputEvent> {
     let (_, receiver) = get_event_channel();
 
-    // Drain all events from the channel
+    // Drain all events from the channel and convert to InputEvents
+    // Each raw event may generate multiple InputEvents (e.g., Keyboard + Text)
     receiver
         .try_iter()
-        .filter_map(raw_to_input_event)
+        .flat_map(raw_to_input_event)
         .collect()
 }
 
-/// Convert a raw winit event to an engine InputEvent
-///
-/// Only input-related events are converted. Other events (gestures, file drop, IME, etc.)
-/// return None and should be handled by the Bevy event system directly.
-fn raw_to_input_event(event: RawWinitEvent) -> Option<InputEvent> {
+fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
     match event {
         // === MOUSE INPUT ===
         RawWinitEvent::MouseButton { button, state, position } => {
@@ -464,55 +457,70 @@ fn raw_to_input_event(event: RawWinitEvent) -> Option<InputEvent> {
                 ElementState::Released => TouchPhase::Ended,
             };
 
-            Some(InputEvent::Mouse {
+            vec![InputEvent::Mouse {
                 pos: position,
                 button,
                 phase,
-            })
+            }]
         }
 
         RawWinitEvent::CursorMoved { position } => {
             // Check if any button is pressed
-            let input_state = INPUT_STATE.lock().ok()?;
+            let Some(input_state) = INPUT_STATE.lock().ok() else {
+                return vec![];
+            };
 
             if input_state.left_pressed {
-                Some(InputEvent::Mouse {
+                vec![InputEvent::Mouse {
                     pos: position,
                     button: MouseButton::Left,
                     phase: TouchPhase::Moved,
-                })
+                }]
             } else if input_state.right_pressed {
-                Some(InputEvent::Mouse {
+                vec![InputEvent::Mouse {
                     pos: position,
                     button: MouseButton::Right,
                     phase: TouchPhase::Moved,
-                })
+                }]
             } else if input_state.middle_pressed {
-                Some(InputEvent::Mouse {
+                vec![InputEvent::Mouse {
                     pos: position,
                     button: MouseButton::Middle,
                     phase: TouchPhase::Moved,
-                })
+                }]
             } else {
                 // No button pressed - hover tracking
-                Some(InputEvent::MouseMove { pos: position })
+                vec![InputEvent::MouseMove { pos: position }]
             }
         }
 
         RawWinitEvent::MouseWheel { delta, position } => {
-            Some(InputEvent::MouseWheel {
+            vec![InputEvent::MouseWheel {
                 delta,
                 pos: position,
-            })
+            }]
         }
 
         // === KEYBOARD INPUT ===
-        RawWinitEvent::Keyboard { key, state, modifiers, .. } => {
-            Some(InputEvent::Keyboard {
+        RawWinitEvent::Keyboard { key, state, modifiers, text, .. } => {
+            let mut events = vec![InputEvent::Keyboard {
                 key,
                 pressed: state == ElementState::Pressed,
                 modifiers,
-            })
+            }];
+            
+            // If there's text input and the key was pressed, send a Text event too
+            // But only for printable characters, not control characters (backspace, etc.)
+            if state == ElementState::Pressed {
+                if let Some(text) = text {
+                    // Filter out control characters - only send printable text
+                    if !text.is_empty() && text.chars().all(|c| !c.is_control()) {
+                        events.push(InputEvent::Text { text });
+                    }
+                }
+            }
+            
+            events
         }
 
         // === TOUCH INPUT (APPLE PENCIL!) ===
@@ -543,55 +551,55 @@ fn raw_to_input_event(event: RawWinitEvent) -> Option<InputEvent> {
                         0.0, // Azimuth not provided by winit Force::Calibrated
                     );
 
-                    Some(InputEvent::Stylus {
+                    vec![InputEvent::Stylus {
                         pos: position,
                         pressure,
                         tilt,
                         phase: touch_phase,
                         timestamp: 0.0, // TODO: Get actual timestamp from winit when available
-                    })
+                    }]
                 }
                 Some(WinitForce::Normalized(pressure)) => {
                     // Normalized pressure (0.0-1.0), likely a stylus
-                    Some(InputEvent::Stylus {
+                    vec![InputEvent::Stylus {
                         pos: position,
                         pressure: pressure as f32,
                         tilt: Vec2::ZERO, // No tilt data in normalized mode
                         phase: touch_phase,
                         timestamp: 0.0,
-                    })
+                    }]
                 }
                 None => {
                     // No force data - regular touch (finger)
-                    Some(InputEvent::Touch {
+                    vec![InputEvent::Touch {
                         pos: position,
                         phase: touch_phase,
                         id,
-                    })
+                    }]
                 }
             }
         }
 
         // === GESTURE INPUT ===
         RawWinitEvent::PinchGesture { delta } => {
-            Some(InputEvent::PinchGesture { delta })
+            vec![InputEvent::PinchGesture { delta }]
         }
 
         RawWinitEvent::RotationGesture { delta } => {
-            Some(InputEvent::RotationGesture { delta })
+            vec![InputEvent::RotationGesture { delta }]
         }
 
         RawWinitEvent::PanGesture { delta } => {
-            Some(InputEvent::PanGesture { delta })
+            vec![InputEvent::PanGesture { delta }]
         }
 
         RawWinitEvent::DoubleTapGesture => {
-            Some(InputEvent::DoubleTapGesture)
+            vec![InputEvent::DoubleTapGesture]
         }
 
         // === MOUSE MOTION (RAW DELTA) ===
         RawWinitEvent::MouseMotion { delta } => {
-            Some(InputEvent::MouseMotion { delta })
+            vec![InputEvent::MouseMotion { delta }]
         }
 
         // === NON-INPUT EVENTS ===
@@ -611,7 +619,7 @@ fn raw_to_input_event(event: RawWinitEvent) -> Option<InputEvent> {
         RawWinitEvent::Moved { .. } => {
             // These are window/UI events, should be sent to Bevy messages
             // (to be implemented when we add Bevy window event forwarding)
-            None
+            vec![]
         }
     }
 }
