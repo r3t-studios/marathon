@@ -94,7 +94,7 @@ impl EngineCore {
         }
 
         match NetworkingManager::new(session_id.clone()).await {
-            Ok(net_manager) => {
+            Ok((net_manager, bridge)) => {
                 let node_id = net_manager.node_id();
 
                 // Spawn NetworkingManager in background task
@@ -108,6 +108,7 @@ impl EngineCore {
                 let _ = self.handle.event_tx.send(EngineEvent::NetworkingStarted {
                     session_id: session_id.clone(),
                     node_id,
+                    bridge,
                 });
                 tracing::info!("Networking started for session {}", session_id.to_code());
             }

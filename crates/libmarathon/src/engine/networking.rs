@@ -26,6 +26,9 @@ pub struct NetworkingManager {
     _router: iroh::protocol::Router,
     _gossip: iroh_gossip::net::Gossip,
 
+    // Bridge to Bevy for message passing
+    bridge: crate::networking::GossipBridge,
+
     // CRDT state
     vector_clock: VectorClock,
     operation_log: OperationLog,
@@ -37,7 +40,7 @@ pub struct NetworkingManager {
 }
 
 impl NetworkingManager {
-    pub async fn new(session_id: SessionId) -> anyhow::Result<Self> {
+    pub async fn new(session_id: SessionId) -> anyhow::Result<(Self, crate::networking::GossipBridge)> {
         use iroh::{
             discovery::mdns::MdnsDiscovery,
             protocol::Router,
@@ -85,6 +88,9 @@ impl NetworkingManager {
             node_id
         );
 
+        // Create GossipBridge for Bevy integration
+        let bridge = crate::networking::GossipBridge::new(node_id);
+
         let manager = Self {
             session_id,
             node_id,
@@ -93,6 +99,7 @@ impl NetworkingManager {
             _endpoint: endpoint,
             _router: router,
             _gossip: gossip,
+            bridge: bridge.clone(),
             vector_clock: VectorClock::new(),
             operation_log: OperationLog::new(),
             tombstones: TombstoneRegistry::new(),
@@ -100,7 +107,7 @@ impl NetworkingManager {
             our_locks: std::collections::HashSet::new(),
         };
 
-        Ok(manager)
+        Ok((manager, bridge))
     }
 
     pub fn node_id(&self) -> NodeId {
@@ -112,23 +119,55 @@ impl NetworkingManager {
     }
 
     /// Process gossip events (unbounded) and periodic tasks (heartbeats, lock cleanup)
+    /// Also bridges messages between iroh-gossip and Bevy's GossipBridge
     pub async fn run(mut self, event_tx: mpsc::UnboundedSender<EngineEvent>) {
         let mut heartbeat_interval = time::interval(Duration::from_secs(1));
+        let mut bridge_poll_interval = time::interval(Duration::from_millis(10));
 
         loop {
             tokio::select! {
-                // Process gossip events unbounded (as fast as they arrive)
+                // Process incoming gossip messages and forward to GossipBridge
                 Some(result) = self.receiver.next() => {
                     match result {
                         Ok(event) => {
                             use iroh_gossip::api::Event;
-                            if let Event::Received(msg) = event {
-                                self.handle_sync_message(&msg.content, &event_tx).await;
+                            match event {
+                                Event::Received(msg) => {
+                                    // Deserialize and forward to GossipBridge for Bevy systems
+                                    if let Ok(versioned) = rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content) {
+                                        if let Err(e) = self.bridge.push_incoming(versioned) {
+                                            tracing::error!("Failed to push message to GossipBridge: {}", e);
+                                        } else {
+                                            tracing::debug!("Forwarded message to Bevy via GossipBridge");
+                                        }
+                                    }
+                                }
+                                Event::NeighborUp(peer) => {
+                                    tracing::info!("Peer connected: {}", peer);
+                                }
+                                Event::NeighborDown(peer) => {
+                                    tracing::warn!("Peer disconnected: {}", peer);
+                                }
+                                Event::Lagged => {
+                                    tracing::warn!("Event stream lagged");
+                                }
                             }
-                            // Note: Neighbor events are not exposed in the current API
                         }
                         Err(e) => {
                             tracing::warn!("Gossip receiver error: {}", e);
+                        }
+                    }
+                }
+
+                // Poll GossipBridge for outgoing messages and broadcast via iroh
+                _ = bridge_poll_interval.tick() => {
+                    while let Some(msg) = self.bridge.try_recv_outgoing() {
+                        if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec()) {
+                            if let Err(e) = self.sender.broadcast(Bytes::from(bytes)).await {
+                                tracing::error!("Failed to broadcast message: {}", e);
+                            } else {
+                                tracing::debug!("Broadcast message from Bevy via iroh-gossip");
+                            }
                         }
                     }
                 }

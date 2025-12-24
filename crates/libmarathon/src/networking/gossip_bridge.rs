@@ -43,6 +43,16 @@ pub struct GossipBridge {
     pub node_id: NodeId,
 }
 
+impl std::fmt::Debug for GossipBridge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GossipBridge")
+            .field("node_id", &self.node_id)
+            .field("outgoing_len", &self.outgoing.lock().ok().map(|q| q.len()))
+            .field("incoming_len", &self.incoming.lock().ok().map(|q| q.len()))
+            .finish()
+    }
+}
+
 impl GossipBridge {
     /// Create a new gossip bridge
     pub fn new(node_id: NodeId) -> Self {
