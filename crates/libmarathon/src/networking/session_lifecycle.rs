@@ -168,7 +168,8 @@ pub fn save_session_on_shutdown_system(world: &mut World) {
 
     // Update session metadata
     session.touch();
-    session.transition_to(SessionState::Left);
+    // Note: We don't transition to Left here - that only happens on actual shutdown
+    // This periodic save just persists the current state
 
     // Count entities in the world
     let entity_count = world

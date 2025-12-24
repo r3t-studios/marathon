@@ -205,6 +205,7 @@ fn main() {
     // Insert control socket path as resource
     app.insert_resource(control::ControlSocketPath(args.control_socket.clone()));
     app.add_systems(Startup, control::start_control_socket_system);
+    app.add_systems(Update, (control::process_app_commands, control::cleanup_control_socket));
 
     // Rendering-only plugins
     #[cfg(not(feature = "headless"))]
