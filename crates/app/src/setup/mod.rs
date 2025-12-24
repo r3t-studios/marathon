@@ -47,10 +47,14 @@
 //! 2. **Tokio → Bevy**: GossipBridge's internal queue (push_incoming)
 //! 3. **Thread handoff**: crossbeam_channel (one-time GossipBridge transfer)
 
+mod control_socket;
+
 use anyhow::Result;
 use bevy::prelude::*;
 use libmarathon::networking::{GossipBridge, SessionId};
 use uuid::Uuid;
+
+use control_socket::spawn_control_socket;
 
 /// Session ID to use for network initialization
 ///
@@ -222,11 +226,12 @@ async fn init_gossip(session_id: SessionId) -> Result<GossipBridge> {
     let (sender, mut receiver) = subscribe_handle.split();
 
     // Wait for join (with timeout since we might be the first node)
-    info!("Waiting for gossip join...");
-    match tokio::time::timeout(std::time::Duration::from_secs(2), receiver.joined()).await {
-        | Ok(Ok(())) => info!("Joined gossip swarm"),
+    // Increased timeout to 10s to allow mDNS discovery to work
+    info!("Waiting for gossip join (10s timeout for mDNS discovery)...");
+    match tokio::time::timeout(std::time::Duration::from_secs(10), receiver.joined()).await {
+        | Ok(Ok(())) => info!("Joined gossip swarm successfully"),
         | Ok(Err(e)) => warn!("Join error: {} (proceeding anyway)", e),
-        | Err(_) => info!("Join timeout (first node in swarm)"),
+        | Err(_) => info!("Join timeout - likely first node in swarm (proceeding anyway)"),
     }
 
     // Create bridge
@@ -235,6 +240,9 @@ async fn init_gossip(session_id: SessionId) -> Result<GossipBridge> {
 
     // Spawn forwarding tasks - pass endpoint, router, gossip to keep them alive
     spawn_bridge_tasks(sender, receiver, bridge.clone(), endpoint, router, gossip);
+
+    // Spawn control socket server for remote control (debug only)
+    spawn_control_socket(session_id, bridge.clone(), node_id);
 
     Ok(bridge)
 }
@@ -301,14 +309,26 @@ fn spawn_bridge_tasks(
         loop {
             match tokio::time::timeout(Duration::from_millis(100), receiver.next()).await {
                 | Ok(Some(Ok(event))) => {
-                    if let iroh_gossip::api::Event::Received(msg) = event {
-                        if let Ok(versioned_msg) =
-                            rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content)
-                        {
-                            if let Err(e) = bridge_in.push_incoming(versioned_msg) {
-                                error!("[Node {}] Push incoming failed: {}", node_id, e);
+                    match event {
+                        | iroh_gossip::api::Event::Received(msg) => {
+                            info!("[Node {}] Received message from gossip", node_id);
+                            if let Ok(versioned_msg) =
+                                rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content)
+                            {
+                                if let Err(e) = bridge_in.push_incoming(versioned_msg) {
+                                    error!("[Node {}] Push incoming failed: {}", node_id, e);
+                                }
                             }
-                        }
+                        },
+                        | iroh_gossip::api::Event::NeighborUp(peer_id) => {
+                            info!("[Node {}] Peer connected: {}", node_id, peer_id);
+                        },
+                        | iroh_gossip::api::Event::NeighborDown(peer_id) => {
+                            warn!("[Node {}] Peer disconnected: {}", node_id, peer_id);
+                        },
+                        | iroh_gossip::api::Event::Lagged => {
+                            warn!("[Node {}] Event stream lagged - some events may have been missed", node_id);
+                        },
                     }
                 },
                 | Ok(Some(Err(e))) => error!("[Node {}] Receiver error: {}", node_id, e),

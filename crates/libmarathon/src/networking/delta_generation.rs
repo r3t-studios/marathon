@@ -52,7 +52,7 @@ impl NodeVectorClock {
 /// System to generate and broadcast EntityDelta messages
 ///
 /// This system:
-/// 1. Queries for Changed<NetworkedEntity>
+/// 1. Queries for Added<NetworkedEntity> or Changed<NetworkedEntity>
 /// 2. Serializes all components on those entities
 /// 3. Builds EntityDelta messages
 /// 4. Broadcasts via GossipBridge
@@ -73,7 +73,7 @@ pub fn generate_delta_system(world: &mut World) {
 
     let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
         let mut query =
-            world.query_filtered::<(Entity, &NetworkedEntity), Changed<NetworkedEntity>>();
+            world.query_filtered::<(Entity, &NetworkedEntity), Or<(Added<NetworkedEntity>, Changed<NetworkedEntity>)>>();
         query
             .iter(world)
             .map(|(entity, networked)| (entity, networked.network_id, networked.owner_node_id))

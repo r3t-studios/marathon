@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-use libmarathon::networking::{ControlCommand, ControlResponse, SessionId};
+use libmarathon::networking::{ControlCommand, ControlResponse};
 
 /// Marathon control CLI
 #[derive(Parser, Debug)]
@@ -51,6 +51,25 @@ enum Commands {
     },
     /// Broadcast a ping message
     Ping,
+    /// Spawn an entity
+    Spawn {
+        /// Entity type (e.g., "cube")
+        entity_type: String,
+        /// X position
+        #[arg(short, long, default_value = "0.0")]
+        x: f32,
+        /// Y position
+        #[arg(short, long, default_value = "0.0")]
+        y: f32,
+        /// Z position
+        #[arg(short, long, default_value = "0.0")]
+        z: f32,
+    },
+    /// Delete an entity by UUID
+    Delete {
+        /// Entity UUID
+        entity_id: String,
+    },
 }
 
 fn main() {
@@ -73,6 +92,22 @@ fn main() {
                     node_id,
                     vector_clock: VectorClock::new(),
                 },
+            }
+        }
+        Commands::Spawn { entity_type, x, y, z } => {
+            ControlCommand::SpawnEntity {
+                entity_type,
+                position: [x, y, z],
+            }
+        }
+        Commands::Delete { entity_id } => {
+            use uuid::Uuid;
+            match Uuid::parse_str(&entity_id) {
+                Ok(uuid) => ControlCommand::DeleteEntity { entity_id: uuid },
+                Err(e) => {
+                    eprintln!("Invalid UUID '{}': {}", entity_id, e);
+                    std::process::exit(1);
+                }
             }
         }
     };
@@ -135,8 +170,6 @@ fn receive_response(stream: &mut UnixStream) -> Result<ControlResponse, Box<dyn 
 }
 
 fn print_response(response: ControlResponse) {
-    use libmarathon::networking::{SessionInfo, PeerInfo};
-
     match response {
         ControlResponse::Status {
             node_id,
