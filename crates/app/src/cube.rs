@@ -50,8 +50,8 @@ impl Plugin for CubePlugin {
 fn handle_spawn_cube(
     mut commands: Commands,
     mut messages: MessageReader<SpawnCubeEvent>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: Option<ResMut<Assets<Mesh>>>,
+    mut materials: Option<ResMut<Assets<StandardMaterial>>>,
     node_clock: Res<NodeVectorClock>,
 ) {
     for event in messages.read() {
@@ -60,16 +60,8 @@ fn handle_spawn_cube(
 
         info!("Spawning cube {} at {:?}", entity_id, event.position);
 
-        commands.spawn((
+        let mut entity = commands.spawn((
             CubeMarker,
-            // Bevy 3D components
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.8, 0.3, 0.6),
-                perceptual_roughness: 0.7,
-                metallic: 0.3,
-                ..default()
-            })),
             Transform::from_translation(event.position),
             GlobalTransform::default(),
             // Networking
@@ -81,6 +73,19 @@ fn handle_spawn_cube(
             // Sync marker
             Synced,
         ));
+
+        // Only add rendering components if assets are available (non-headless mode)
+        if let (Some(ref mut meshes), Some(ref mut materials)) = (meshes.as_mut(), materials.as_mut()) {
+            entity.insert((
+                Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.8, 0.3, 0.6),
+                    perceptual_roughness: 0.7,
+                    metallic: 0.3,
+                    ..default()
+                })),
+            ));
+        }
     }
 }
 

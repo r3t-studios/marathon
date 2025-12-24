@@ -11,7 +11,13 @@ use libmarathon::{
     persistence::PersistenceConfig,
 };
 
+#[cfg(feature = "headless")]
+use bevy::app::ScheduleRunnerPlugin;
+#[cfg(feature = "headless")]
+use std::time::Duration;
+
 mod camera;
+mod control;
 mod cube;
 mod debug_ui;
 mod engine_bridge;
@@ -115,46 +121,95 @@ fn main() {
     eprintln!(">>> Inserting EngineBridge resource");
     app.insert_resource(engine_bridge);
 
-    // Use DefaultPlugins but disable winit/window/input (we own those)
-    eprintln!(">>> Adding DefaultPlugins");
-    app.add_plugins(
-        DefaultPlugins
-            .build()
-            .disable::<bevy::log::LogPlugin>() // Using tracing-subscriber
-            .disable::<bevy::winit::WinitPlugin>() // We own winit
-            .disable::<bevy::window::WindowPlugin>() // We own the window
-            .disable::<bevy::input::InputPlugin>() // We provide InputEvents directly
-            .disable::<bevy::gilrs::GilrsPlugin>(), // We handle gamepad input ourselves
-    );
-    eprintln!(">>> DefaultPlugins added");
+    // Plugin setup based on headless vs rendering mode
+    #[cfg(not(feature = "headless"))]
+    {
+        info!("Adding DefaultPlugins (rendering mode)");
+        app.add_plugins(
+            DefaultPlugins
+                .build()
+                .disable::<bevy::log::LogPlugin>() // Using tracing-subscriber
+                .disable::<bevy::winit::WinitPlugin>() // We own winit
+                .disable::<bevy::window::WindowPlugin>() // We own the window
+                .disable::<bevy::input::InputPlugin>() // We provide InputEvents directly
+                .disable::<bevy::gilrs::GilrsPlugin>(), // We handle gamepad input ourselves
+        );
+        info!("DefaultPlugins added");
+    }
 
-    // Marathon core plugins (networking, debug UI, persistence)
-    eprintln!(">>> Adding MarathonPlugin");
-    app.add_plugins(libmarathon::MarathonPlugin::new(
-        APP_NAME,
-        PersistenceConfig {
-            flush_interval_secs: 2,
-            checkpoint_interval_secs: 30,
-            battery_adaptive: true,
-            ..Default::default()
-        },
-    ));
-    eprintln!(">>> MarathonPlugin added");
+    #[cfg(feature = "headless")]
+    {
+        info!("Adding MinimalPlugins (headless mode)");
+        app.add_plugins(
+            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+                Duration::from_secs_f64(1.0 / 60.0), // 60 FPS
+            )),
+        );
+        info!("MinimalPlugins added");
+    }
+
+    // Marathon core plugins based on mode
+    #[cfg(not(feature = "headless"))]
+    {
+        info!("Adding MarathonPlugin (with debug UI)");
+        app.add_plugins(libmarathon::MarathonPlugin::new(
+            APP_NAME,
+            PersistenceConfig {
+                flush_interval_secs: 2,
+                checkpoint_interval_secs: 30,
+                battery_adaptive: true,
+                ..Default::default()
+            },
+        ));
+    }
+
+    #[cfg(feature = "headless")]
+    {
+        info!("Adding networking and persistence (headless, no UI)");
+        app.add_plugins(libmarathon::networking::NetworkingPlugin::new(Default::default()));
+        app.add_plugins(libmarathon::persistence::PersistencePlugin::with_config(
+            db_path.clone(),
+            PersistenceConfig {
+                flush_interval_secs: 2,
+                checkpoint_interval_secs: 30,
+                battery_adaptive: true,
+                ..Default::default()
+            },
+        ));
+    }
+
+    info!("Marathon plugins added");
 
     // App-specific bridge for polling engine events
-    eprintln!(">>> Adding app plugins");
+    info!("Adding app plugins");
     app.add_plugins(EngineBridgePlugin);
-    app.add_plugins(CameraPlugin);
-    app.add_plugins(RenderingPlugin);
-    app.add_plugins(input::InputHandlerPlugin);
     app.add_plugins(CubePlugin);
-    app.add_plugins(SelectionPlugin);
-    app.add_plugins(DebugUiPlugin);
-    app.add_plugins(SessionUiPlugin);
     app.add_systems(Startup, initialize_offline_resources);
-    eprintln!(">>> All plugins added");
+    app.add_systems(Startup, control::start_control_socket_system);
 
-    eprintln!(">>> Running executor");
-    libmarathon::platform::run_executor(app).expect("Failed to run executor");
-    eprintln!(">>> Executor returned (should never reach here)");
+    // Rendering-only plugins
+    #[cfg(not(feature = "headless"))]
+    {
+        app.add_plugins(CameraPlugin);
+        app.add_plugins(RenderingPlugin);
+        app.add_plugins(input::InputHandlerPlugin);
+        app.add_plugins(SelectionPlugin);
+        app.add_plugins(DebugUiPlugin);
+        app.add_plugins(SessionUiPlugin);
+    }
+
+    info!("All plugins added");
+
+    // Run the app based on mode
+    #[cfg(not(feature = "headless"))]
+    {
+        info!("Running platform executor (rendering mode)");
+        libmarathon::platform::run_executor(app).expect("Failed to run executor");
+    }
+
+    #[cfg(feature = "headless")]
+    {
+        info!("Running headless app loop");
+        app.run();
+    }
 }
