@@ -267,6 +267,7 @@ dependencies = [
  "anyhow",
  "bevy",
  "bytes",
+ "clap",
  "crossbeam-channel",
  "egui",
  "futures-lite",

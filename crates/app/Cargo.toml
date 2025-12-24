@@ -34,6 +34,7 @@ futures-lite = "2.0"
 rkyv = { workspace = true }
 bytes = "1.0"
 crossbeam-channel = "0.5.15"
+clap = { version = "4.0", features = ["derive"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc = "0.2"
