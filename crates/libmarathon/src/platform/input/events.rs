@@ -52,7 +52,7 @@ pub struct InputEventBuffer {
 ///
 /// Platform-specific code converts native input (UITouch, winit events)
 /// into these engine-agnostic events.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum InputEvent {
     /// Stylus input (Apple Pencil, Surface Pen, etc.)
     Stylus {
@@ -108,6 +108,13 @@ pub enum InputEvent {
         modifiers: Modifiers,
     },
 
+    /// Text input from keyboard
+    /// This is the actual character that was typed, after applying keyboard layout
+    Text {
+        /// The text/character that was entered
+        text: String,
+    },
+
     /// Mouse wheel scroll
     MouseWheel {
         /// Scroll delta (pixels or lines depending on device)
@@ -155,6 +162,7 @@ impl InputEvent {
             InputEvent::Touch { pos, .. } => Some(*pos),
             InputEvent::MouseWheel { pos, .. } => Some(*pos),
             InputEvent::Keyboard { .. } |
+            InputEvent::Text { .. } |
             InputEvent::MouseMotion { .. } |
             InputEvent::PinchGesture { .. } |
             InputEvent::RotationGesture { .. } |
@@ -170,6 +178,7 @@ impl InputEvent {
             InputEvent::Mouse { phase, .. } => Some(*phase),
             InputEvent::Touch { phase, .. } => Some(*phase),
             InputEvent::Keyboard { .. } |
+            InputEvent::Text { .. } |
             InputEvent::MouseWheel { .. } |
             InputEvent::MouseMove { .. } |
             InputEvent::MouseMotion { .. } |

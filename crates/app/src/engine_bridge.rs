@@ -18,6 +18,8 @@ impl Plugin for EngineBridgePlugin {
         app.add_systems(Update, poll_engine_events);
         // Detect changes and send clock tick commands to engine
         app.add_systems(PostUpdate, detect_changes_and_tick);
+        // Handle app exit to stop networking gracefully
+        app.add_systems(Update, handle_app_exit);
     }
 }
 
@@ -46,15 +48,34 @@ fn poll_engine_events(
     bridge: Res<EngineBridge>,
     mut current_session: ResMut<CurrentSession>,
     mut node_clock: ResMut<NodeVectorClock>,
+    mut networking_status: Option<ResMut<crate::session_ui::NetworkingStatus>>,
 ) {
     let events = (*bridge).poll_events();
 
     if !events.is_empty() {
         for event in events {
             match event {
+                EngineEvent::NetworkingInitializing { session_id, status } => {
+                    info!("Networking initializing for session {}: {:?}", session_id.to_code(), status);
+                    
+                    // Update NetworkingStatus resource
+                    if let Some(ref mut net_status) = networking_status {
+                        net_status.latest_status = Some(status);
+                    }
+                    
+                    // Update session state to Joining if not already
+                    if matches!(current_session.session.state, SessionState::Created) {
+                        current_session.session.state = SessionState::Joining;
+                    }
+                }
                 EngineEvent::NetworkingStarted { session_id, node_id, bridge: gossip_bridge } => {
                     info!("Networking started: session={}, node={}",
                         session_id.to_code(), node_id);
+
+                    // Clear networking status
+                    if let Some(ref mut net_status) = networking_status {
+                        net_status.latest_status = None;
+                    }
 
                     // Insert GossipBridge for Bevy systems to use
                     commands.insert_resource(gossip_bridge);
@@ -71,11 +92,21 @@ fn poll_engine_events(
                 EngineEvent::NetworkingFailed { error } => {
                     error!("Networking failed: {}", error);
 
+                    // Clear networking status
+                    if let Some(ref mut net_status) = networking_status {
+                        net_status.latest_status = None;
+                    }
+
                     // Keep session state as Created
                     current_session.session.state = SessionState::Created;
                 }
                 EngineEvent::NetworkingStopped => {
                     info!("Networking stopped");
+
+                    // Clear networking status
+                    if let Some(ref mut net_status) = networking_status {
+                        net_status.latest_status = None;
+                    }
 
                     // Update session state to Disconnected
                     current_session.session.state = SessionState::Disconnected;
@@ -130,6 +161,24 @@ fn poll_engine_events(
                     // TODO: Update lock visuals
                 }
             }
+        }
+    }
+}
+
+/// Handle app exit to stop networking immediately
+fn handle_app_exit(
+    mut exit_events: MessageReader<bevy::app::AppExit>,
+    bridge: Res<EngineBridge>,
+    current_session: Res<CurrentSession>,
+) {
+    for _ in exit_events.read() {
+        // If networking is active, send stop command
+        // Don't wait - the task will be aborted when the runtime shuts down
+        if current_session.session.state == SessionState::Active 
+            || current_session.session.state == SessionState::Joining {
+            info!("App exiting, aborting networking immediately");
+            bridge.send_command(EngineCommand::StopNetworking);
+            // Don't sleep - just let the app exit. The tokio runtime will clean up.
         }
     }
 }

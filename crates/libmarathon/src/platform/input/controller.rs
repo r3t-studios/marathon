@@ -245,6 +245,11 @@ impl InputController {
                 }
                 // In other contexts, ignore MouseMotion to avoid conflicts with cursor-based input
             }
+
+            InputEvent::Text { text: _ } => {
+                // Text input is handled by egui, not by game actions
+                // This is for typing in text fields, not game controls
+            }
         }
 
         actions
