@@ -3,6 +3,7 @@
 //! This demonstrates real-time CRDT synchronization with Apple Pencil input.
 
 use bevy::prelude::*;
+use clap::Parser;
 use libmarathon::{
     engine::{
         EngineBridge,
@@ -15,6 +16,19 @@ use libmarathon::{
 use bevy::app::ScheduleRunnerPlugin;
 #[cfg(feature = "headless")]
 use std::time::Duration;
+
+/// Marathon - CRDT-based collaborative editing engine
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Path to the database file
+    #[arg(long, default_value = "marathon.db")]
+    db_path: String,
+
+    /// Path to the control socket (Unix domain socket)
+    #[arg(long, default_value = "/tmp/marathon-control.sock")]
+    control_socket: String,
+}
 
 mod camera;
 mod control;
@@ -40,6 +54,9 @@ use session::*;
 use session_ui::*;
 
 fn main() {
+    // Parse command-line arguments
+    let args = Args::parse();
+
     // Note: eprintln doesn't work on iOS, but tracing-oslog will once initialized
     eprintln!(">>> RUST ENTRY: main() started");
 
@@ -81,9 +98,8 @@ fn main() {
     // Application configuration
     const APP_NAME: &str = "Aspen";
 
-    // Get platform-appropriate database path
-    eprintln!(">>> Getting database path");
-    let db_path = libmarathon::platform::get_database_path(APP_NAME);
+    // Use database path from CLI args
+    let db_path = std::path::PathBuf::from(&args.db_path);
     let db_path_str = db_path.to_str().unwrap().to_string();
     info!("Database path: {}", db_path_str);
     eprintln!(">>> Database path: {}", db_path_str);
@@ -185,6 +201,9 @@ fn main() {
     app.add_plugins(EngineBridgePlugin);
     app.add_plugins(CubePlugin);
     app.add_systems(Startup, initialize_offline_resources);
+
+    // Insert control socket path as resource
+    app.insert_resource(control::ControlSocketPath(args.control_socket.clone()));
     app.add_systems(Startup, control::start_control_socket_system);
 
     // Rendering-only plugins
