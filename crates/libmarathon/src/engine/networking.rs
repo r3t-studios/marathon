@@ -249,9 +249,31 @@ impl NetworkingManager {
                                 }
                                 Event::NeighborUp(peer) => {
                                     tracing::info!("Peer connected: {}", peer);
+
+                                    // Convert PublicKey to NodeId for Bevy
+                                    let peer_bytes = peer.as_bytes();
+                                    let mut node_id_bytes = [0u8; 16];
+                                    node_id_bytes.copy_from_slice(&peer_bytes[..16]);
+                                    let peer_node_id = NodeId::from_bytes(node_id_bytes);
+
+                                    // Notify Bevy of peer join
+                                    let _ = event_tx.send(EngineEvent::PeerJoined {
+                                        node_id: peer_node_id,
+                                    });
                                 }
                                 Event::NeighborDown(peer) => {
                                     tracing::warn!("Peer disconnected: {}", peer);
+
+                                    // Convert PublicKey to NodeId for Bevy
+                                    let peer_bytes = peer.as_bytes();
+                                    let mut node_id_bytes = [0u8; 16];
+                                    node_id_bytes.copy_from_slice(&peer_bytes[..16]);
+                                    let peer_node_id = NodeId::from_bytes(node_id_bytes);
+
+                                    // Notify Bevy of peer leave
+                                    let _ = event_tx.send(EngineEvent::PeerLeft {
+                                        node_id: peer_node_id,
+                                    });
                                 }
                                 Event::Lagged => {
                                     tracing::warn!("Event stream lagged");

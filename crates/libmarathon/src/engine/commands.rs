@@ -46,4 +46,7 @@ pub enum EngineCommand {
 
     // Clock
     TickClock,
+
+    // Lifecycle
+    Shutdown,
 }

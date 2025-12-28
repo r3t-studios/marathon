@@ -573,7 +573,7 @@ pub fn save_session_vector_clock(
     )?;
 
     // Insert current clock state
-    for (node_id, &counter) in &clock.clocks {
+    for (node_id, &counter) in &clock.timestamps {
         tx.execute(
             "INSERT INTO vector_clock (session_id, node_id, counter, updated_at)
              VALUES (?1, ?2, ?3, ?4)",
@@ -608,7 +608,7 @@ pub fn load_session_vector_clock(
     for row in rows {
         let (node_id_str, counter) = row?;
         if let Ok(node_id) = uuid::Uuid::parse_str(&node_id_str) {
-            clock.clocks.insert(node_id, counter as u64);
+            clock.timestamps.insert(node_id, counter as u64);
         }
     }
 

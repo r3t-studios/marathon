@@ -6,8 +6,13 @@ use bevy::prelude::*;
 use libmarathon::{
     engine::GameAction,
     platform::input::InputController,
-    networking::{EntityLockRegistry, NetworkedEntity, NetworkedSelection, NodeVectorClock},
+    networking::{
+        EntityLockRegistry, LocalSelection, NetworkedEntity,
+        NodeVectorClock,
+    },
 };
+
+use crate::cube::CubeMarker;
 
 use super::event_buffer::InputEventBuffer;
 
@@ -16,7 +21,9 @@ pub struct InputHandlerPlugin;
 impl Plugin for InputHandlerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputControllerResource>()
-            .add_systems(Update, handle_game_actions);
+            // handle_game_actions updates selection - must run before release_locks_on_deselection_system
+            .add_systems(Update, handle_game_actions.before(libmarathon::networking::release_locks_on_deselection_system))
+            .add_systems(PostUpdate, update_lock_visuals);
     }
 }
 
@@ -46,9 +53,10 @@ fn to_bevy_vec2(v: glam::Vec2) -> bevy::math::Vec2 {
 fn handle_game_actions(
     input_buffer: Res<InputEventBuffer>,
     mut controller_res: ResMut<InputControllerResource>,
-    mut lock_registry: ResMut<EntityLockRegistry>,
+    lock_registry: Res<EntityLockRegistry>,
     node_clock: Res<NodeVectorClock>,
-    mut cube_query: Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    mut selection: ResMut<LocalSelection>,
+    mut cube_query: Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
     window_query: Query<&Window>,
 ) {
@@ -65,14 +73,23 @@ fn handle_game_actions(
     for action in all_actions {
         match action {
             GameAction::SelectEntity { position } => {
-                apply_select_entity(
+                // Do raycasting to find which entity (if any) was clicked
+                let entity_id = raycast_entity(
                     position,
-                    &mut lock_registry,
-                    node_id,
-                    &mut cube_query,
+                    &cube_query,
                     &camera_query,
                     &window_query,
                 );
+
+                // Update selection
+                // The release_locks_on_deselection_system will automatically handle lock changes
+                selection.clear();
+                if let Some(id) = entity_id {
+                    selection.insert(id);
+                    info!("Selected entity {}", id);
+                } else {
+                    info!("Deselected all entities");
+                }
             }
 
             GameAction::MoveEntity { delta } => {
@@ -98,32 +115,32 @@ fn handle_game_actions(
     }
 }
 
-/// Apply SelectEntity action - raycast to find clicked cube and select it
-fn apply_select_entity(
+/// Raycast to find which entity was clicked
+///
+/// Returns the network ID of the closest entity hit by the ray, or None if nothing was hit.
+fn raycast_entity(
     position: glam::Vec2,
-    lock_registry: &mut EntityLockRegistry,
-    node_id: uuid::Uuid,
-    cube_query: &mut Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    cube_query: &Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
     camera_query: &Query<(&Camera, &GlobalTransform)>,
     window_query: &Query<&Window>,
-) {
+) -> Option<uuid::Uuid> {
     // Get the camera and window
     let Ok((camera, camera_transform)) = camera_query.single() else {
-        return;
+        return None;
     };
     let Ok(window) = window_query.single() else {
-        return;
+        return None;
     };
 
     // Convert screen position to world ray
     let Some(ray) = screen_to_world_ray(position, camera, camera_transform, window) else {
-        return;
+        return None;
     };
 
     // Find the closest cube hit by the ray
     let mut closest_hit: Option<(uuid::Uuid, f32)> = None;
 
-    for (networked, transform, _) in cube_query.iter() {
+    for (networked, transform) in cube_query.iter() {
         // Test ray against cube AABB (1x1x1 cube)
         if let Some(distance) = ray_aabb_intersection(
             ray.origin,
@@ -137,31 +154,7 @@ fn apply_select_entity(
         }
     }
 
-    // If we hit a cube, clear all selections and select this one
-    if let Some((hit_entity_id, _)) = closest_hit {
-        // Clear all previous selections and locks
-        for (networked, _, mut selection) in cube_query.iter_mut() {
-            selection.clear();
-            lock_registry.release(networked.network_id, node_id);
-        }
-
-        // Select and lock the clicked cube
-        for (networked, _, mut selection) in cube_query.iter_mut() {
-            if networked.network_id == hit_entity_id {
-                selection.add(hit_entity_id);
-                let _ = lock_registry.try_acquire(hit_entity_id, node_id);
-                info!("Selected cube {}", hit_entity_id);
-                break;
-            }
-        }
-    } else {
-        // Clicked on empty space - deselect all
-        for (networked, _, mut selection) in cube_query.iter_mut() {
-            selection.clear();
-            lock_registry.release(networked.network_id, node_id);
-        }
-        info!("Deselected all cubes");
-    }
+    closest_hit.map(|(entity_id, _)| entity_id)
 }
 
 /// Apply MoveEntity action to locked cubes
@@ -169,12 +162,12 @@ fn apply_move_entity(
     delta: glam::Vec2,
     lock_registry: &EntityLockRegistry,
     node_id: uuid::Uuid,
-    cube_query: &mut Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    cube_query: &mut Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
 ) {
     let bevy_delta = to_bevy_vec2(delta);
     let sensitivity = 0.01; // Scale factor
 
-    for (networked, mut transform, _) in cube_query.iter_mut() {
+    for (networked, mut transform) in cube_query.iter_mut() {
         if lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
             transform.translation.x += bevy_delta.x * sensitivity;
             transform.translation.y -= bevy_delta.y * sensitivity; // Invert Y for screen coords
@@ -187,12 +180,12 @@ fn apply_rotate_entity(
     delta: glam::Vec2,
     lock_registry: &EntityLockRegistry,
     node_id: uuid::Uuid,
-    cube_query: &mut Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    cube_query: &mut Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
 ) {
     let bevy_delta = to_bevy_vec2(delta);
     let sensitivity = 0.01;
 
-    for (networked, mut transform, _) in cube_query.iter_mut() {
+    for (networked, mut transform) in cube_query.iter_mut() {
         if lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
             let rotation_x = Quat::from_rotation_y(bevy_delta.x * sensitivity);
             let rotation_y = Quat::from_rotation_x(-bevy_delta.y * sensitivity);
@@ -206,11 +199,11 @@ fn apply_move_depth(
     delta: f32,
     lock_registry: &EntityLockRegistry,
     node_id: uuid::Uuid,
-    cube_query: &mut Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    cube_query: &mut Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
 ) {
     let sensitivity = 0.1;
 
-    for (networked, mut transform, _) in cube_query.iter_mut() {
+    for (networked, mut transform) in cube_query.iter_mut() {
         if lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
             transform.translation.z += delta * sensitivity;
         }
@@ -221,9 +214,9 @@ fn apply_move_depth(
 fn apply_reset_entity(
     lock_registry: &EntityLockRegistry,
     node_id: uuid::Uuid,
-    cube_query: &mut Query<(&NetworkedEntity, &mut Transform, &mut NetworkedSelection), With<crate::cube::CubeMarker>>,
+    cube_query: &mut Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
 ) {
-    for (networked, mut transform, _) in cube_query.iter_mut() {
+    for (networked, mut transform) in cube_query.iter_mut() {
         if lock_registry.is_locked_by(networked.network_id, node_id, node_id) {
             transform.translation = Vec3::ZERO;
             transform.rotation = Quat::IDENTITY;
@@ -315,5 +308,40 @@ fn ray_aabb_intersection(
         Some(tmax)
     } else {
         Some(tmin)
+    }
+}
+
+/// System to update visual appearance based on lock state
+///
+/// Color scheme:
+/// - Green: Locked by us (we can edit)
+/// - Blue: Locked by someone else (they can edit, we can't)
+/// - Pink: Not locked (nobody is editing)
+fn update_lock_visuals(
+    lock_registry: Res<EntityLockRegistry>,
+    node_clock: Res<NodeVectorClock>,
+    mut cubes: Query<(&NetworkedEntity, &mut MeshMaterial3d<StandardMaterial>), With<CubeMarker>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (networked, material_handle) in cubes.iter_mut() {
+        let entity_id = networked.network_id;
+
+        // Determine color based on lock state
+        let node_id = node_clock.node_id;
+        let color = if lock_registry.is_locked_by(entity_id, node_id, node_id) {
+            // Locked by us - green
+            Color::srgb(0.3, 0.8, 0.3)
+        } else if lock_registry.is_locked(entity_id, node_id) {
+            // Locked by someone else - blue
+            Color::srgb(0.3, 0.5, 0.9)
+        } else {
+            // Not locked - default pink
+            Color::srgb(0.8, 0.3, 0.6)
+        };
+
+        // Update material color
+        if let Some(mat) = materials.get_mut(&material_handle.0) {
+            mat.base_color = color;
+        }
     }
 }

@@ -34,6 +34,7 @@ use crate::networking::{
         LastSyncVersions,
         auto_detect_transform_changes_system,
     },
+    components::{NetworkedEntity, NetworkedTransform},
     delta_generation::{
         NodeVectorClock,
         generate_delta_system,
@@ -43,8 +44,10 @@ use crate::networking::{
         cleanup_despawned_entities_system,
         register_networked_entities_system,
     },
+    gossip_bridge::GossipBridge,
     locks::{
         EntityLockRegistry,
+        acquire_locks_on_selection_system,
         broadcast_lock_heartbeats_system,
         cleanup_expired_locks_system,
         release_locks_on_deselection_system,
@@ -59,6 +62,7 @@ use crate::networking::{
         initialize_session_system,
         save_session_on_shutdown_system,
     },
+    sync_component::Synced,
     tombstones::{
         TombstoneRegistry,
         garbage_collect_tombstones_system,
@@ -140,6 +144,104 @@ impl SessionSecret {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// System that auto-inserts required sync components when `Synced` marker is detected.
+///
+/// This system runs in PreUpdate and automatically adds:
+/// - `NetworkedEntity` with a new UUID and node ID
+/// - `Persisted` with the same UUID
+/// - `NetworkedTransform` if the entity has a `Transform` component
+///
+/// Note: Selection is now a global `LocalSelection` resource, not a per-entity component.
+///
+/// This eliminates the need for users to manually add these components when spawning synced entities.
+fn auto_insert_sync_components(
+    mut commands: Commands,
+    query: Query<Entity, (Added<Synced>, Without<NetworkedEntity>)>,
+    node_clock: Res<NodeVectorClock>,
+    // We need access to check if entity has Transform
+    transforms: Query<&Transform>,
+) {
+    for entity in &query {
+        let entity_id = uuid::Uuid::new_v4();
+        let node_id = node_clock.node_id;
+
+        // Always add NetworkedEntity and Persisted
+        let mut entity_commands = commands.entity(entity);
+        entity_commands.insert((
+            NetworkedEntity::with_id(entity_id, node_id),
+            crate::persistence::Persisted::with_id(entity_id),
+        ));
+
+        // Auto-add NetworkedTransform if entity has Transform
+        if transforms.contains(entity) {
+            entity_commands.insert(NetworkedTransform);
+        }
+
+        debug!("Auto-inserted sync components for entity {:?} (UUID: {})", entity, entity_id);
+    }
+}
+
+/// System that adds NetworkedTransform to networked entities when Transform is added.
+///
+/// This handles entities received from the network that already have NetworkedEntity,
+/// Persisted, and Synced, but need NetworkedTransform when Transform is added.
+fn auto_insert_networked_transform(
+    mut commands: Commands,
+    query: Query<
+        Entity,
+        (
+            With<NetworkedEntity>,
+            With<Synced>,
+            Added<Transform>,
+            Without<NetworkedTransform>,
+        ),
+    >,
+) {
+    for entity in &query {
+        commands.entity(entity).insert(NetworkedTransform);
+        debug!("Auto-inserted NetworkedTransform for networked entity {:?}", entity);
+    }
+}
+
+/// System that triggers anti-entropy sync when going online (GossipBridge added).
+///
+/// This handles the offline-to-online transition: when GossipBridge is inserted,
+/// we immediately send a SyncRequest to trigger anti-entropy and broadcast all
+/// operations from the operation log.
+///
+/// Uses a Local resource to track if we've already sent the sync request, so this only runs once.
+fn trigger_sync_on_connect(
+    mut has_synced: Local<bool>,
+    bridge: Res<GossipBridge>,
+    node_clock: Res<NodeVectorClock>,
+    operation_log: Res<OperationLog>,
+) {
+    if *has_synced {
+        return; // Already did this
+    }
+
+    let op_count = operation_log.total_operations();
+    debug!(
+        "Going online: triggering anti-entropy sync to broadcast {} offline operations",
+        op_count
+    );
+
+    // Send a SyncRequest to trigger anti-entropy
+    // This will cause the message_dispatcher to respond with all operations from our log
+    let request = crate::networking::operation_log::build_sync_request(
+        node_clock.node_id,
+        node_clock.clock.clone(),
+    );
+
+    if let Err(e) = bridge.send(request) {
+        error!("Failed to send SyncRequest on connect: {}", e);
+    } else {
+        debug!("Sent SyncRequest to trigger anti-entropy sync");
+    }
+
+    *has_synced = true;
 }
 
 /// Bevy plugin for CRDT networking
@@ -236,7 +338,8 @@ impl Plugin for NetworkingPlugin {
             .insert_resource(OperationLog::new())
             .insert_resource(TombstoneRegistry::new())
             .insert_resource(EntityLockRegistry::new())
-            .insert_resource(crate::networking::ComponentVectorClocks::new());
+            .insert_resource(crate::networking::ComponentVectorClocks::new())
+            .insert_resource(crate::networking::LocalSelection::new());
 
         // Startup systems - initialize session from persistence
         app.add_systems(Startup, initialize_session_system);
@@ -245,12 +348,16 @@ impl Plugin for NetworkingPlugin {
         app.add_systems(
             PreUpdate,
             (
+                // Auto-insert sync components when Synced marker is added (must run first)
+                auto_insert_sync_components,
                 // Register new networked entities
                 register_networked_entities_system,
                 // Central message dispatcher - handles all incoming messages
                 // This replaces the individual message handling systems and
                 // eliminates O(n²) behavior from multiple systems polling the same queue
                 message_dispatcher_system,
+                // Auto-insert NetworkedTransform for networked entities when Transform is added
+                auto_insert_networked_transform,
             )
                 .chain(),
         );
@@ -263,9 +370,18 @@ impl Plugin for NetworkingPlugin {
                 auto_detect_transform_changes_system,
                 // Handle local entity deletions
                 handle_local_deletions_system,
+                // Acquire locks when entities are selected
+                acquire_locks_on_selection_system,
                 // Release locks when entities are deselected
                 release_locks_on_deselection_system,
             ),
+        );
+
+        // Trigger anti-entropy sync when going online (separate from chain to allow conditional execution)
+        app.add_systems(
+            PostUpdate,
+            trigger_sync_on_connect
+                .run_if(bevy::ecs::schedule::common_conditions::resource_exists::<GossipBridge>),
         );
 
         // PostUpdate systems - generate and send deltas

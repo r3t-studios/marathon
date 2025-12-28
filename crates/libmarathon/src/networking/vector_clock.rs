@@ -54,15 +54,20 @@ pub type NodeId = uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Default)]
 pub struct VectorClock {
     /// Map from node ID to logical timestamp
-    pub clocks: HashMap<NodeId, u64>,
+    pub timestamps: HashMap<NodeId, u64>,
 }
 
 impl VectorClock {
     /// Create a new empty vector clock
     pub fn new() -> Self {
         Self {
-            clocks: HashMap::new(),
+            timestamps: HashMap::new(),
         }
+    }
+
+    /// Get the number of nodes tracked in this clock
+    pub fn node_count(&self) -> usize {
+        self.timestamps.len()
     }
 
     /// Increment the clock for a given node
@@ -86,7 +91,7 @@ impl VectorClock {
     /// assert_eq!(clock.get(node), 2);
     /// ```
     pub fn increment(&mut self, node_id: NodeId) -> u64 {
-        let counter = self.clocks.entry(node_id).or_insert(0);
+        let counter = self.timestamps.entry(node_id).or_insert(0);
         *counter += 1;
         *counter
     }
@@ -95,7 +100,7 @@ impl VectorClock {
     ///
     /// Returns 0 if the node has never been seen in this vector clock.
     pub fn get(&self, node_id: NodeId) -> u64 {
-        self.clocks.get(&node_id).copied().unwrap_or(0)
+        self.timestamps.get(&node_id).copied().unwrap_or(0)
     }
 
     /// Merge another vector clock into this one
@@ -124,8 +129,8 @@ impl VectorClock {
     /// assert_eq!(clock1.get(node2), 1);
     /// ```
     pub fn merge(&mut self, other: &VectorClock) {
-        for (node_id, &counter) in &other.clocks {
-            let current = self.clocks.entry(*node_id).or_insert(0);
+        for (node_id, &counter) in &other.timestamps {
+            let current = self.timestamps.entry(*node_id).or_insert(0);
             *current = (*current).max(counter);
         }
     }
@@ -158,7 +163,7 @@ impl VectorClock {
         let mut any_strictly_less = false;
 
         // Check our nodes in a single pass
-        for (node_id, &our_counter) in &self.clocks {
+        for (node_id, &our_counter) in &self.timestamps {
             let their_counter = other.get(*node_id);
 
             // Early exit if we have a counter greater than theirs
@@ -175,8 +180,8 @@ impl VectorClock {
         // If we haven't found a strictly less counter yet, check if they have
         // nodes we don't know about with non-zero values (those count as strictly less)
         if !any_strictly_less {
-            any_strictly_less = other.clocks.iter().any(|(node_id, &their_counter)| {
-                !self.clocks.contains_key(node_id) && their_counter > 0
+            any_strictly_less = other.timestamps.iter().any(|(node_id, &their_counter)| {
+                !self.timestamps.contains_key(node_id) && their_counter > 0
             });
         }
 
@@ -250,7 +255,7 @@ mod tests {
     #[test]
     fn test_new_clock() {
         let clock = VectorClock::new();
-        assert_eq!(clock.clocks.len(), 0);
+        assert_eq!(clock.timestamps.len(), 0);
     }
 
     #[test]

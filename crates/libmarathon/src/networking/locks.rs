@@ -47,7 +47,6 @@ use uuid::Uuid;
 
 use crate::networking::{
     GossipBridge,
-    NetworkedSelection,
     NodeId,
     VersionedMessage,
     delta_generation::NodeVectorClock,
@@ -334,10 +333,63 @@ impl EntityLockRegistry {
     }
 }
 
+/// System to acquire locks when entities are selected
+///
+/// This system detects when entities are added to the global `LocalSelection`
+/// resource and attempts to acquire locks on those entities, broadcasting
+/// the request to other peers.
+pub fn acquire_locks_on_selection_system(
+    mut registry: ResMut<EntityLockRegistry>,
+    node_clock: Res<NodeVectorClock>,
+    bridge: Option<Res<GossipBridge>>,
+    selection: Res<crate::networking::LocalSelection>,
+) {
+    // Only run when selection changes
+    if !selection.is_changed() {
+        return;
+    }
+
+    let node_id = node_clock.node_id;
+
+    // Try to acquire locks for all selected entities
+    for &entity_id in selection.iter() {
+        let already_locked = registry.is_locked_by(entity_id, node_id, node_id);
+
+        // Only try to acquire if we don't already hold the lock
+        if !already_locked {
+            match registry.try_acquire(entity_id, node_id) {
+                Ok(()) => {
+                    info!("Acquired lock on newly selected entity {}", entity_id);
+
+                    // Broadcast LockRequest
+                    if let Some(ref bridge) = bridge {
+                        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
+                            entity_id,
+                            node_id,
+                        }));
+
+                        if let Err(e) = bridge.send(msg) {
+                            error!("Failed to broadcast LockRequest on selection: {}", e);
+                        } else {
+                            debug!("LockRequest broadcast successful for entity {}", entity_id);
+                        }
+                    } else {
+                        warn!("No GossipBridge available to broadcast LockRequest");
+                    }
+                }
+                Err(holder) => {
+                    warn!("Failed to acquire lock on selected entity {} (held by {})", entity_id, holder);
+                }
+            }
+        }
+    }
+}
+
 /// System to release locks when entities are deselected
 ///
-/// This system detects when entities are removed from selection and releases
-/// any locks held on those entities, broadcasting the release to other peers.
+/// This system detects when entities are removed from the global `LocalSelection`
+/// resource and releases any locks held on those entities, broadcasting the release
+/// to other peers.
 ///
 /// Add to your app as an Update system:
 /// ```no_run
@@ -350,42 +402,46 @@ pub fn release_locks_on_deselection_system(
     mut registry: ResMut<EntityLockRegistry>,
     node_clock: Res<NodeVectorClock>,
     bridge: Option<Res<GossipBridge>>,
-    mut selection_query: Query<&mut NetworkedSelection, Changed<NetworkedSelection>>,
+    selection: Res<crate::networking::LocalSelection>,
 ) {
+    // Only run when selection changes
+    if !selection.is_changed() {
+        return;
+    }
+
     let node_id = node_clock.node_id;
 
-    for selection in selection_query.iter_mut() {
-        // Find entities that were previously locked but are no longer selected
-        let currently_selected: std::collections::HashSet<Uuid> = selection.selected_ids.clone();
+    // Check all locks held by this node
+    let locks_to_release: Vec<Uuid> = registry
+        .locks
+        .iter()
+        .filter(|(entity_id, lock)| {
+            // Release if held by us and not currently selected
+            lock.holder == node_id && !selection.contains(**entity_id)
+        })
+        .map(|(entity_id, _)| *entity_id)
+        .collect();
 
-        // Check all locks held by this node
-        let locks_to_release: Vec<Uuid> = registry
-            .locks
-            .iter()
-            .filter(|(entity_id, lock)| {
-                // Release if held by us and not currently selected
-                lock.holder == node_id && !currently_selected.contains(entity_id)
-            })
-            .map(|(entity_id, _)| *entity_id)
-            .collect();
+    if !locks_to_release.is_empty() {
+        info!("Selection cleared, releasing {} locks", locks_to_release.len());
+    }
 
-        // Release each lock and broadcast
-        for entity_id in locks_to_release {
-            if registry.release(entity_id, node_id) {
-                debug!("Releasing lock on deselected entity {}", entity_id);
+    // Release each lock and broadcast
+    for entity_id in locks_to_release {
+        if registry.release(entity_id, node_id) {
+            info!("Released lock on deselected entity {}", entity_id);
 
-                // Broadcast LockRelease
-                if let Some(ref bridge) = bridge {
-                    let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRelease {
-                        entity_id,
-                        node_id,
-                    }));
+            // Broadcast LockRelease
+            if let Some(ref bridge) = bridge {
+                let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRelease {
+                    entity_id,
+                    node_id,
+                }));
 
-                    if let Err(e) = bridge.send(msg) {
-                        error!("Failed to broadcast LockRelease on deselection: {}", e);
-                    } else {
-                        info!("Lock released on deselection: entity {}", entity_id);
-                    }
+                if let Err(e) = bridge.send(msg) {
+                    error!("Failed to broadcast LockRelease on deselection: {}", e);
+                } else {
+                    info!("Lock released on deselection: entity {}", entity_id);
                 }
             }
         }

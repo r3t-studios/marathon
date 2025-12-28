@@ -53,6 +53,7 @@ fn poll_engine_events(
     let events = (*bridge).poll_events();
 
     if !events.is_empty() {
+        debug!("Polling {} engine events", events.len());
         for event in events {
             match event {
                 EngineEvent::NetworkingInitializing { session_id, status } => {
@@ -113,10 +114,17 @@ fn poll_engine_events(
                 }
                 EngineEvent::PeerJoined { node_id } => {
                     info!("Peer joined: {}", node_id);
+
+                    // Initialize peer in vector clock so it shows up in UI immediately
+                    node_clock.clock.timestamps.entry(node_id).or_insert(0);
+
                     // TODO(Phase 3.3): Trigger sync
                 }
                 EngineEvent::PeerLeft { node_id } => {
                     info!("Peer left: {}", node_id);
+
+                    // Remove peer from vector clock
+                    node_clock.clock.timestamps.remove(&node_id);
                 }
                 EngineEvent::LockAcquired { entity_id, holder } => {
                     debug!("Lock acquired: entity={}, holder={}", entity_id, holder);
@@ -165,20 +173,15 @@ fn poll_engine_events(
     }
 }
 
-/// Handle app exit to stop networking immediately
+/// Handle app exit - send shutdown signal to EngineCore
 fn handle_app_exit(
     mut exit_events: MessageReader<bevy::app::AppExit>,
     bridge: Res<EngineBridge>,
-    current_session: Res<CurrentSession>,
 ) {
     for _ in exit_events.read() {
-        // If networking is active, send stop command
-        // Don't wait - the task will be aborted when the runtime shuts down
-        if current_session.session.state == SessionState::Active 
-            || current_session.session.state == SessionState::Joining {
-            info!("App exiting, aborting networking immediately");
-            bridge.send_command(EngineCommand::StopNetworking);
-            // Don't sleep - just let the app exit. The tokio runtime will clean up.
-        }
+        info!("App exiting - sending Shutdown command to EngineCore");
+        bridge.send_command(EngineCommand::Shutdown);
+        // The EngineCore will receive the Shutdown command and gracefully exit
+        // its event loop, allowing the tokio runtime thread to complete
     }
 }

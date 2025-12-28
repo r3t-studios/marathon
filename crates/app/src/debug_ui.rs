@@ -43,11 +43,10 @@ fn render_debug_ui(
             // Node information
             if let Some(clock) = &node_clock {
                 ui.label(format!("Node ID: {}", &clock.node_id.to_string()[..8]));
-                // Show the current node's clock value (timestamp)
-                let current_timestamp =
-                    clock.clock.clocks.get(&clock.node_id).copied().unwrap_or(0);
-                ui.label(format!("Clock: {}", current_timestamp));
-                ui.label(format!("Known nodes: {}", clock.clock.clocks.len()));
+                // Show the sum of all timestamps (total operations across all nodes)
+                let total_ops: u64 = clock.clock.timestamps.values().sum();
+                ui.label(format!("Clock: {} (total ops)", total_ops));
+                ui.label(format!("Known nodes: {}", clock.clock.node_count()));
             } else {
                 ui.label("Node: Not initialized");
             }

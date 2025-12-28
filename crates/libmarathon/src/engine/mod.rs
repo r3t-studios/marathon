@@ -14,12 +14,13 @@ mod core;
 mod events;
 mod game_actions;
 mod networking;
+mod peer_discovery;
 mod persistence;
 
 pub use bridge::{EngineBridge, EngineHandle};
 pub use commands::EngineCommand;
 pub use core::EngineCore;
-pub use events::EngineEvent;
+pub use events::{EngineEvent, NetworkingInitStatus};
 pub use game_actions::GameAction;
 pub use networking::NetworkingManager;
 pub use persistence::PersistenceManager;

@@ -118,6 +118,12 @@ fn send_window_closing(app: &mut App, window: Entity) {
         .write(WindowClosing { window });
 }
 
+fn send_app_exit(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<Messages<bevy::app::AppExit>>()
+        .write(bevy::app::AppExit::Success);
+}
+
 impl AppHandler {
     /// Initialize the window and transition to Running state.
     ///
@@ -233,7 +239,10 @@ impl AppHandler {
             // Send WindowClosing event
             send_window_closing(bevy_app, *bevy_window_entity);
 
-            // Run one final update to process close event
+            // Send AppExit event to trigger cleanup systems
+            send_app_exit(bevy_app);
+
+            // Run one final update to process close events and cleanup
             bevy_app.update();
 
             // Don't call finish/cleanup - let Bevy's AppExit handle it

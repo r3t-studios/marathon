@@ -112,6 +112,24 @@ impl SessionId {
         *hash.as_bytes()
     }
 
+    /// Derive deterministic pkarr keypair for DHT-based peer discovery
+    ///
+    /// All peers in the same session derive the same keypair from the session code.
+    /// This shared keypair is used to publish and discover peer EndpointIds in the DHT.
+    ///
+    /// # Security
+    /// The session code is the secret - anyone with the code can discover peers.
+    /// The domain separation prefix ensures no collision with other uses.
+    pub fn to_pkarr_keypair(&self) -> pkarr::Keypair {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"/app/v1/session-pkarr-key/");
+        hasher.update(self.uuid.as_bytes());
+        let hash = hasher.finalize();
+
+        let secret_bytes: [u8; 32] = *hash.as_bytes();
+        pkarr::Keypair::from_secret_key(&secret_bytes)
+    }
+
     /// Get raw UUID
     pub fn as_uuid(&self) -> &Uuid {
         &self.uuid

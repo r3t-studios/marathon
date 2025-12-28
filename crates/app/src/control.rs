@@ -17,11 +17,25 @@ use uuid::Uuid;
 #[derive(Resource)]
 pub struct ControlSocketPath(pub String);
 
+/// Resource holding the shutdown sender for control socket
+#[derive(Resource)]
+pub struct ControlSocketShutdown(Option<Sender<()>>);
+
 pub fn cleanup_control_socket(
     mut exit_events: MessageReader<bevy::app::AppExit>,
     socket_path: Option<Res<ControlSocketPath>>,
+    shutdown: Option<Res<ControlSocketShutdown>>,
 ) {
     for _ in exit_events.read() {
+        // Send shutdown signal to control socket thread
+        if let Some(ref shutdown_res) = shutdown {
+            if let Some(ref sender) = shutdown_res.0 {
+                info!("Sending shutdown signal to control socket");
+                let _ = sender.send(());
+            }
+        }
+
+        // Clean up socket file
         if let Some(ref path) = socket_path {
             info!("Cleaning up control socket at {}", path.0);
             let _ = std::fs::remove_file(&path.0);
@@ -87,6 +101,10 @@ pub fn start_control_socket_system(
     let app_queue = AppCommandQueue::new();
     commands.insert_resource(app_queue.clone());
 
+    // Create shutdown channel
+    let (shutdown_tx, shutdown_rx) = unbounded::<()>();
+    commands.insert_resource(ControlSocketShutdown(Some(shutdown_tx)));
+
     // Clone bridge and queue for the async task
     let bridge = bridge.clone();
     let queue = app_queue;
@@ -109,14 +127,25 @@ pub fn start_control_socket_system(
                 }
             };
 
-            // Accept connections in a loop
+            // Accept connections in a loop with shutdown support
             loop {
-                match listener.accept().await {
-                    Ok((mut stream, _addr)) => {
-                        let bridge = bridge.clone();
+                tokio::select! {
+                    // Check for shutdown signal
+                    _ = tokio::task::spawn_blocking({
+                        let rx = shutdown_rx.clone();
+                        move || rx.try_recv()
+                    }) => {
+                        info!("Control socket received shutdown signal");
+                        break;
+                    }
+                    // Accept new connection
+                    result = listener.accept() => {
+                        match result {
+                            Ok((mut stream, _addr)) => {
+                                let bridge = bridge.clone();
 
-                        let queue_clone = queue.clone();
-                        tokio::spawn(async move {
+                                let queue_clone = queue.clone();
+                                tokio::spawn(async move {
                             // Read command length
                             let mut len_buf = [0u8; 4];
                             if let Err(e) = stream.read_exact(&mut len_buf).await {
@@ -155,12 +184,15 @@ pub fn start_control_socket_system(
                                 error!("Failed to send response: {}", e);
                             }
                         });
-                    }
-                    Err(e) => {
-                        error!("Failed to accept connection: {}", e);
+                            }
+                            Err(e) => {
+                                error!("Failed to accept connection: {}", e);
+                            }
+                        }
                     }
                 }
             }
+            info!("Control socket server shut down cleanly");
         });
     });
 }
@@ -270,4 +302,7 @@ async fn send_response(
 
 // No-op stubs for iOS and release builds
 #[cfg(any(target_os = "ios", not(debug_assertions)))]
-pub fn start_control_socket_system() {}
+pub fn start_control_socket_system(mut commands: Commands) {
+    // Insert empty shutdown resource for consistency
+    commands.insert_resource(ControlSocketShutdown(None));
+}

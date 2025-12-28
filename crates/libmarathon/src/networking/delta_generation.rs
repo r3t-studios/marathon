@@ -66,10 +66,8 @@ impl NodeVectorClock {
 /// App::new().add_systems(Update, generate_delta_system);
 /// ```
 pub fn generate_delta_system(world: &mut World) {
-    // Check if bridge exists
-    if world.get_resource::<GossipBridge>().is_none() {
-        return;
-    }
+    // Works both online and offline - clock increments and operations are recorded
+    // Broadcast only happens when online
 
     let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
         let mut query =
@@ -93,7 +91,7 @@ pub fn generate_delta_system(world: &mut World) {
     for (entity, network_id, _owner_node_id) in changed_entities {
         // Phase 1: Check and update clocks, collect data
         let mut system_state: bevy::ecs::system::SystemState<(
-            Res<GossipBridge>,
+            Option<Res<GossipBridge>>,
             Res<crate::persistence::ComponentTypeRegistryResource>,
             ResMut<NodeVectorClock>,
             ResMut<LastSyncVersions>,
@@ -144,30 +142,40 @@ pub fn generate_delta_system(world: &mut World) {
             // Create EntityDelta
             let delta = EntityDelta::new(network_id, node_id, vector_clock.clone(), operations);
 
-            // Record in operation log for anti-entropy
+            // Record in operation log for anti-entropy (works offline!)
             if let Some(ref mut log) = operation_log {
                 log.record_operation(delta.clone());
             }
 
-            // Wrap in VersionedMessage
-            let message = VersionedMessage::new(SyncMessage::EntityDelta {
-                entity_id: delta.entity_id,
-                node_id: delta.node_id,
-                vector_clock: delta.vector_clock.clone(),
-                operations: delta.operations.clone(),
-            });
+            // Broadcast if online
+            if let Some(ref bridge) = bridge {
+                // Wrap in VersionedMessage
+                let message = VersionedMessage::new(SyncMessage::EntityDelta {
+                    entity_id: delta.entity_id,
+                    node_id: delta.node_id,
+                    vector_clock: delta.vector_clock.clone(),
+                    operations: delta.operations.clone(),
+                });
 
-            // Broadcast
-            if let Err(e) = bridge.send(message) {
-                error!("Failed to broadcast EntityDelta: {}", e);
+                // Broadcast to peers
+                if let Err(e) = bridge.send(message) {
+                    error!("Failed to broadcast EntityDelta: {}", e);
+                } else {
+                    debug!(
+                        "Broadcast EntityDelta for entity {:?} with {} operations",
+                        network_id,
+                        delta.operations.len()
+                    );
+                }
             } else {
                 debug!(
-                    "Broadcast EntityDelta for entity {:?} with {} operations",
-                    network_id,
-                    delta.operations.len()
+                    "Generated EntityDelta for entity {:?} offline (will sync when online)",
+                    network_id
                 );
-                last_versions.update(network_id, current_seq);
             }
+
+            // Update last sync version (both online and offline)
+            last_versions.update(network_id, current_seq);
 
             delta
         };

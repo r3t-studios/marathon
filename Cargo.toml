@@ -9,9 +9,10 @@ edition = "2024"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+tokio-util = "0.7"
 
 # Iroh - P2P networking and gossip
-iroh = { version = "0.95.0",features = ["discovery-local-network"] }
+iroh = { version = "0.95.0", features = ["discovery-pkarr-dht"] }
 iroh-gossip = "0.95.0"
 
 # Database
@@ -36,6 +37,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Random
 rand = "0.8"
+
+# Encoding
+hex = "0.4"
 
 # ML/AI
 candle-core = "0.8"

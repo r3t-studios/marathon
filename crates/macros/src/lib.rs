@@ -5,6 +5,7 @@ mod as_bind_group;
 mod extract_component;
 mod extract_resource;
 mod specializer;
+mod synced;
 
 use bevy_macro_utils::{derive_label, BevyManifest};
 use proc_macro::TokenStream;
@@ -149,4 +150,27 @@ pub fn derive_draw_function_label(input: TokenStream) -> TokenStream {
         .segments
         .push(format_ident!("DrawFunctionLabel").into());
     derive_label(input, "DrawFunctionLabel", &trait_path)
+}
+
+/// Attribute macro for automatic component synchronization.
+///
+/// Automatically generates Component, rkyv serialization derives, and registers 
+/// the component in the ComponentTypeRegistry for network synchronization.
+///
+/// # Example
+///
+/// ```no_compile
+/// use macros::synced;
+///
+/// #[synced]
+/// pub struct CubeMarker {
+///     pub color_r: f32,
+///     pub color_g: f32,
+///     pub color_b: f32,
+///     pub size: f32,
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn synced(attr: TokenStream, item: TokenStream) -> TokenStream {
+    synced::synced_attribute(attr, item)
 }

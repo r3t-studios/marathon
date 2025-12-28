@@ -5,8 +5,28 @@ use bevy::prelude::*;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
+pub enum NetworkingInitStatus {
+    CreatingEndpoint,
+    EndpointReady,
+    DiscoveringPeers {
+        session_code: String,
+        attempt: u8,
+    },
+    PeersFound {
+        count: usize,
+    },
+    NoPeersFound,
+    PublishingToDHT,
+    InitializingGossip,
+}
+
+#[derive(Debug, Clone)]
 pub enum EngineEvent {
     // Networking status
+    NetworkingInitializing {
+        session_id: SessionId,
+        status: NetworkingInitStatus,
+    },
     NetworkingStarted {
         session_id: SessionId,
         node_id: NodeId,

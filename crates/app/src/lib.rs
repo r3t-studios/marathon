@@ -9,6 +9,7 @@ pub mod debug_ui;
 pub mod engine_bridge;
 pub mod input;
 pub mod rendering;
+pub mod session_ui;
 pub mod setup;
 
 pub use cube::CubeMarker;

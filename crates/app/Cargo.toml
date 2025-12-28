@@ -11,6 +11,9 @@ headless = []
 
 [dependencies]
 libmarathon = { path = "../libmarathon" }
+macros = { path = "../macros" }
+inventory = { workspace = true }
+rkyv = { workspace = true }
 bevy = { version = "0.17", default-features = false, features = [
     # bevy_render, bevy_core_pipeline, bevy_pbr are now vendored in libmarathon
     "bevy_ui",
@@ -26,12 +29,12 @@ anyhow = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 rand = "0.8"
 iroh = { version = "0.95", features = ["discovery-local-network"] }
 iroh-gossip = "0.95"
 futures-lite = "2.0"
-rkyv = { workspace = true }
 bytes = "1.0"
 crossbeam-channel = "0.5.15"
 clap = { version = "4.0", features = ["derive"] }
