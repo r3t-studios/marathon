@@ -220,10 +220,6 @@ pub fn handle_local_deletions_system(
     mut operation_log: Option<ResMut<crate::networking::OperationLog>>,
     bridge: Option<Res<GossipBridge>>,
 ) {
-    let Some(bridge) = bridge else {
-        return;
-    };
-
     for (entity, networked) in query.iter() {
         // Increment clock for deletion
         node_clock.tick();
@@ -250,25 +246,32 @@ pub fn handle_local_deletions_system(
             vec![delete_op],
         );
 
-        // Record in operation log
+        // Record in operation log (for when we go online later)
         if let Some(ref mut log) = operation_log {
             log.record_operation(delta.clone());
         }
 
-        // Broadcast deletion
-        let message =
-            crate::networking::VersionedMessage::new(crate::networking::SyncMessage::EntityDelta {
-                entity_id: delta.entity_id,
-                node_id: delta.node_id,
-                vector_clock: delta.vector_clock.clone(),
-                operations: delta.operations.clone(),
-            });
+        // Broadcast deletion if online
+        if let Some(ref bridge) = bridge {
+            let message =
+                crate::networking::VersionedMessage::new(crate::networking::SyncMessage::EntityDelta {
+                    entity_id: delta.entity_id,
+                    node_id: delta.node_id,
+                    vector_clock: delta.vector_clock.clone(),
+                    operations: delta.operations.clone(),
+                });
 
-        if let Err(e) = bridge.send(message) {
-            error!("Failed to broadcast Delete operation: {}", e);
+            if let Err(e) = bridge.send(message) {
+                error!("Failed to broadcast Delete operation: {}", e);
+            } else {
+                info!(
+                    "Broadcast Delete operation for entity {:?}",
+                    networked.network_id
+                );
+            }
         } else {
             info!(
-                "Broadcast Delete operation for entity {:?}",
+                "Deleted entity {:?} locally (offline mode - will sync when online)",
                 networked.network_id
             );
         }

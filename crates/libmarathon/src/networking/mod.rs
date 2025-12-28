@@ -120,11 +120,13 @@ pub fn spawn_networked_entity(
 ) -> bevy::prelude::Entity {
     use bevy::prelude::*;
 
-    // Spawn with both NetworkedEntity and Persisted components
+    // Spawn with NetworkedEntity, Persisted, and Synced components
+    // The Synced marker triggers auto-insert of NetworkedTransform if entity has Transform
     let entity = world
         .spawn((
             NetworkedEntity::with_id(entity_id, node_id),
             crate::persistence::Persisted::with_id(entity_id),
+            Synced,
         ))
         .id();
 

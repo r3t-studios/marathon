@@ -97,33 +97,29 @@ pub trait SyncComponent: Component + Reflect + Sized {
     fn merge(&mut self, remote: Self, clock_cmp: ClockComparison) -> ComponentMergeDecision;
 }
 
-/// Marker component for entities that should be synced
+/// Marker component indicating that an entity should be synchronized across the network.
 ///
-/// Add this to any entity with synced components to enable automatic
-/// change detection and synchronization.
+/// When this component is added to an entity, the `auto_insert_sync_components` system
+/// will automatically add the required infrastructure components:
+/// - `NetworkedEntity` - for network synchronization
+/// - `Persisted` - for persistence
+/// - `NetworkedTransform` - if the entity has a `Transform` component
 ///
 /// # Example
-/// ```
-/// use bevy::prelude::*;
-/// use libmarathon::networking::Synced;
-/// use sync_macros::Synced as SyncedDerive;
 ///
-/// #[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize, SyncedDerive)]
-/// #[sync(version = 1, strategy = "LastWriteWins")]
-/// struct Health(f32);
-///
-/// #[derive(Component, Reflect, Clone, serde::Serialize, serde::Deserialize, SyncedDerive)]
-/// #[sync(version = 1, strategy = "LastWriteWins")]
-/// struct Position {
-///     x: f32,
-///     y: f32,
+/// ```no_compile
+/// // Define a synced component with the #[synced] attribute
+/// #[macros::synced]
+/// pub struct CubeMarker {
+///     pub color_r: f32,
+///     pub size: f32,
 /// }
 ///
-/// let mut world = World::new();
-/// world.spawn((
-///     Health(100.0),
-///     Position { x: 0.0, y: 0.0 },
-///     Synced, // Marker enables sync
+/// // Spawn with just the Synced marker - infrastructure auto-added
+/// commands.spawn((
+///     CubeMarker::with_color(Color::RED, 1.0),
+///     Transform::from_translation(pos),
+///     Synced,  // Auto-adds NetworkedEntity, Persisted, NetworkedTransform
 /// ));
 /// ```
 #[derive(Component, Reflect, Default, Clone, Copy)]

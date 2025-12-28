@@ -44,13 +44,19 @@ impl EngineCore {
 
         // Process commands as they arrive
         while let Some(cmd) = self.handle.command_rx.recv().await {
-            self.handle_command(cmd).await;
+            let should_continue = self.handle_command(cmd).await;
+            if !should_continue {
+                tracing::info!("EngineCore received shutdown command");
+                break;
+            }
         }
 
-        tracing::info!("EngineCore shutting down (command channel closed)");
+        tracing::info!("EngineCore shutting down");
     }
 
-    async fn handle_command(&mut self, cmd: EngineCommand) {
+    /// Handle a command from Bevy
+    /// Returns true to continue running, false to shutdown
+    async fn handle_command(&mut self, cmd: EngineCommand) -> bool {
         match cmd {
             EngineCommand::StartNetworking { session_id } => {
                 self.start_networking(session_id).await;
@@ -74,11 +80,16 @@ impl EngineCore {
             EngineCommand::TickClock => {
                 self.tick_clock();
             }
+            EngineCommand::Shutdown => {
+                tracing::info!("Shutdown command received");
+                return false;
+            }
             // TODO: Handle CRDT and lock commands in Phase 2
             _ => {
                 tracing::debug!("Unhandled command: {:?}", cmd);
             }
         }
+        true
     }
 
     fn tick_clock(&mut self) {
@@ -98,6 +109,25 @@ impl EngineCore {
 
         tracing::info!("Starting networking initialization for session {}", session_id.to_code());
 
+        // Test mode: Skip actual networking and send event immediately
+        #[cfg(feature = "fast_tests")]
+        {
+            let bridge = crate::networking::GossipBridge::new(self.node_id);
+            let _ = self.handle.event_tx.send(EngineEvent::NetworkingStarted {
+                session_id: session_id.clone(),
+                node_id: self.node_id,
+                bridge,
+            });
+            tracing::info!("Networking started (test mode) for session {}", session_id.to_code());
+
+            // Create a dummy task that just waits
+            let task = tokio::spawn(async {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            });
+            self.networking_task = Some(task);
+            return;
+        }
+
         // Create cancellation token for graceful shutdown
         let cancel_token = CancellationToken::new();
         let cancel_token_clone = cancel_token.clone();
@@ -105,10 +135,10 @@ impl EngineCore {
         // Spawn NetworkingManager initialization in background to avoid blocking
         // DHT peer discovery can take 15+ seconds with retries
         let event_tx = self.handle.event_tx.clone();
-        
+
         // Create channel for progress updates
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
-        
+
         // Spawn task to forward progress updates to Bevy
         let event_tx_clone = event_tx.clone();
         let session_id_clone = session_id.clone();
@@ -120,7 +150,7 @@ impl EngineCore {
                 });
             }
         });
-        
+
         let task = tokio::spawn(async move {
             match NetworkingManager::new(session_id.clone(), Some(progress_tx), cancel_token_clone.clone()).await {
                 Ok((net_manager, bridge)) => {

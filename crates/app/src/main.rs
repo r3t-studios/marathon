@@ -28,6 +28,22 @@ struct Args {
     /// Path to the control socket (Unix domain socket)
     #[arg(long, default_value = "/tmp/marathon-control.sock")]
     control_socket: String,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long, default_value = "info")]
+    log_level: String,
+
+    /// Path to log file (relative to current directory)
+    #[arg(long, default_value = "marathon.log")]
+    log_file: String,
+
+    /// Disable log file output (console only)
+    #[arg(long, default_value = "false")]
+    no_log_file: bool,
+
+    /// Disable console output (file only)
+    #[arg(long, default_value = "false")]
+    no_console: bool,
 }
 
 mod camera;
@@ -36,7 +52,6 @@ mod cube;
 mod debug_ui;
 mod engine_bridge;
 mod rendering;
-mod selection;
 mod session;
 mod session_ui;
 mod setup;
@@ -49,7 +64,6 @@ mod input;
 use camera::*;
 use cube::*;
 use rendering::*;
-use selection::*;
 use session::*;
 use session_ui::*;
 
@@ -84,13 +98,86 @@ fn main() {
 
     #[cfg(not(target_os = "ios"))]
     {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("wgpu=error".parse().unwrap())
-                    .add_directive("naga=warn".parse().unwrap()),
-            )
-            .init();
+        use tracing_subscriber::prelude::*;
+
+        // Parse log level from args
+        let default_level = args.log_level.parse::<tracing::Level>()
+            .unwrap_or_else(|_| {
+                eprintln!("Invalid log level '{}', using 'info'", args.log_level);
+                tracing::Level::INFO
+            });
+
+        // Build filter with default level and quieter dependencies
+        let filter = tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive(default_level.into())
+            .add_directive("wgpu=error".parse().unwrap())
+            .add_directive("naga=warn".parse().unwrap());
+
+        // Build subscriber based on combination of flags
+        match (args.no_console, args.no_log_file) {
+            (false, false) => {
+                // Both console and file
+                let console_layer = tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stdout);
+
+                let log_path = std::path::PathBuf::from(&args.log_file);
+                let log_dir = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+                let log_filename = log_path.file_name().unwrap().to_str().unwrap();
+                let file_appender = tracing_appender::rolling::never(log_dir, log_filename);
+                let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+                std::mem::forget(_guard);
+                let file_layer = tracing_subscriber::fmt::layer()
+                    .with_writer(non_blocking)
+                    .with_ansi(false);
+
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(console_layer)
+                    .with(file_layer)
+                    .init();
+
+                eprintln!(">>> Logs written to: {} and console", args.log_file);
+            }
+            (false, true) => {
+                // Console only
+                let console_layer = tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stdout);
+
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(console_layer)
+                    .init();
+
+                eprintln!(">>> Console logging only (no log file)");
+            }
+            (true, false) => {
+                // File only
+                let log_path = std::path::PathBuf::from(&args.log_file);
+                let log_dir = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+                let log_filename = log_path.file_name().unwrap().to_str().unwrap();
+                let file_appender = tracing_appender::rolling::never(log_dir, log_filename);
+                let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+                std::mem::forget(_guard);
+                let file_layer = tracing_subscriber::fmt::layer()
+                    .with_writer(non_blocking)
+                    .with_ansi(false);
+
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(file_layer)
+                    .init();
+
+                eprintln!(">>> Logs written to: {} (console disabled)", args.log_file);
+            }
+            (true, true) => {
+                // Neither - warn but initialize anyway
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .init();
+
+                eprintln!(">>> Warning: Both console and file logging disabled!");
+            }
+        }
     }
 
     eprintln!(">>> Tracing subscriber initialized");
@@ -213,7 +300,7 @@ fn main() {
         app.add_plugins(CameraPlugin);
         app.add_plugins(RenderingPlugin);
         app.add_plugins(input::InputHandlerPlugin);
-        app.add_plugins(SelectionPlugin);
+        // SelectionPlugin removed - InputHandlerPlugin already handles selection via GameActions
         app.add_plugins(DebugUiPlugin);
         app.add_plugins(SessionUiPlugin);
     }

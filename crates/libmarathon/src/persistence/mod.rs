@@ -39,6 +39,7 @@ mod metrics;
 mod migrations;
 mod plugin;
 pub mod reflection;
+mod registered_components;
 mod systems;
 mod type_registry;
 mod types;

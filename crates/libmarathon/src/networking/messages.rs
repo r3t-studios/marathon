@@ -26,6 +26,13 @@ pub struct VersionedMessage {
 
     /// The actual sync message
     pub message: SyncMessage,
+
+    /// Timestamp (nanos since UNIX epoch) to make messages unique
+    ///
+    /// This prevents iroh-gossip from deduplicating identical messages sent at different times.
+    /// For example, releasing and re-acquiring a lock sends identical LockRequest messages,
+    /// but they need to be treated as separate events.
+    pub timestamp_nanos: u64,
 }
 
 impl VersionedMessage {
@@ -34,9 +41,17 @@ impl VersionedMessage {
 
     /// Create a new versioned message with the current protocol version
     pub fn new(message: SyncMessage) -> Self {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let timestamp_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+
         Self {
             version: Self::CURRENT_VERSION,
             message,
+            timestamp_nanos,
         }
     }
 }

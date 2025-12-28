@@ -156,49 +156,36 @@ impl Default for NetworkedEntity {
 #[reflect(Component)]
 pub struct NetworkedTransform;
 
-/// Wrapper for a selection component using OR-Set semantics
+/// Local selection tracking resource
 ///
-/// Tracks a set of selected entity network IDs. Uses OR-Set (Observed-Remove)
-/// CRDT to handle concurrent add/remove operations correctly.
+/// This global resource tracks which entities are currently selected by THIS node.
+/// It's used in conjunction with the entity lock system to coordinate concurrent editing.
 ///
-/// # OR-Set Semantics
-///
-/// - Concurrent adds and removes: add wins
-/// - Each add has a unique operation ID
-/// - Removes reference specific add operation IDs
+/// **Selections are local-only UI state** and are NOT synchronized across the network.
+/// Each node maintains its own independent selection.
 ///
 /// # Example
 ///
 /// ```
 /// use bevy::prelude::*;
-/// use libmarathon::networking::{
-///     NetworkedEntity,
-///     NetworkedSelection,
-/// };
+/// use libmarathon::networking::LocalSelection;
 /// use uuid::Uuid;
 ///
-/// fn create_selection(mut commands: Commands) {
-///     let node_id = Uuid::new_v4();
-///     let mut selection = NetworkedSelection::new();
+/// fn handle_click(mut selection: ResMut<LocalSelection>) {
+///     // Clear previous selection
+///     selection.clear();
 ///
-///     // Add some entities to the selection
-///     selection.selected_ids.insert(Uuid::new_v4());
-///     selection.selected_ids.insert(Uuid::new_v4());
-///
-///     commands.spawn((NetworkedEntity::new(node_id), selection));
+///     // Select a new entity
+///     selection.insert(Uuid::new_v4());
 /// }
 /// ```
-#[derive(Component, Reflect, Debug, Clone, Default)]
-#[reflect(Component)]
-pub struct NetworkedSelection {
+#[derive(Resource, Debug, Clone, Default)]
+pub struct LocalSelection {
     /// Set of selected entity network IDs
-    ///
-    /// This will be synchronized using OR-Set CRDT semantics in later phases.
-    /// For now, it's a simple HashSet.
-    pub selected_ids: std::collections::HashSet<uuid::Uuid>,
+    selected_ids: std::collections::HashSet<uuid::Uuid>,
 }
 
-impl NetworkedSelection {
+impl LocalSelection {
     /// Create a new empty selection
     pub fn new() -> Self {
         Self {
@@ -207,13 +194,13 @@ impl NetworkedSelection {
     }
 
     /// Add an entity to the selection
-    pub fn add(&mut self, entity_id: uuid::Uuid) {
-        self.selected_ids.insert(entity_id);
+    pub fn insert(&mut self, entity_id: uuid::Uuid) -> bool {
+        self.selected_ids.insert(entity_id)
     }
 
     /// Remove an entity from the selection
-    pub fn remove(&mut self, entity_id: uuid::Uuid) {
-        self.selected_ids.remove(&entity_id);
+    pub fn remove(&mut self, entity_id: uuid::Uuid) -> bool {
+        self.selected_ids.remove(&entity_id)
     }
 
     /// Check if an entity is selected
@@ -234,6 +221,11 @@ impl NetworkedSelection {
     /// Check if the selection is empty
     pub fn is_empty(&self) -> bool {
         self.selected_ids.is_empty()
+    }
+
+    /// Get an iterator over selected entity IDs
+    pub fn iter(&self) -> impl Iterator<Item = &uuid::Uuid> {
+        self.selected_ids.iter()
     }
 }
 
@@ -361,18 +353,18 @@ mod tests {
     }
 
     #[test]
-    fn test_networked_selection() {
-        let mut selection = NetworkedSelection::new();
+    fn test_local_selection() {
+        let mut selection = LocalSelection::new();
         let id1 = uuid::Uuid::new_v4();
         let id2 = uuid::Uuid::new_v4();
 
         assert!(selection.is_empty());
 
-        selection.add(id1);
+        selection.insert(id1);
         assert_eq!(selection.len(), 1);
         assert!(selection.contains(id1));
 
-        selection.add(id2);
+        selection.insert(id2);
         assert_eq!(selection.len(), 2);
         assert!(selection.contains(id2));
 

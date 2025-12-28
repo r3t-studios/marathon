@@ -51,6 +51,7 @@ static_assertions = "1.1"
 
 blake3 = "1.5"
 blocking = "1.6"
+hex.workspace = true
 bytemuck = { version = "1.14", features = ["derive"] }
 bytes = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
@@ -64,6 +65,7 @@ glam = "0.29"
 inventory.workspace = true
 iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
+pkarr = "5.0"
 itertools = "0.14"
 rand = "0.8"
 raw-window-handle = "0.6"
@@ -73,6 +75,7 @@ serde_json.workspace = true
 sha2 = "0.10"
 thiserror = "2.0"
 tokio.workspace = true
+tokio-util.workspace = true
 toml.workspace = true
 tracing.workspace = true
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -90,6 +93,10 @@ futures-lite = "2.0"
 tempfile = "3"
 proptest = "1.4"
 criterion = "0.5"
+
+[features]
+# Feature to skip expensive networking operations in tests
+fast_tests = []
 
 [[bench]]
 name = "write_buffer"

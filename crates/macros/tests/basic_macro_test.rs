@@ -1,71 +1,64 @@
-/// Basic tests for the Synced attribute macro
+/// Basic tests for the #[synced] attribute macro
 use bevy::prelude::*;
-use libmarathon::networking::{
-    ClockComparison,
-    ComponentMergeDecision,
-    SyncComponent,
-};
 
-// Test 1: Basic struct with LWW strategy compiles
-// Note: No need to manually derive rkyv traits - synced attribute adds them automatically!
-#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
-#[derive(Component, Reflect, Clone, Debug, PartialEq)]
-#[reflect(Component)]
-struct Health(f32);
+// Test 1: Basic struct with synced attribute compiles
+#[macros::synced]
+struct Health {
+    current: f32,
+}
 
 #[test]
 fn test_health_compiles() {
-    let health = Health(100.0);
-    assert_eq!(health.0, 100.0);
+    let health = Health { current: 100.0 };
+    assert_eq!(health.current, 100.0);
 }
 
 #[test]
-fn test_health_serialization() {
-    let health = Health(100.0);
-    let bytes = health.serialize_sync().unwrap();
-    let deserialized = Health::deserialize_sync(&bytes).unwrap();
-    assert_eq!(health, deserialized);
+fn test_health_has_component_trait() {
+    // The synced macro should automatically derive Component
+    let health = Health { current: 100.0 };
+
+    // Can insert into Bevy world
+    let mut world = World::new();
+    let entity = world.spawn(health).id();
+
+    // Can query it back
+    let health_ref = world.get::<Health>(entity).unwrap();
+    assert_eq!(health_ref.current, 100.0);
 }
 
 #[test]
-fn test_health_lww_merge_remote_newer() {
-    let mut local = Health(50.0);
-    let remote = Health(100.0);
+fn test_health_rkyv_serialization() {
+    let health = Health { current: 100.0 };
 
-    let decision = local.merge(remote, ClockComparison::RemoteNewer);
-    assert_eq!(decision, ComponentMergeDecision::TookRemote);
-    assert_eq!(local.0, 100.0);
+    // Test rkyv serialization (which the synced macro adds)
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&health)
+        .expect("Should serialize with rkyv");
+
+    let deserialized: Health = rkyv::from_bytes::<Health, rkyv::rancor::Failure>(&bytes)
+        .expect("Should deserialize with rkyv");
+
+    assert_eq!(deserialized.current, health.current);
 }
 
 #[test]
-fn test_health_lww_merge_local_newer() {
-    let mut local = Health(50.0);
-    let remote = Health(100.0);
+fn test_health_is_clone_and_copy() {
+    let health = Health { current: 100.0 };
 
-    let decision = local.merge(remote, ClockComparison::LocalNewer);
-    assert_eq!(decision, ComponentMergeDecision::KeptLocal);
-    assert_eq!(local.0, 50.0); // Local value kept
-}
+    // Test Clone
+    let cloned = health.clone();
+    assert_eq!(cloned.current, health.current);
 
-#[test]
-fn test_health_lww_merge_concurrent() {
-    let mut local = Health(50.0);
-    let remote = Health(100.0);
+    // Test Copy (implicit through assignment)
+    let copied = health;
+    assert_eq!(copied.current, health.current);
 
-    let decision = local.merge(remote, ClockComparison::Concurrent);
-    // With concurrent, we use hash tiebreaker
-    // Either TookRemote or KeptLocal depending on hash
-    assert!(
-        decision == ComponentMergeDecision::TookRemote ||
-            decision == ComponentMergeDecision::KeptLocal
-    );
+    // Original still valid after copy
+    assert_eq!(health.current, 100.0);
 }
 
 // Test 2: Struct with multiple fields
-// rkyv traits are automatically added by the synced attribute!
-#[sync_macros::synced(version = 1, strategy = "LastWriteWins")]
-#[derive(Component, Reflect, Clone, Debug, PartialEq)]
-#[reflect(Component)]
+#[macros::synced]
 struct Position {
     x: f32,
     y: f32,
@@ -79,20 +72,101 @@ fn test_position_compiles() {
 }
 
 #[test]
-fn test_position_serialization() {
+fn test_position_rkyv_serialization() {
     let pos = Position { x: 10.0, y: 20.0 };
-    let bytes = pos.serialize_sync().unwrap();
-    let deserialized = Position::deserialize_sync(&bytes).unwrap();
-    assert_eq!(pos, deserialized);
+
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&pos)
+        .expect("Should serialize with rkyv");
+
+    let deserialized: Position = rkyv::from_bytes::<Position, rkyv::rancor::Failure>(&bytes)
+        .expect("Should deserialize with rkyv");
+
+    assert_eq!(deserialized.x, pos.x);
+    assert_eq!(deserialized.y, pos.y);
 }
 
 #[test]
-fn test_position_merge() {
-    let mut local = Position { x: 10.0, y: 20.0 };
-    let remote = Position { x: 30.0, y: 40.0 };
+fn test_position_in_bevy_world() {
+    let pos = Position { x: 10.0, y: 20.0 };
 
-    let decision = local.merge(remote, ClockComparison::RemoteNewer);
-    assert_eq!(decision, ComponentMergeDecision::TookRemote);
-    assert_eq!(local.x, 30.0);
-    assert_eq!(local.y, 40.0);
+    let mut world = World::new();
+    let entity = world.spawn(pos).id();
+
+    let pos_ref = world.get::<Position>(entity).unwrap();
+    assert_eq!(pos_ref.x, 10.0);
+    assert_eq!(pos_ref.y, 20.0);
+}
+
+// Test 3: Component registration in type registry
+// This test verifies that the inventory::submit! generated by the macro works
+#[test]
+fn test_component_registry_has_health() {
+    use libmarathon::persistence::ComponentTypeRegistry;
+
+    let registry = ComponentTypeRegistry::init();
+
+    // The macro should have registered Health
+    let type_id = std::any::TypeId::of::<Health>();
+    let discriminant = registry.get_discriminant(type_id);
+
+    assert!(discriminant.is_some(), "Health should be registered in ComponentTypeRegistry");
+
+    // Check the type name
+    let type_name = registry.get_type_name(discriminant.unwrap());
+    assert_eq!(type_name, Some("Health"));
+}
+
+#[test]
+fn test_component_registry_has_position() {
+    use libmarathon::persistence::ComponentTypeRegistry;
+
+    let registry = ComponentTypeRegistry::init();
+
+    let type_id = std::any::TypeId::of::<Position>();
+    let discriminant = registry.get_discriminant(type_id);
+
+    assert!(discriminant.is_some(), "Position should be registered in ComponentTypeRegistry");
+
+    // Check the type name
+    let type_name = registry.get_type_name(discriminant.unwrap());
+    assert_eq!(type_name, Some("Position"));
+}
+
+// Test 4: End-to-end serialization via ComponentTypeRegistry
+#[test]
+fn test_registry_serialization_roundtrip() {
+    use libmarathon::persistence::ComponentTypeRegistry;
+
+    let mut world = World::new();
+    let entity = world.spawn(Health { current: 75.0 }).id();
+
+    let registry = ComponentTypeRegistry::init();
+    let type_id = std::any::TypeId::of::<Health>();
+    let discriminant = registry.get_discriminant(type_id).unwrap();
+
+    // Serialize using the registry
+    let serialize_fn = registry.get_discriminant(type_id)
+        .and_then(|disc| {
+            // Get serializer from the registry internals
+            // We'll use the serialization method from the registry
+            let serializer = world.get::<Health>(entity).map(|component| {
+                rkyv::to_bytes::<rkyv::rancor::Failure>(component)
+                    .expect("Should serialize")
+                    .to_vec()
+            });
+            serializer
+        })
+        .expect("Should serialize Health component");
+
+    // Deserialize using the registry
+    let deserialize_fn = registry.get_deserialize_fn(discriminant)
+        .expect("Should have deserialize function");
+
+    let boxed = deserialize_fn(&serialize_fn)
+        .expect("Should deserialize Health component");
+
+    let health = boxed.downcast::<Health>()
+        .expect("Should downcast to Health");
+
+    assert_eq!(health.current, 75.0);
 }

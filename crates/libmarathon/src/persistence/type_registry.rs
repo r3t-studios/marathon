@@ -261,6 +261,51 @@ impl Default for ComponentTypeRegistryResource {
     }
 }
 
+
+/// Macro to register a component type with the inventory system
+///
+/// This generates the necessary serialize/deserialize functions and submits
+/// the ComponentMeta to inventory for runtime registration.
+///
+/// # Example
+///
+/// ```ignore
+/// use bevy::prelude::*;
+/// register_component!(Transform, "bevy::transform::components::Transform");
+/// ```
+#[macro_export]
+macro_rules! register_component {
+    ($component_type:ty, $type_path:expr) => {
+        // Submit component metadata to inventory
+        inventory::submit! {
+            $crate::persistence::ComponentMeta {
+                type_name: stringify!($component_type),
+                type_path: $type_path,
+                type_id: std::any::TypeId::of::<$component_type>(),
+                
+                deserialize_fn: |bytes: &[u8]| -> anyhow::Result<Box<dyn std::any::Any>> {
+                    let component: $component_type = rkyv::from_bytes(bytes)?;
+                    Ok(Box::new(component))
+                },
+                
+                serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<bytes::Bytes> {
+                    world.get::<$component_type>(entity).map(|component| {
+                        let serialized = rkyv::to_bytes::<rkyv::rancor::Failure>(component)
+                            .expect("Failed to serialize component");
+                        bytes::Bytes::from(serialized.to_vec())
+                    })
+                },
+                
+                insert_fn: |entity_mut: &mut bevy::ecs::world::EntityWorldMut, boxed: Box<dyn std::any::Any>| {
+                    if let Ok(component) = boxed.downcast::<$component_type>() {
+                        entity_mut.insert(*component);
+                    }
+                },
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

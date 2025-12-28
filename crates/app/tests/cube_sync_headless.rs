@@ -107,9 +107,6 @@ mod test_utils {
             },
         ));
 
-        // Register cube component types for reflection
-        app.register_type::<CubeMarker>();
-
         app
     }
 
@@ -425,7 +422,7 @@ async fn test_cube_spawn_and_sync() -> Result<()> {
     let spawned_entity = app1
         .world_mut()
         .spawn((
-            CubeMarker,
+            CubeMarker::with_color(Color::srgb(0.8, 0.3, 0.6), 1.0),
             Transform::from_xyz(1.0, 2.0, 3.0),
             GlobalTransform::default(),
             NetworkedEntity::with_id(entity_id, node1_id),

@@ -449,7 +449,6 @@ fn build_full_state_from_data(
             // Skip networked wrapper components
             if type_path.ends_with("::NetworkedEntity") ||
                 type_path.ends_with("::NetworkedTransform") ||
-                type_path.ends_with("::NetworkedSelection") ||
                 type_path.ends_with("::NetworkedDrawingPath")
             {
                 continue;

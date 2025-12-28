@@ -121,8 +121,8 @@ pub fn should_apply_set(local_op: &ComponentOp, remote_op: &ComponentOp) -> bool
 
     // Use the sequence number from the clocks as a simple tiebreaker
     // In a real implementation, we'd use the full node IDs
-    let local_seq: u64 = local_clock.clocks.values().sum();
-    let remote_seq: u64 = remote_clock.clocks.values().sum();
+    let local_seq: u64 = local_clock.timestamps.values().sum();
+    let remote_seq: u64 = remote_clock.timestamps.values().sum();
 
     // Compare clocks
     match compare_operations_lww(

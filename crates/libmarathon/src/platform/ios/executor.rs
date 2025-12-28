@@ -238,7 +238,10 @@ impl AppHandler {
             // Send WindowClosing event
             send_window_closing(bevy_app, *bevy_window_entity);
 
-            // Run one final update to process close event
+            // Send AppExit event to trigger cleanup systems
+            bevy_app.world_mut().send_message(AppExit::Success);
+
+            // Run one final update to process close events and cleanup
             bevy_app.update();
         }
 
