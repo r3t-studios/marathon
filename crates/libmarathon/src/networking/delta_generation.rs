@@ -70,8 +70,13 @@ pub fn generate_delta_system(world: &mut World) {
     // Broadcast only happens when online
 
     let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
-        let mut query =
-            world.query_filtered::<(Entity, &NetworkedEntity), Or<(Added<NetworkedEntity>, Changed<NetworkedEntity>)>>();
+        let mut query = world.query_filtered::<
+            (Entity, &NetworkedEntity),
+            (
+                Or<(Added<NetworkedEntity>, Changed<NetworkedEntity>)>,
+                Without<crate::networking::SkipNextDeltaGeneration>,
+            ),
+        >();
         query
             .iter(world)
             .map(|(entity, networked)| (entity, networked.network_id, networked.owner_node_id))
@@ -98,22 +103,25 @@ pub fn generate_delta_system(world: &mut World) {
             Option<ResMut<crate::networking::OperationLog>>,
         )> = bevy::ecs::system::SystemState::new(world);
 
-        let (node_id, vector_clock, current_seq) = {
+        let (node_id, vector_clock, new_seq) = {
             let (_, _, mut node_clock, last_versions, _) = system_state.get_mut(world);
 
-            // Check if we should sync this entity
+            // Check if we should sync this entity with the NEXT sequence (after tick)
+            // This prevents duplicate sends when system runs multiple times per frame
             let current_seq = node_clock.sequence();
-            if !last_versions.should_sync(network_id, current_seq) {
+            let next_seq = current_seq + 1; // What the sequence will be after tick
+            if !last_versions.should_sync(network_id, next_seq) {
                 drop(last_versions);
                 drop(node_clock);
                 system_state.apply(world);
                 continue;
             }
 
-            // Increment our vector clock
-            node_clock.tick();
+            // Increment our vector clock and get the NEW sequence
+            let new_seq = node_clock.tick();
+            debug_assert_eq!(new_seq, next_seq, "tick() should return next_seq");
 
-            (node_clock.node_id, node_clock.clock.clone(), current_seq)
+            (node_clock.node_id, node_clock.clock.clone(), new_seq)
         };
 
         // Phase 2: Build operations (needs world access without holding other borrows)
@@ -174,8 +182,10 @@ pub fn generate_delta_system(world: &mut World) {
                 );
             }
 
-            // Update last sync version (both online and offline)
-            last_versions.update(network_id, current_seq);
+            // Update last sync version with NEW sequence (after tick) to prevent duplicates
+            // CRITICAL: Must use new_seq (after tick), not current_seq (before tick)
+            // This prevents sending duplicate deltas if system runs multiple times per frame
+            last_versions.update(network_id, new_seq);
 
             delta
         };
@@ -217,6 +227,46 @@ pub fn generate_delta_system(world: &mut World) {
         }
 
         system_state.apply(world);
+    }
+}
+
+/// Remove SkipNextDeltaGeneration markers after delta generation has run
+///
+/// This system must run AFTER `generate_delta_system` to allow entities to be
+/// synced again on the next actual local change. The marker prevents feedback
+/// loops by skipping entities that just received remote updates, but we need
+/// to remove it so future local changes get broadcast.
+///
+/// Add this to your app after generate_delta_system:
+///
+/// ```no_run
+/// use bevy::prelude::*;
+/// use libmarathon::networking::{generate_delta_system, cleanup_skip_delta_markers_system};
+///
+/// App::new().add_systems(PostUpdate, (
+///     generate_delta_system,
+///     cleanup_skip_delta_markers_system,
+/// ).chain());
+/// ```
+pub fn cleanup_skip_delta_markers_system(world: &mut World) {
+    // Use immediate removal (not deferred commands) to ensure markers are removed
+    // synchronously after generate_delta_system runs, not at the start of next frame
+    let entities_to_clean: Vec<Entity> = {
+        let mut query = world.query_filtered::<Entity, With<crate::networking::SkipNextDeltaGeneration>>();
+        query.iter(world).collect()
+    };
+
+    for entity in &entities_to_clean {
+        if let Ok(mut entity_mut) = world.get_entity_mut(*entity) {
+            entity_mut.remove::<crate::networking::SkipNextDeltaGeneration>();
+        }
+    }
+
+    if !entities_to_clean.is_empty() {
+        debug!(
+            "cleanup_skip_delta_markers_system: Removed markers from {} entities",
+            entities_to_clean.len()
+        );
     }
 }
 

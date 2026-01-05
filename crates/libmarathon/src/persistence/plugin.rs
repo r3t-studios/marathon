@@ -92,10 +92,11 @@ impl Plugin for PersistencePlugin {
             .init_resource::<ComponentTypeRegistryResource>();
 
         // Add startup systems
-        // First initialize the database, then rehydrate entities
+        // First initialize the database, then rehydrate entities and tombstones
         app.add_systems(Startup, (
             persistence_startup_system,
             rehydrate_entities_system,
+            load_tombstones_system,
         ).chain());
 
         // Add systems in the appropriate schedule
@@ -168,11 +169,60 @@ fn persistence_startup_system(db: Res<PersistenceDb>, mut metrics: ResMut<Persis
 /// This system runs after `persistence_startup_system` and loads all entities
 /// from SQLite, deserializing and spawning them into the Bevy world with all
 /// their components.
+///
+/// **Important**: Only rehydrates entities when rejoining an existing session.
+/// New sessions start with 0 entities to avoid loading entities from previous
+/// sessions.
 fn rehydrate_entities_system(world: &mut World) {
+    // Check if we're rejoining an existing session
+    let should_rehydrate = {
+        let current_session = world.get_resource::<crate::networking::CurrentSession>();
+        match current_session {
+            Some(session) => {
+                // Only rehydrate if we have a last_known_clock (indicates we're rejoining)
+                let is_rejoin = session.last_known_clock.node_count() > 0;
+                if is_rejoin {
+                    info!(
+                        "Rejoining session {} - will rehydrate persisted entities",
+                        session.session.id.to_code()
+                    );
+                } else {
+                    info!(
+                        "New session {} - starting with 0 entities",
+                        session.session.id.to_code()
+                    );
+                }
+                is_rejoin
+            }
+            None => {
+                warn!("No CurrentSession found - skipping entity rehydration");
+                false
+            }
+        }
+    };
+
+    if !should_rehydrate {
+        info!("Skipping entity rehydration for new session");
+        return;
+    }
+
     if let Err(e) = crate::persistence::database::rehydrate_all_entities(world) {
         error!("Failed to rehydrate entities from database: {}", e);
     } else {
         info!("Successfully rehydrated entities from database");
+    }
+}
+
+/// Exclusive startup system to load tombstones from database
+///
+/// This system runs after `rehydrate_entities_system` and loads all tombstones
+/// from SQLite, deserializing them into the TombstoneRegistry to prevent
+/// resurrection of deleted entities.
+fn load_tombstones_system(world: &mut World) {
+    if let Err(e) = crate::persistence::database::load_tombstones(world) {
+        error!("Failed to load tombstones from database: {}", e);
+    } else {
+        info!("Successfully loaded tombstones from database");
     }
 }
 

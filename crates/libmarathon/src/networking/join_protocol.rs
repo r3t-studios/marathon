@@ -17,6 +17,7 @@ use crate::networking::{
     GossipBridge,
     NetworkedEntity,
     SessionId,
+    Synced,
     VectorClock,
     blob_support::BlobStore,
     delta_generation::NodeVectorClock,
@@ -129,8 +130,9 @@ pub fn build_full_state(
     }
 
     info!(
-        "Built FullState with {} entities for new peer",
-        entities.len()
+        "Built FullState with {} entities ({} total networked entities queried) for new peer",
+        entities.len(),
+        networked_entities.iter().count()
     );
 
     VersionedMessage::new(SyncMessage::FullState {
@@ -168,12 +170,17 @@ pub fn apply_full_state(
     {
         let mut node_clock = world.resource_mut::<NodeVectorClock>();
         node_clock.clock.merge(&remote_clock);
+        info!("Vector clock after merge: {:?}", node_clock.clock);
     }
+
+    let mut spawned_count = 0;
+    let mut tombstoned_count = 0;
 
     // Spawn all entities and apply their state
     for entity_state in entities {
         // Handle deleted entities (tombstones)
         if entity_state.is_deleted {
+            tombstoned_count += 1;
             // Record tombstone
             if let Some(mut registry) = world.get_resource_mut::<crate::networking::TombstoneRegistry>() {
                 registry.record_deletion(
@@ -185,20 +192,43 @@ pub fn apply_full_state(
             continue;
         }
 
-        // Spawn entity with NetworkedEntity and Persisted components
-        // This ensures entities received via FullState are persisted locally
-        let entity = world
-            .spawn((
-                NetworkedEntity::with_id(entity_state.entity_id, entity_state.owner_node_id),
-                crate::persistence::Persisted::with_id(entity_state.entity_id),
-            ))
-            .id();
+        // Check if entity already exists in the map
+        let entity = {
+            let entity_map = world.resource::<NetworkEntityMap>();
+            entity_map.get_entity(entity_state.entity_id)
+        };
 
-        // Register in entity map
-        {
-            let mut entity_map = world.resource_mut::<NetworkEntityMap>();
-            entity_map.insert(entity_state.entity_id, entity);
-        }
+        let entity = match entity {
+            Some(existing_entity) => {
+                // Entity already exists - reuse it and update components
+                debug!(
+                    "Entity {} already exists (local entity {:?}), updating components",
+                    entity_state.entity_id, existing_entity
+                );
+                existing_entity
+            }
+            None => {
+                // Spawn new entity with NetworkedEntity, Persisted, and Synced components
+                // This ensures entities received via FullState are persisted locally and
+                // will auto-sync their Transform if one is added
+                let entity = world
+                    .spawn((
+                        NetworkedEntity::with_id(entity_state.entity_id, entity_state.owner_node_id),
+                        crate::persistence::Persisted::with_id(entity_state.entity_id),
+                        Synced,
+                    ))
+                    .id();
+
+                // Register in entity map
+                {
+                    let mut entity_map = world.resource_mut::<NetworkEntityMap>();
+                    entity_map.insert(entity_state.entity_id, entity);
+                }
+
+                spawned_count += 1;
+                entity
+            }
+        };
 
         let num_components = entity_state.components.len();
 
@@ -261,12 +291,31 @@ pub fn apply_full_state(
         }
 
         debug!(
-            "Spawned entity {:?} from FullState with {} components",
+            "Applied entity {:?} from FullState with {} components",
             entity_state.entity_id, num_components
         );
     }
 
-    info!("FullState applied successfully");
+    info!(
+        "FullState applied successfully: spawned {} entities, skipped {} tombstones",
+        spawned_count, tombstoned_count
+    );
+
+    // Send SyncRequest to catch any deltas that arrived during FullState transfer
+    // This implements the "Final Sync" step from RFC 0004 (Session Lifecycle)
+    if let Some(bridge) = world.get_resource::<GossipBridge>() {
+        let node_clock = world.resource::<NodeVectorClock>();
+        let request = crate::networking::operation_log::build_sync_request(
+            node_clock.node_id,
+            node_clock.clock.clone(),
+        );
+
+        if let Err(e) = bridge.send(request) {
+            error!("Failed to send post-FullState SyncRequest: {}", e);
+        } else {
+            info!("Sent SyncRequest to catch deltas that arrived during FullState transfer");
+        }
+    }
 }
 
 /// System to handle JoinRequest messages

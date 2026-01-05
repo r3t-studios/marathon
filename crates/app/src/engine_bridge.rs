@@ -82,10 +82,12 @@ fn poll_engine_events(
                     commands.insert_resource(gossip_bridge);
                     info!("Inserted GossipBridge resource");
 
-                    // Update session to use the new session ID and set state to Active
+                    // Update session to use the new session ID and set state to Joining
+                    // The transition_session_state_system will handle Joining → Active
+                    // after receiving FullState from peers
                     current_session.session = Session::new(session_id.clone());
-                    current_session.session.state = SessionState::Active;
-                    info!("Updated CurrentSession to Active: {}", session_id.to_code());
+                    current_session.session.state = SessionState::Joining;
+                    info!("Updated CurrentSession to Joining: {}", session_id.to_code());
 
                     // Update node ID in clock
                     node_clock.node_id = node_id;

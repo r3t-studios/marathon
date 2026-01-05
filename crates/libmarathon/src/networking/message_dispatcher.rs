@@ -64,8 +64,32 @@ pub fn message_dispatcher_system(world: &mut World) {
         bridge.drain_incoming()
     };
 
+    if !messages.is_empty() {
+        let node_id = world.resource::<GossipBridge>().node_id;
+        info!(
+            "[message_dispatcher] Node {} processing {} messages",
+            node_id,
+            messages.len()
+        );
+    }
+
     // Dispatch each message (bridge is no longer borrowed)
     for message in messages {
+        let node_id = world.resource::<GossipBridge>().node_id;
+        let msg_type = match &message.message {
+            SyncMessage::EntityDelta { entity_id, .. } => format!("EntityDelta({})", entity_id),
+            SyncMessage::JoinRequest { node_id, .. } => format!("JoinRequest({})", node_id),
+            SyncMessage::FullState { entities, .. } => format!("FullState({} entities)", entities.len()),
+            SyncMessage::SyncRequest { node_id, .. } => format!("SyncRequest({})", node_id),
+            SyncMessage::MissingDeltas { deltas } => format!("MissingDeltas({} ops)", deltas.len()),
+            SyncMessage::Lock(_) => "Lock".to_string(),
+        };
+
+        debug!(
+            "[message_dispatcher] Node {} dispatching: {} (nonce: {})",
+            node_id, msg_type, message.nonce
+        );
+
         dispatch_message(world, message);
     }
 
@@ -255,6 +279,18 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
             vector_clock: their_clock,
         } => {
             debug!("Received SyncRequest from node {}", requesting_node);
+
+            // Merge the requesting node's vector clock into ours
+            // This ensures we learn about their latest sequence number
+            {
+                let mut node_clock = world.resource_mut::<NodeVectorClock>();
+                node_clock.clock.merge(&their_clock);
+                debug!(
+                    "Merged SyncRequest clock from node {} (seq: {})",
+                    requesting_node,
+                    their_clock.get(requesting_node)
+                );
+            }
 
             if let Some(op_log) = world.get_resource::<OperationLog>() {
                 // Find operations they're missing
@@ -480,8 +516,10 @@ fn build_full_state_from_data(
     }
 
     info!(
-        "Built FullState with {} entities for new peer",
-        entities.len()
+        "Built FullState with {} entities ({} total queried, {} tombstoned) for new peer",
+        entities.len(),
+        networked_entities.len(),
+        networked_entities.len() - entities.len()
     );
 
     crate::networking::VersionedMessage::new(SyncMessage::FullState {

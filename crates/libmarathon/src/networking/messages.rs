@@ -27,12 +27,13 @@ pub struct VersionedMessage {
     /// The actual sync message
     pub message: SyncMessage,
 
-    /// Timestamp (nanos since UNIX epoch) to make messages unique
+    /// Nonce for selective deduplication control
     ///
-    /// This prevents iroh-gossip from deduplicating identical messages sent at different times.
-    /// For example, releasing and re-acquiring a lock sends identical LockRequest messages,
-    /// but they need to be treated as separate events.
-    pub timestamp_nanos: u64,
+    /// - For Lock messages: Unique nonce (counter + timestamp hash) to prevent
+    ///   iroh-gossip deduplication, allowing repeated heartbeats.
+    /// - For other messages: Constant nonce (0) to enable content-based deduplication
+    ///   by iroh-gossip, preventing feedback loops.
+    pub nonce: u32,
 }
 
 impl VersionedMessage {
@@ -40,18 +41,44 @@ impl VersionedMessage {
     pub const CURRENT_VERSION: u32 = 1;
 
     /// Create a new versioned message with the current protocol version
+    ///
+    /// For Lock messages: Generates a unique nonce to prevent deduplication, since
+    /// lock heartbeats need to be sent repeatedly even with identical content.
+    ///
+    /// For other messages: Uses a constant nonce (0) to enable iroh-gossip's
+    /// content-based deduplication. This prevents feedback loops where the same
+    /// EntityDelta gets broadcast repeatedly.
     pub fn new(message: SyncMessage) -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        // Only generate unique nonces for Lock messages (heartbeats need to bypass dedup)
+        let nonce = if matches!(message, SyncMessage::Lock(_)) {
+            use std::hash::Hasher;
+            use std::sync::atomic::{AtomicU32, Ordering};
+            use std::time::{SystemTime, UNIX_EPOCH};
 
-        let timestamp_nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
+            // Per-node rolling counter for sequential uniqueness
+            static COUNTER: AtomicU32 = AtomicU32::new(0);
+            let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+
+            // Millisecond timestamp for temporal uniqueness
+            let timestamp_millis = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u32;
+
+            // Hash counter + timestamp for final nonce
+            let mut hasher = rustc_hash::FxHasher::default();
+            hasher.write_u32(counter);
+            hasher.write_u32(timestamp_millis);
+            hasher.finish() as u32
+        } else {
+            // Use constant nonce for all other messages to enable content deduplication
+            0
+        };
 
         Self {
             version: Self::CURRENT_VERSION,
             message,
-            timestamp_nanos,
+            nonce,
         }
     }
 }

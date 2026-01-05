@@ -29,6 +29,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "sessions",
         up: include_str!("migrations/004_sessions.sql"),
     },
+    Migration {
+        version: 5,
+        name: "tombstones",
+        up: include_str!("migrations/005_tombstones.sql"),
+    },
 ];
 
 /// Initialize the migrations table

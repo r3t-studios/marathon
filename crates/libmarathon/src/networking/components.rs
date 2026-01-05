@@ -11,6 +11,21 @@ use serde::{
 
 use crate::networking::vector_clock::NodeId;
 
+/// Marker component to skip delta generation for one frame after receiving remote updates
+///
+/// When we apply remote operations via `apply_entity_delta()`, the `insert_fn()` call
+/// triggers Bevy's change detection. This would normally cause `generate_delta_system`
+/// to create and broadcast a new delta, creating an infinite feedback loop.
+///
+/// By adding this marker when we apply remote updates, we tell `generate_delta_system`
+/// to skip this entity for one frame. A cleanup system removes the marker after
+/// delta generation runs, allowing future local changes to be broadcast normally.
+///
+/// This is an implementation detail of the feedback loop prevention mechanism.
+/// User code should never need to interact with this component.
+#[derive(Component, Debug)]
+pub struct SkipNextDeltaGeneration;
+
 /// Marker component indicating an entity should be synchronized over the
 /// network
 ///

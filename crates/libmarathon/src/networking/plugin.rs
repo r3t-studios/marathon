@@ -37,6 +37,7 @@ use crate::networking::{
     components::{NetworkedEntity, NetworkedTransform},
     delta_generation::{
         NodeVectorClock,
+        cleanup_skip_delta_markers_system,
         generate_delta_system,
     },
     entity_map::{
@@ -53,6 +54,10 @@ use crate::networking::{
         release_locks_on_deselection_system,
     },
     message_dispatcher::message_dispatcher_system,
+    messages::{
+        SyncMessage,
+        VersionedMessage,
+    },
     operation_log::{
         OperationLog,
         periodic_sync_system,
@@ -62,13 +67,21 @@ use crate::networking::{
         initialize_session_system,
         save_session_on_shutdown_system,
     },
+    session_sync::{
+        JoinRequestSent,
+        send_join_request_once_system,
+        transition_session_state_system,
+    },
     sync_component::Synced,
     tombstones::{
         TombstoneRegistry,
         garbage_collect_tombstones_system,
         handle_local_deletions_system,
     },
-    vector_clock::NodeId,
+    vector_clock::{
+        NodeId,
+        VectorClock,
+    },
 };
 
 /// Configuration for the networking plugin
@@ -179,7 +192,17 @@ fn auto_insert_sync_components(
             entity_commands.insert(NetworkedTransform);
         }
 
-        debug!("Auto-inserted sync components for entity {:?} (UUID: {})", entity, entity_id);
+        info!(
+            "[auto_insert_sync] Entity {:?} → NetworkedEntity({}), Persisted, {} auto-added",
+            entity,
+            entity_id,
+            if transforms.contains(entity) { "NetworkedTransform" } else { "no transform" }
+        );
+    }
+
+    let count = query.iter().count();
+    if count > 0 {
+        debug!("[auto_insert_sync] Processed {} newly synced entities this frame", count);
     }
 }
 
@@ -215,7 +238,7 @@ fn auto_insert_networked_transform(
 fn trigger_sync_on_connect(
     mut has_synced: Local<bool>,
     bridge: Res<GossipBridge>,
-    node_clock: Res<NodeVectorClock>,
+    mut node_clock: ResMut<NodeVectorClock>,
     operation_log: Res<OperationLog>,
 ) {
     if *has_synced {
@@ -224,12 +247,39 @@ fn trigger_sync_on_connect(
 
     let op_count = operation_log.total_operations();
     debug!(
-        "Going online: triggering anti-entropy sync to broadcast {} offline operations",
+        "Going online: broadcasting {} offline operations to peers",
         op_count
     );
 
-    // Send a SyncRequest to trigger anti-entropy
-    // This will cause the message_dispatcher to respond with all operations from our log
+    // Broadcast all our stored operations to peers
+    // Use an empty vector clock to get ALL operations (not just newer ones)
+    let all_operations = operation_log.get_all_operations_newer_than(&VectorClock::new());
+
+    for delta in all_operations {
+        // Wrap in VersionedMessage
+        let message = VersionedMessage::new(SyncMessage::EntityDelta {
+            entity_id: delta.entity_id,
+            node_id: delta.node_id,
+            vector_clock: delta.vector_clock.clone(),
+            operations: delta.operations.clone(),
+        });
+
+        // Broadcast to peers
+        if let Err(e) = bridge.send(message) {
+            error!("Failed to broadcast offline EntityDelta: {}", e);
+        } else {
+            debug!(
+                "Broadcast offline EntityDelta for entity {:?} with {} operations",
+                delta.entity_id,
+                delta.operations.len()
+            );
+        }
+    }
+
+    // Also send a SyncRequest to get any operations we're missing from peers
+    // Increment clock for sending SyncRequest (this is a local operation)
+    node_clock.tick();
+
     let request = crate::networking::operation_log::build_sync_request(
         node_clock.node_id,
         node_clock.clock.clone(),
@@ -238,7 +288,7 @@ fn trigger_sync_on_connect(
     if let Err(e) = bridge.send(request) {
         error!("Failed to send SyncRequest on connect: {}", e);
     } else {
-        debug!("Sent SyncRequest to trigger anti-entropy sync");
+        debug!("Sent SyncRequest to get missing operations from peers");
     }
 
     *has_synced = true;
@@ -267,7 +317,10 @@ fn trigger_sync_on_connect(
 /// ## Update
 /// - Auto-detect Transform changes
 /// - Handle local entity deletions
+/// - Acquire locks when entities are selected
 /// - Release locks when entities are deselected
+/// - Send JoinRequest when networking starts (one-shot)
+/// - Transition session state (Joining → Active)
 ///
 /// ## PostUpdate
 /// - Generate and broadcast EntityDelta for changed entities
@@ -289,6 +342,7 @@ fn trigger_sync_on_connect(
 /// - `OperationLog` - Operation log for anti-entropy
 /// - `TombstoneRegistry` - Tombstone tracking for deletions
 /// - `EntityLockRegistry` - Entity lock registry with heartbeat tracking
+/// - `JoinRequestSent` - Tracks if JoinRequest has been sent (session sync)
 ///
 /// # Example
 ///
@@ -338,6 +392,7 @@ impl Plugin for NetworkingPlugin {
             .insert_resource(OperationLog::new())
             .insert_resource(TombstoneRegistry::new())
             .insert_resource(EntityLockRegistry::new())
+            .insert_resource(JoinRequestSent::default())
             .insert_resource(crate::networking::ComponentVectorClocks::new())
             .insert_resource(crate::networking::LocalSelection::new());
 
@@ -374,6 +429,10 @@ impl Plugin for NetworkingPlugin {
                 acquire_locks_on_selection_system,
                 // Release locks when entities are deselected
                 release_locks_on_deselection_system,
+                // Session sync: send JoinRequest when networking starts
+                send_join_request_once_system,
+                // Session sync: transition session state based on sync completion
+                transition_session_state_system,
             ),
         );
 
@@ -388,8 +447,10 @@ impl Plugin for NetworkingPlugin {
         app.add_systems(
             PostUpdate,
             (
-                // Generate deltas for changed entities
-                generate_delta_system,
+                // Generate deltas for changed entities, then cleanup markers
+                // CRITICAL: cleanup_skip_delta_markers_system must run immediately after
+                // generate_delta_system to remove SkipNextDeltaGeneration markers
+                (generate_delta_system, cleanup_skip_delta_markers_system).chain(),
                 // Periodic anti-entropy sync
                 periodic_sync_system,
                 // Maintenance tasks

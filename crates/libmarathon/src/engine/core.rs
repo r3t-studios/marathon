@@ -71,11 +71,22 @@ impl EngineCore {
                 self.stop_networking().await;
             }
             EngineCommand::SaveSession => {
-                // TODO: Save current session state
-                tracing::debug!("SaveSession command received (stub)");
+                // Session state is auto-saved by save_session_on_shutdown_system in Bevy
+                // This command is a no-op, as persistence is handled by Bevy systems
+                tracing::debug!("SaveSession command received (session auto-save handled by Bevy)");
             }
             EngineCommand::LoadSession { session_id } => {
-                tracing::debug!("LoadSession command received for {} (stub)", session_id.to_code());
+                // Loading a session means switching to a different session
+                // This requires restarting networking with the new session
+                tracing::info!("LoadSession command received for {}", session_id.to_code());
+
+                // Stop current networking if any
+                if self.networking_task.is_some() {
+                    self.stop_networking().await;
+                }
+
+                // Start networking with the new session
+                self.start_networking(session_id).await;
             }
             EngineCommand::TickClock => {
                 self.tick_clock();
