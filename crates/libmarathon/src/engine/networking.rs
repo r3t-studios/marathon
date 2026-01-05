@@ -240,11 +240,43 @@ impl NetworkingManager {
                                 Event::Received(msg) => {
                                     // Deserialize and forward to GossipBridge for Bevy systems
                                     if let Ok(versioned) = rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content) {
+                                        // Diagnostic logging: track message type and nonce
+                                        let msg_type = match &versioned.message {
+                                            SyncMessage::EntityDelta { entity_id, .. } => {
+                                                format!("EntityDelta({})", entity_id)
+                                            }
+                                            SyncMessage::JoinRequest { node_id, .. } => {
+                                                format!("JoinRequest({})", node_id)
+                                            }
+                                            SyncMessage::FullState { entities, .. } => {
+                                                format!("FullState({} entities)", entities.len())
+                                            }
+                                            SyncMessage::SyncRequest { node_id, .. } => {
+                                                format!("SyncRequest({})", node_id)
+                                            }
+                                            SyncMessage::MissingDeltas { deltas } => {
+                                                format!("MissingDeltas({} ops)", deltas.len())
+                                            }
+                                            SyncMessage::Lock(lock_msg) => {
+                                                format!("Lock({:?})", lock_msg)
+                                            }
+                                        };
+
+                                        tracing::debug!(
+                                            "[NetworkingManager::receive] Node {} received from iroh-gossip: {} (nonce: {})",
+                                            self.node_id, msg_type, versioned.nonce
+                                        );
+
                                         if let Err(e) = self.bridge.push_incoming(versioned) {
-                                            tracing::error!("Failed to push message to GossipBridge: {}", e);
+                                            tracing::error!("Failed to forward {} to GossipBridge: {}", msg_type, e);
                                         } else {
-                                            tracing::debug!("Forwarded message to Bevy via GossipBridge");
+                                            tracing::debug!(
+                                                "[NetworkingManager::receive] ✓ Forwarded {} to Bevy GossipBridge",
+                                                msg_type
+                                            );
                                         }
+                                    } else {
+                                        tracing::warn!("Failed to deserialize message from iroh-gossip");
                                     }
                                 }
                                 Event::NeighborUp(peer) => {
@@ -288,14 +320,53 @@ impl NetworkingManager {
 
                 // Poll GossipBridge for outgoing messages and broadcast via iroh
                 _ = bridge_poll_interval.tick() => {
+                    let mut sent_count = 0;
                     while let Some(msg) = self.bridge.try_recv_outgoing() {
+                        // Diagnostic logging: track message type and nonce
+                        let msg_type = match &msg.message {
+                            SyncMessage::EntityDelta { entity_id, .. } => {
+                                format!("EntityDelta({})", entity_id)
+                            }
+                            SyncMessage::JoinRequest { node_id, .. } => {
+                                format!("JoinRequest({})", node_id)
+                            }
+                            SyncMessage::FullState { entities, .. } => {
+                                format!("FullState({} entities)", entities.len())
+                            }
+                            SyncMessage::SyncRequest { node_id, .. } => {
+                                format!("SyncRequest({})", node_id)
+                            }
+                            SyncMessage::MissingDeltas { deltas } => {
+                                format!("MissingDeltas({} ops)", deltas.len())
+                            }
+                            SyncMessage::Lock(lock_msg) => {
+                                format!("Lock({:?})", lock_msg)
+                            }
+                        };
+
+                        tracing::debug!(
+                            "[NetworkingManager::broadcast] Node {} broadcasting: {} (nonce: {})",
+                            self.node_id, msg_type, msg.nonce
+                        );
+
                         if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec()) {
                             if let Err(e) = self.sender.broadcast(Bytes::from(bytes)).await {
-                                tracing::error!("Failed to broadcast message: {}", e);
+                                tracing::error!("Failed to broadcast {} to iroh-gossip: {}", msg_type, e);
                             } else {
-                                tracing::debug!("Broadcast message from Bevy via iroh-gossip");
+                                sent_count += 1;
+                                tracing::debug!(
+                                    "[NetworkingManager::broadcast] ✓ Sent {} to iroh-gossip network",
+                                    msg_type
+                                );
                             }
                         }
+                    }
+
+                    if sent_count > 0 {
+                        tracing::info!(
+                            "[NetworkingManager::broadcast] Node {} sent {} messages to iroh-gossip network",
+                            self.node_id, sent_count
+                        );
                     }
                 }
 

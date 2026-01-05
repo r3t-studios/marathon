@@ -126,6 +126,13 @@ pub enum PersistenceOp {
         entity_id: EntityId,
         component_type: String,
     },
+
+    /// Record a tombstone for a deleted entity
+    RecordTombstone {
+        entity_id: EntityId,
+        deleting_node: NodeId,
+        deletion_clock: bytes::Bytes, // Serialized VectorClock
+    },
 }
 
 impl PersistenceOp {

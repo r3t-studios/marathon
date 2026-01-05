@@ -65,6 +65,33 @@ impl GossipBridge {
 
     /// Send a message to the gossip network
     pub fn send(&self, message: VersionedMessage) -> Result<()> {
+        // Diagnostic logging: track message type and nonce
+        let msg_type = match &message.message {
+            crate::networking::SyncMessage::EntityDelta { entity_id, .. } => {
+                format!("EntityDelta({})", entity_id)
+            }
+            crate::networking::SyncMessage::JoinRequest { node_id, .. } => {
+                format!("JoinRequest({})", node_id)
+            }
+            crate::networking::SyncMessage::FullState { entities, .. } => {
+                format!("FullState({} entities)", entities.len())
+            }
+            crate::networking::SyncMessage::SyncRequest { node_id, .. } => {
+                format!("SyncRequest({})", node_id)
+            }
+            crate::networking::SyncMessage::MissingDeltas { deltas } => {
+                format!("MissingDeltas({} ops)", deltas.len())
+            }
+            crate::networking::SyncMessage::Lock(lock_msg) => {
+                format!("Lock({:?})", lock_msg)
+            }
+        };
+
+        debug!(
+            "[GossipBridge::send] Node {} queuing message: {} (nonce: {})",
+            self.node_id, msg_type, message.nonce
+        );
+
         self.outgoing
             .lock()
             .map_err(|e| NetworkingError::Gossip(format!("Failed to lock outgoing queue: {}", e)))?
@@ -97,6 +124,33 @@ impl GossipBridge {
 
     /// Push a message to the incoming queue (for testing/integration)
     pub fn push_incoming(&self, message: VersionedMessage) -> Result<()> {
+        // Diagnostic logging: track incoming message type
+        let msg_type = match &message.message {
+            crate::networking::SyncMessage::EntityDelta { entity_id, .. } => {
+                format!("EntityDelta({})", entity_id)
+            }
+            crate::networking::SyncMessage::JoinRequest { node_id, .. } => {
+                format!("JoinRequest({})", node_id)
+            }
+            crate::networking::SyncMessage::FullState { entities, .. } => {
+                format!("FullState({} entities)", entities.len())
+            }
+            crate::networking::SyncMessage::SyncRequest { node_id, .. } => {
+                format!("SyncRequest({})", node_id)
+            }
+            crate::networking::SyncMessage::MissingDeltas { deltas } => {
+                format!("MissingDeltas({} ops)", deltas.len())
+            }
+            crate::networking::SyncMessage::Lock(lock_msg) => {
+                format!("Lock({:?})", lock_msg)
+            }
+        };
+
+        debug!(
+            "[GossipBridge::push_incoming] Node {} received from network: {} (nonce: {})",
+            self.node_id, msg_type, message.nonce
+        );
+
         self.incoming
             .lock()
             .map_err(|e| NetworkingError::Gossip(format!("Failed to lock incoming queue: {}", e)))?

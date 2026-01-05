@@ -165,6 +165,24 @@ pub fn apply_entity_delta(delta: &EntityDelta, world: &mut World) {
             );
         }
     }
+
+    // CRITICAL: Add marker to prevent feedback loop
+    //
+    // When we apply remote operations, insert_fn() triggers Bevy's change detection.
+    // This causes auto_detect_transform_changes_system to mark NetworkedEntity as changed,
+    // which would normally trigger generate_delta_system to broadcast it back, creating
+    // an infinite feedback loop.
+    //
+    // By adding SkipNextDeltaGeneration marker, we tell generate_delta_system to skip
+    // this entity for one frame. A cleanup system removes the marker after delta
+    // generation runs, allowing future local changes to be broadcast normally.
+    if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+        entity_mut.insert(crate::networking::SkipNextDeltaGeneration);
+        debug!(
+            "Added SkipNextDeltaGeneration marker to entity {:?} to prevent feedback loop",
+            delta.entity_id
+        );
+    }
 }
 
 /// Apply a single ComponentOp to an entity
@@ -235,14 +253,18 @@ fn apply_set_operation_with_lww(
 ) {
     // Get component type name for logging and clock tracking
     let type_registry = {
-        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        let registry_resource =
+            world.resource::<crate::persistence::ComponentTypeRegistryResource>();
         registry_resource.0
     };
-    
+
     let component_type_name = match type_registry.get_type_name(discriminant) {
         | Some(name) => name,
         | None => {
-            error!("Unknown discriminant {} - component not registered", discriminant);
+            error!(
+                "Unknown discriminant {} - component not registered",
+                discriminant
+            );
             return;
         },
     };
@@ -310,7 +332,10 @@ fn apply_set_operation_with_lww(
                         }
                     },
                     | crate::networking::merge::MergeDecision::Equal => {
-                        debug!("Ignoring remote Set for {} (clocks equal)", component_type_name);
+                        debug!(
+                            "Ignoring remote Set for {} (clocks equal)",
+                            component_type_name
+                        );
                         false
                     },
                 }
@@ -355,14 +380,9 @@ fn apply_set_operation_with_lww(
 ///
 /// Deserializes the component and inserts/updates it on the entity.
 /// Handles both inline data and blob references.
-fn apply_set_operation(
-    entity: Entity,
-    discriminant: u16,
-    data: &ComponentData,
-    world: &mut World,
-) {
+fn apply_set_operation(entity: Entity, discriminant: u16, data: &ComponentData, world: &mut World) {
     let blob_store = world.get_resource::<BlobStore>();
-    
+
     // Get the actual data (resolve blob if needed)
     let data_bytes = match data {
         | ComponentData::Inline(bytes) => bytes.clone(),
@@ -390,7 +410,8 @@ fn apply_set_operation(
 
     // Get component type registry
     let type_registry = {
-        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        let registry_resource =
+            world.resource::<crate::persistence::ComponentTypeRegistryResource>();
         registry_resource.0
     };
 
@@ -401,7 +422,10 @@ fn apply_set_operation(
     let (deserialize_fn, insert_fn) = match (deserialize_fn, insert_fn) {
         | (Some(d), Some(i)) => (d, i),
         | _ => {
-            error!("Discriminant {} not registered in ComponentTypeRegistry", discriminant);
+            error!(
+                "Discriminant {} not registered in ComponentTypeRegistry",
+                discriminant
+            );
             return;
         },
     };

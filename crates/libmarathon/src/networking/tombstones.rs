@@ -219,6 +219,7 @@ pub fn handle_local_deletions_system(
     mut tombstone_registry: ResMut<TombstoneRegistry>,
     mut operation_log: Option<ResMut<crate::networking::OperationLog>>,
     bridge: Option<Res<GossipBridge>>,
+    mut write_buffer: Option<ResMut<crate::persistence::WriteBufferResource>>,
 ) {
     for (entity, networked) in query.iter() {
         // Increment clock for deletion
@@ -231,12 +232,33 @@ pub fn handle_local_deletions_system(
         )
         .delete();
 
-        // Record tombstone
+        // Record tombstone in memory
         tombstone_registry.record_deletion(
             networked.network_id,
             node_clock.node_id,
             node_clock.clock.clone(),
         );
+
+        // Persist tombstone to database
+        if let Some(ref mut buffer) = write_buffer {
+            // Serialize the vector clock using rkyv
+            match rkyv::to_bytes::<rkyv::rancor::Failure>(&node_clock.clock).map(|b| b.to_vec()) {
+                Ok(clock_bytes) => {
+                    if let Err(e) = buffer.add(crate::persistence::PersistenceOp::RecordTombstone {
+                        entity_id: networked.network_id,
+                        deleting_node: node_clock.node_id,
+                        deletion_clock: bytes::Bytes::from(clock_bytes),
+                    }) {
+                        error!("Failed to persist tombstone for entity {:?}: {}", networked.network_id, e);
+                    } else {
+                        debug!("Persisted tombstone for entity {:?} to database", networked.network_id);
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to serialize vector clock for tombstone persistence: {:?}", e);
+                }
+            }
+        }
 
         // Create EntityDelta with Delete operation
         let delta = crate::networking::EntityDelta::new(

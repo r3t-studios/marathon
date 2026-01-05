@@ -351,7 +351,7 @@ pub fn handle_missing_deltas_system(world: &mut World) {
 /// adaptive sync intervals based on network conditions.
 pub fn periodic_sync_system(
     bridge: Option<Res<GossipBridge>>,
-    node_clock: Res<NodeVectorClock>,
+    mut node_clock: ResMut<NodeVectorClock>,
     time: Res<Time>,
     mut last_sync: Local<f32>,
 ) {
@@ -368,6 +368,9 @@ pub fn periodic_sync_system(
         *last_sync = 0.0;
 
         debug!("Sending periodic SyncRequest for anti-entropy");
+
+        // Increment clock for sending SyncRequest (this is a local operation)
+        node_clock.tick();
 
         let request = build_sync_request(node_clock.node_id, node_clock.clock.clone());
         if let Err(e) = bridge.send(request) {

@@ -253,6 +253,24 @@ pub fn flush_to_sqlite(ops: &[PersistenceOp], conn: &mut Connection) -> Result<u
                 )?;
                 count += 1;
             },
+
+            | PersistenceOp::RecordTombstone {
+                entity_id,
+                deleting_node,
+                deletion_clock,
+            } => {
+                tx.execute(
+                    "INSERT OR REPLACE INTO tombstones (entity_id, deleting_node, deletion_clock, created_at)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![
+                        entity_id.as_bytes(),
+                        &deleting_node.to_string(),
+                        deletion_clock.as_ref(),
+                        current_timestamp(),
+                    ],
+                )?;
+                count += 1;
+            },
         }
     }
 
@@ -970,6 +988,117 @@ pub fn rehydrate_all_entities(world: &mut bevy::prelude::World) -> Result<()> {
     if failed_count > 0 {
         warn!(
             "{} entities failed to rehydrate - check logs for details",
+            failed_count
+        );
+    }
+
+    Ok(())
+}
+
+/// Load all tombstones from the database into the TombstoneRegistry
+///
+/// This function is called during startup to restore deletion tombstones
+/// from the database, preventing resurrection of deleted entities after
+/// application restart.
+///
+/// # Arguments
+///
+/// * `world` - The Bevy world containing the TombstoneRegistry resource
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Database connection fails
+/// - Tombstone loading fails
+/// - Vector clock deserialization fails
+pub fn load_tombstones(world: &mut bevy::prelude::World) -> Result<()> {
+    use bevy::prelude::*;
+
+    // Get database connection and load tombstones
+    let tombstone_rows = {
+        let db_res = world.resource::<crate::persistence::PersistenceDb>();
+        let conn = db_res
+            .conn
+            .lock()
+            .map_err(|e| PersistenceError::Other(format!("Failed to lock database: {}", e)))?;
+
+        // Load all tombstones from database
+        let mut stmt = conn.prepare(
+            "SELECT entity_id, deleting_node, deletion_clock, created_at
+             FROM tombstones
+             ORDER BY created_at ASC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let entity_id_bytes: std::borrow::Cow<'_, [u8]> = row.get(0)?;
+            let mut entity_id_array = [0u8; 16];
+            entity_id_array.copy_from_slice(&entity_id_bytes);
+            let entity_id = uuid::Uuid::from_bytes(entity_id_array);
+
+            let deleting_node_str: String = row.get(1)?;
+            let deletion_clock_bytes: std::borrow::Cow<'_, [u8]> = row.get(2)?;
+            let created_at_ts: i64 = row.get(3)?;
+
+            Ok((
+                entity_id,
+                deleting_node_str,
+                deletion_clock_bytes.to_vec(),
+                created_at_ts,
+            ))
+        })?;
+
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+
+    info!("Loaded {} tombstones from database", tombstone_rows.len());
+
+    if tombstone_rows.is_empty() {
+        info!("No tombstones to restore");
+        return Ok(());
+    }
+
+    // Restore tombstones into TombstoneRegistry
+    let mut loaded_count = 0;
+    let mut failed_count = 0;
+
+    {
+        let mut tombstone_registry = world.resource_mut::<crate::networking::TombstoneRegistry>();
+
+        for (entity_id, deleting_node_str, deletion_clock_bytes, _created_at_ts) in tombstone_rows {
+            // Parse node ID
+            let deleting_node = match uuid::Uuid::parse_str(&deleting_node_str) {
+                Ok(id) => id,
+                Err(e) => {
+                    error!("Failed to parse deleting_node UUID for entity {:?}: {}", entity_id, e);
+                    failed_count += 1;
+                    continue;
+                }
+            };
+
+            // Deserialize vector clock
+            let deletion_clock = match rkyv::from_bytes::<crate::networking::VectorClock, rkyv::rancor::Failure>(&deletion_clock_bytes) {
+                Ok(clock) => clock,
+                Err(e) => {
+                    error!("Failed to deserialize vector clock for tombstone {:?}: {:?}", entity_id, e);
+                    failed_count += 1;
+                    continue;
+                }
+            };
+
+            // Record the tombstone in the registry
+            tombstone_registry.record_deletion(entity_id, deleting_node, deletion_clock);
+            loaded_count += 1;
+        }
+    }
+
+    info!(
+        "Tombstone restoration complete: {} succeeded, {} failed",
+        loaded_count, failed_count
+    );
+
+    if failed_count > 0 {
+        warn!(
+            "{} tombstones failed to restore - check logs for details",
             failed_count
         );
     }

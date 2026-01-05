@@ -31,6 +31,7 @@ pub fn auto_detect_transform_changes_system(
         (
             With<NetworkedTransform>,
             Or<(Changed<Transform>, Changed<GlobalTransform>)>,
+            Without<crate::networking::SkipNextDeltaGeneration>,
         ),
     >,
 ) {
