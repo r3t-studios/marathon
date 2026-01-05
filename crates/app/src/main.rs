@@ -289,6 +289,9 @@ fn main() {
     app.add_plugins(CubePlugin);
     app.add_systems(Startup, initialize_offline_resources);
 
+    // Configure fixed timestep for deterministic game logic at 60fps
+    app.insert_resource(Time::<Fixed>::from_hz(60.0));
+
     // Insert control socket path as resource
     app.insert_resource(control::ControlSocketPath(args.control_socket.clone()));
     app.add_systems(Startup, control::start_control_socket_system);

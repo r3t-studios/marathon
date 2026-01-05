@@ -138,14 +138,21 @@ pub async fn maintain_dht_presence(
     session_id: SessionId,
     our_endpoint_id: EndpointId,
     dht_client: pkarr::Client,
+    cancel_token: tokio_util::sync::CancellationToken,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(30 * 60)); // 30 minutes
 
     loop {
-        interval.tick().await;
-
-        if let Err(e) = publish_peer_to_dht(&session_id, our_endpoint_id, &dht_client).await {
-            tracing::warn!("Failed to republish to DHT: {}", e);
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                tracing::info!("DHT maintenance task shutting down");
+                break;
+            }
+            _ = interval.tick() => {
+                if let Err(e) = publish_peer_to_dht(&session_id, our_endpoint_id, &dht_client).await {
+                    tracing::warn!("Failed to republish to DHT: {}", e);
+                }
+            }
         }
     }
 }

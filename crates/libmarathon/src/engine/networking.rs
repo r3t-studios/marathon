@@ -185,10 +185,12 @@ impl NetworkingManager {
 
         // Spawn background task to maintain DHT presence
         let session_id_clone = session_id.clone();
+        let cancel_token_clone = cancel_token.clone();
         tokio::spawn(crate::engine::peer_discovery::maintain_dht_presence(
             session_id_clone,
             endpoint_id,
             pkarr_client,
+            cancel_token_clone,
         ));
 
         let manager = Self {
