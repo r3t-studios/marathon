@@ -417,9 +417,9 @@ impl Plugin for NetworkingPlugin {
                 .chain(),
         );
 
-        // Update systems - handle local operations
+        // FixedUpdate systems - game logic at locked 60fps
         app.add_systems(
-            Update,
+            FixedUpdate,
             (
                 // Track Transform changes and mark NetworkedTransform as changed
                 auto_detect_transform_changes_system,
@@ -438,14 +438,14 @@ impl Plugin for NetworkingPlugin {
 
         // Trigger anti-entropy sync when going online (separate from chain to allow conditional execution)
         app.add_systems(
-            PostUpdate,
+            FixedPostUpdate,
             trigger_sync_on_connect
                 .run_if(bevy::ecs::schedule::common_conditions::resource_exists::<GossipBridge>),
         );
 
-        // PostUpdate systems - generate and send deltas
+        // FixedPostUpdate systems - generate and send deltas at locked 60fps
         app.add_systems(
-            PostUpdate,
+            FixedPostUpdate,
             (
                 // Generate deltas for changed entities, then cleanup markers
                 // CRITICAL: cleanup_skip_delta_markers_system must run immediately after
