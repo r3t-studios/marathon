@@ -10,13 +10,14 @@ edition = "2024"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = "0.7"
+futures-lite = "2.0"
 
 # Iroh - P2P networking and gossip
 iroh = { version = "0.95.0", features = ["discovery-pkarr-dht"] }
 iroh-gossip = "0.95.0"
 
 # Database
-rusqlite = "0.37.0"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -34,6 +35,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tracing-oslog = "0.3"
 
 # Random
 rand = "0.8"
@@ -41,17 +44,24 @@ rand = "0.8"
 # Encoding
 hex = "0.4"
 
-# ML/AI
-candle-core = "0.8"
-candle-nn = "0.8"
-candle-transformers = "0.8"
-tokenizers = "0.20"
-hf-hub = "0.3"
+# Data structures
+bytes = "1.0"
+crossbeam-channel = "0.5"
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
-# Bevy
-bevy = "0.17"
+# Bevy and graphics
+bevy = "0.17.2"
+egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
+glam = "0.29"
+winit = "0.30"
 
 # Synchronization
 parking_lot = "0.12"
 crdts = "7.3"
 inventory = "0.3"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Testing
+tempfile = "3"

@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-arboard = "3.4"
 bevy.workspace = true
 rkyv.workspace = true
 
@@ -53,35 +52,34 @@ blake3 = "1.5"
 blocking = "1.6"
 hex.workspace = true
 bytemuck = { version = "1.14", features = ["derive"] }
-bytes = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
+bytes.workspace = true
+chrono.workspace = true
 crdts.workspace = true
-crossbeam-channel = "0.5"
+crossbeam-channel.workspace = true
 dirs = "5.0"
-egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
+egui.workspace = true
 encase = { version = "0.11", features = ["glam"] }
-futures-lite = "2.0"
-glam = "0.29"
+futures-lite.workspace = true
+glam.workspace = true
 inventory.workspace = true
 iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
 pkarr = "5.0"
 itertools = "0.14"
-rand = "0.8"
-raw-window-handle = "0.6"
-rusqlite = { version = "0.37.0", features = ["bundled"] }
+rand.workspace = true
+rusqlite.workspace = true
 rustc-hash = "2.1"
-serde = { version = "1.0", features = ["derive"] }
+serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
-thiserror = "2.0"
+thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 toml.workspace = true
 tracing.workspace = true
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid.workspace = true
 wgpu-types = "26.0"
-winit = "0.30"
+winit.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tracing-oslog = "0.3"
@@ -90,8 +88,8 @@ tracing-oslog = "0.3"
 tokio.workspace = true
 iroh = { workspace = true, features = ["discovery-local-network"] }
 iroh-gossip.workspace = true
-futures-lite = "2.0"
-tempfile = "3"
+futures-lite.workspace = true
+tempfile.workspace = true
 proptest = "1.4"
 criterion = "0.5"
 

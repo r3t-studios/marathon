@@ -14,7 +14,7 @@ mod test_utils;
 use std::time::Duration;
 
 use anyhow::Result;
-use bevy::prelude::Transform;
+use bevy::prelude::{App, FixedUpdate, Transform};
 use libmarathon::networking::{
     CurrentSession,
     GossipBridge,
@@ -22,6 +22,14 @@ use libmarathon::networking::{
 };
 use test_utils::{TestContext, create_test_app_maybe_offline};
 use uuid::Uuid;
+
+/// Helper to ensure FixedUpdate runs (since it's on a fixed timestep)
+fn update_with_fixed(app: &mut App) {
+    // Run Main schedule (which includes Update)
+    app.update();
+    // Explicitly run FixedUpdate to ensure systems there execute
+    app.world_mut().run_schedule(FixedUpdate);
+}
 
 // ============================================================================
 // Session Lifecycle Tests
@@ -114,7 +122,7 @@ async fn test_join_request_sent() -> Result<()> {
 
     // Create app offline
     let mut app = create_test_app_maybe_offline(node_id, ctx.db_path(), None);
-    app.update();
+    update_with_fixed(&mut app);
 
     // Create and insert GossipBridge
     let bridge = GossipBridge::new(node_id);
@@ -128,7 +136,7 @@ async fn test_join_request_sent() -> Result<()> {
 
     // Update to trigger send_join_request_once_system
     // With the peer-wait logic, JoinRequest waits for peers or timeout
-    app.update(); // Start wait timer
+    update_with_fixed(&mut app); // Start wait timer
 
     // Simulate 1-second timeout (first node case - no peers)
     {
@@ -139,7 +147,7 @@ async fn test_join_request_sent() -> Result<()> {
     }
 
     // Update again - should send JoinRequest due to timeout
-    app.update();
+    update_with_fixed(&mut app);
 
     // Verify JoinRequest was sent by checking JoinRequestSent resource
     {
@@ -393,7 +401,7 @@ async fn test_join_request_waits_for_peers() -> Result<()> {
     let bridge = GossipBridge::new(node_id);
     let mut app = create_test_app_maybe_offline(node_id, ctx.db_path(), Some(bridge.clone()));
 
-    app.update();
+    update_with_fixed(&mut app);
 
     // Transition to Joining
     {
@@ -412,7 +420,7 @@ async fn test_join_request_waits_for_peers() -> Result<()> {
 
     // Run for 10 frames (~166ms) - should NOT send JoinRequest yet (no peers)
     for i in 0..10 {
-        app.update();
+        update_with_fixed(&mut app);
         tokio::time::sleep(Duration::from_millis(16)).await;
 
         let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
@@ -560,7 +568,7 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
     let bridge = GossipBridge::new(node_id);
     let mut app = create_test_app_maybe_offline(node_id, ctx.db_path(), Some(bridge.clone()));
 
-    app.update();
+    update_with_fixed(&mut app);
 
     // Transition to Joining
     {
@@ -571,7 +579,7 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
     println!("Initial state: Session=Joining, Peers=0");
 
     // Run one frame to start the wait timer
-    app.update();
+    update_with_fixed(&mut app);
 
     // Manually set wait_started to 1.1 seconds ago to simulate timeout
     {
@@ -583,7 +591,7 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
     }
 
     // Run one frame - should send JoinRequest due to timeout
-    app.update();
+    update_with_fixed(&mut app);
 
     {
         let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
@@ -627,7 +635,7 @@ async fn test_join_request_only_sent_once() -> Result<()> {
     let bridge = GossipBridge::new(node_id);
     let mut app = create_test_app_maybe_offline(node_id, ctx.db_path(), Some(bridge.clone()));
 
-    app.update();
+    update_with_fixed(&mut app);
 
     // Transition to Joining and add a peer
     {
@@ -644,7 +652,7 @@ async fn test_join_request_only_sent_once() -> Result<()> {
     println!("Initial state: Session=Joining, Peers=1");
 
     // Run frame - should send JoinRequest
-    app.update();
+    update_with_fixed(&mut app);
 
     {
         let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
@@ -678,7 +686,7 @@ async fn test_join_request_only_sent_once() -> Result<()> {
 
     // Run 20 more frames - should NOT send JoinRequest again
     for i in 0..20 {
-        app.update();
+        update_with_fixed(&mut app);
         tokio::time::sleep(Duration::from_millis(16)).await;
 
         let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();

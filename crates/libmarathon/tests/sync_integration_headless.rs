@@ -95,6 +95,17 @@ struct TestHealth {
 
 use rusqlite::Connection;
 
+/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a fixed timestep)
+fn update_with_fixed(app: &mut App) {
+    use bevy::prelude::{FixedUpdate, FixedPostUpdate};
+    // Run Main schedule (which includes Update)
+    app.update();
+    // Explicitly run FixedUpdate to ensure systems there execute
+    app.world_mut().run_schedule(FixedUpdate);
+    // Explicitly run FixedPostUpdate to ensure delta generation executes
+    app.world_mut().run_schedule(FixedPostUpdate);
+}
+
 /// Check if an entity exists in the database
 fn entity_exists_in_db(db_path: &PathBuf, entity_id: Uuid) -> Result<bool> {
         let conn = Connection::open(db_path)?;
@@ -868,8 +879,8 @@ async fn test_lock_heartbeat_expiration() -> Result<()> {
 
     // Update to allow lock propagation
     for _ in 0..10 {
-        app1.update();
-        app2.update();
+        update_with_fixed(&mut app1);
+        update_with_fixed(&mut app2);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
@@ -899,7 +910,7 @@ async fn test_lock_heartbeat_expiration() -> Result<()> {
     // Run cleanup system (which removes expired locks and broadcasts LockReleased)
     println!("Running cleanup to expire locks...");
     for _ in 0..10 {
-        app2.update();
+        update_with_fixed(&mut app2);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
@@ -1119,7 +1130,7 @@ async fn test_offline_to_online_sync() -> Result<()> {
     }
 
     // Update to trigger delta generation (offline)
-    app1.update();
+    update_with_fixed(&mut app1);
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Verify clock incremented for spawn
@@ -1156,7 +1167,7 @@ async fn test_offline_to_online_sync() -> Result<()> {
         }
     }
 
-    app1.update();
+    update_with_fixed(&mut app1);
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let clock_after_second_spawn = {
@@ -1179,7 +1190,7 @@ async fn test_offline_to_online_sync() -> Result<()> {
         }
     }
 
-    app1.update();
+    update_with_fixed(&mut app1);
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let clock_after_modify = {
@@ -1197,7 +1208,7 @@ async fn test_offline_to_online_sync() -> Result<()> {
         commands.entity(entity_b_bevy).insert(ToDelete);
     }
 
-    app1.update();
+    update_with_fixed(&mut app1);
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let clock_after_delete = {
@@ -1262,8 +1273,8 @@ async fn test_offline_to_online_sync() -> Result<()> {
 
     // Wait a bit more for tombstone to sync
     for _ in 0..20 {
-        app1.update();
-        app2.update();
+        update_with_fixed(&mut app1);
+        update_with_fixed(&mut app2);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 

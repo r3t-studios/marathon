@@ -87,6 +87,17 @@ pub fn create_test_app_maybe_offline(node_id: Uuid, db_path: PathBuf, bridge: Op
     app
 }
 
+/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a fixed timestep)
+fn update_with_fixed(app: &mut App) {
+    use bevy::prelude::{FixedUpdate, FixedPostUpdate};
+    // Run Main schedule (which includes Update)
+    app.update();
+    // Explicitly run FixedUpdate to ensure systems there execute
+    app.world_mut().run_schedule(FixedUpdate);
+    // Explicitly run FixedPostUpdate to ensure delta generation executes
+    app.world_mut().run_schedule(FixedPostUpdate);
+}
+
 /// Wait for sync condition to be met, polling both apps
 pub async fn wait_for_sync<F>(
     app1: &mut App,
@@ -102,8 +113,8 @@ where
 
     while start.elapsed() < timeout {
         // Tick both apps
-        app1.update();
-        app2.update();
+        update_with_fixed(app1);
+        update_with_fixed(app2);
         tick_count += 1;
 
         if tick_count % 50 == 0 {
