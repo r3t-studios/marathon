@@ -11,7 +11,7 @@ use core::fmt::Debug;
 
 use super::{EdgeExistence, InternedRenderLabel, IntoRenderNodeArray};
 
-pub use macros::RenderSubGraph;
+pub use libmarathon_macros::RenderSubGraph;
 
 define_label!(
     #[diagnostic::on_unimplemented(

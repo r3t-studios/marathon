@@ -26,7 +26,7 @@ use bevy_ecs::{
 use bevy_image::{Image, TextureFormatPixelInfo};
 use bevy_platform::collections::HashMap;
 use bevy_reflect::Reflect;
-use macros::ExtractComponent;
+use libmarathon_macros::ExtractComponent;
 use encase::internal::ReadFrom;
 use encase::private::Reader;
 use encase::ShaderType;

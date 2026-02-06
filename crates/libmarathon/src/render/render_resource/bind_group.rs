@@ -7,7 +7,7 @@ use crate::render::{
 };
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::system::{SystemParam, SystemParamItem};
-pub use macros::AsBindGroup;
+pub use libmarathon_macros::AsBindGroup;
 use core::ops::Deref;
 use encase::ShaderType;
 use thiserror::Error;

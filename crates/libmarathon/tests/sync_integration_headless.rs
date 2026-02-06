@@ -70,7 +70,7 @@ use uuid::Uuid;
 // ============================================================================
 
 /// Simple position component for testing sync
-#[macros::synced]
+#[libmarathon_macros::synced]
 #[derive(Reflect, PartialEq)]
 #[reflect(Component)]
 struct TestPosition {
@@ -79,7 +79,7 @@ struct TestPosition {
 }
 
 /// Simple health component for testing sync
-#[macros::synced]
+#[libmarathon_macros::synced]
 #[derive(Reflect, PartialEq)]
 #[reflect(Component)]
 struct TestHealth {

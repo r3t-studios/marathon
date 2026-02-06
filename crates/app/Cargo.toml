@@ -11,7 +11,7 @@ headless = []
 
 [dependencies]
 libmarathon = { path = "../libmarathon" }
-macros = { path = "../macros" }
+libmarathon-macros = { path = "../macros" }
 inventory.workspace = true
 rkyv.workspace = true
 bevy = { version = "0.17.2", default-features = false, features = [

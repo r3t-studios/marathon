@@ -18,7 +18,7 @@ use downcast_rs::{impl_downcast, Downcast};
 use thiserror::Error;
 use variadics_please::all_tuples_with_size;
 
-pub use macros::RenderLabel;
+pub use libmarathon_macros::RenderLabel;
 
 use super::{InternedRenderSubGraph, RenderSubGraph};
 

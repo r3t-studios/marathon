@@ -109,7 +109,7 @@ pub trait SyncComponent: Component + Reflect + Sized {
 ///
 /// ```no_compile
 /// // Define a synced component with the #[synced] attribute
-/// #[macros::synced]
+/// #[libmarathon_macros::synced]
 /// pub struct CubeMarker {
 ///     pub color_r: f32,
 ///     pub size: f32,

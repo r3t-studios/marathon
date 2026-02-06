@@ -2,7 +2,7 @@
 use bevy::prelude::*;
 
 // Test 1: Basic struct with synced attribute compiles
-#[macros::synced]
+#[libmarathon_macros::synced]
 struct Health {
     current: f32,
 }
@@ -58,7 +58,7 @@ fn test_health_is_clone_and_copy() {
 }
 
 // Test 2: Struct with multiple fields
-#[macros::synced]
+#[libmarathon_macros::synced]
 struct Position {
     x: f32,
     y: f32,
