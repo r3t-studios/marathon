@@ -14,7 +14,7 @@ use core::{hash::Hash, marker::PhantomData};
 use tracing::error;
 use variadics_please::all_tuples;
 
-pub use macros::{Specializer, SpecializerKey};
+pub use libmarathon_macros::{Specializer, SpecializerKey};
 
 /// Defines a type that is able to be "specialized" and cached by creating and transforming
 /// its descriptor type. This is implemented for [`RenderPipeline`] and [`ComputePipeline`], and

@@ -3,7 +3,7 @@ use bevy_ecs::{prelude::Component, resource::Resource};
 use bevy_image::BevyDefault;
 use bevy_math::UVec2;
 use bevy_platform::collections::HashMap;
-use macros::ExtractResource;
+use libmarathon_macros::ExtractResource;
 use wgpu::TextureFormat;
 
 use crate::render::render_resource::TextureView;

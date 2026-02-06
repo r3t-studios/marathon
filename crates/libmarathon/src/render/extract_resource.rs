@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
-pub use macros::ExtractResource;
+pub use libmarathon_macros::ExtractResource;
 use bevy_utils::once;
 
 use crate::render::{Extract, ExtractSchedule, RenderApp};
