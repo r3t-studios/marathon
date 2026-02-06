@@ -29,7 +29,7 @@
 pub use crate::define_atomic_id;
 
 // Re-export derive macros from macros
-pub use macros::{AsBindGroup, RenderLabel, RenderSubGraph};
+pub use libmarathon_macros::{AsBindGroup, RenderLabel, RenderSubGraph};
 
 #[cfg(target_pointer_width = "16")]
 compile_error!("bevy_render cannot compile for a 16-bit platform.");

@@ -15,7 +15,7 @@ use bevy_ecs::{
 };
 use core::{marker::PhantomData, ops::Deref};
 
-pub use macros::ExtractComponent;
+pub use libmarathon_macros::ExtractComponent;
 
 /// Stores the index of a uniform inside of [`ComponentUniforms`].
 #[derive(Component)]

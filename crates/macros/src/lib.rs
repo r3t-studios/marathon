@@ -160,7 +160,7 @@ pub fn derive_draw_function_label(input: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```no_compile
-/// use macros::synced;
+/// use libmarathon_macros::synced;
 ///
 /// #[synced]
 /// pub struct CubeMarker {

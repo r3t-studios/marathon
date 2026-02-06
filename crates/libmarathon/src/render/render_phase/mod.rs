@@ -68,7 +68,7 @@ use bevy_ecs::{
     system::{lifetimeless::SRes, SystemParamItem},
 };
 use crate::render::renderer::RenderAdapterInfo;
-pub use macros::ShaderLabel;
+pub use libmarathon_macros::ShaderLabel;
 use core::{fmt::Debug, hash::Hash, iter, marker::PhantomData, ops::Range, slice::SliceIndex};
 use smallvec::SmallVec;
 use tracing::warn;
@@ -85,7 +85,7 @@ define_label!(
 /// A shorthand for `Interned<dyn RenderSubGraph>`.
 pub type InternedShaderLabel = Interned<dyn ShaderLabel>;
 
-pub use macros::DrawFunctionLabel;
+pub use libmarathon_macros::DrawFunctionLabel;
 
 define_label!(
     #[diagnostic::on_unimplemented(

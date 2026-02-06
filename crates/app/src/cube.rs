@@ -8,7 +8,7 @@ use uuid::Uuid;
 ///
 /// This component contains all the data needed for rendering a cube.
 /// The `#[synced]` attribute automatically handles network synchronization.
-#[macros::synced]
+#[libmarathon_macros::synced]
 pub struct CubeMarker {
     /// RGB color values (0.0 to 1.0)
     pub color_r: f32,
