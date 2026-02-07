@@ -503,6 +503,7 @@ pub fn save_session(conn: &mut Connection, session: &crate::networking::Session)
             session.last_active,
             session.entity_count as i64,
             session.state.to_string(),
+            // codeql[rust/cleartext-logging] - This is database persistence, not logging
             session.secret.as_ref().map(|b| b.as_ref()),
         ],
     )?;
