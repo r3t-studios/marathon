@@ -94,6 +94,47 @@ cargo nextest run -- --nocapture
 cargo doc --open
 ```
 
+### Environment Variables with `.envrc`
+
+Marathon uses [direnv](https://direnv.net/) for managing environment variables. This is particularly useful for storing sensitive tokens like GitHub Personal Access Tokens (PAT).
+
+#### Setup
+
+1. **Install direnv** (if not already installed):
+   ```bash
+   # macOS
+   brew install direnv
+
+   # Add to your shell profile (~/.zshrc or ~/.bashrc)
+   eval "$(direnv hook zsh)"  # or bash
+   ```
+
+2. **Create `.envrc` file** in the project root:
+   ```bash
+   # The .envrc file is already gitignored for security
+   export GH_TOKEN=your_github_personal_access_token
+   ```
+
+3. **Allow direnv** to load the file:
+   ```bash
+   direnv allow .
+   ```
+
+#### GitHub Token Setup
+
+For working with security scanning alerts and other GitHub features:
+
+1. Create a Personal Access Token at https://github.com/settings/tokens
+2. Select the following scopes:
+   - ✅ `repo` (full control)
+   - ✅ `security_events` (read security events)
+3. Add the token to your `.envrc` file:
+   ```bash
+   export GH_TOKEN=github_pat_YOUR_TOKEN_HERE
+   ```
+
+The `.envrc` file is automatically ignored by git, so your tokens won't be committed.
+
 ## How to Contribute
 
 ### Types of Contributions

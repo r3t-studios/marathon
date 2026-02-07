@@ -15,6 +15,8 @@
 //! marathonctl --socket /tmp/marathon1.sock status
 //! ```
 
+mod ui;
+
 use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -28,6 +30,10 @@ struct Args {
     /// Path to the control socket
     #[arg(long, default_value = "/tmp/marathon-control.sock")]
     socket: String,
+
+    /// Show sensitive information (session IDs, etc.) in full
+    #[arg(short, long)]
+    show_sensitive: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -70,6 +76,22 @@ enum Commands {
         /// Entity UUID
         entity_id: String,
     },
+}
+
+/// Redacts a session ID for safe logging
+/// Shows only the first 8 characters to prevent exposure of sensitive information
+/// unless show_sensitive is true
+fn redact_session_id(session_id: impl std::fmt::Display, show_sensitive: bool) -> String {
+    if show_sensitive {
+        session_id.to_string()
+    } else {
+        let session_str = session_id.to_string();
+        if session_str.len() > 8 {
+            format!("{}...", &session_str[..8])
+        } else {
+            "<redacted>".to_string()
+        }
+    }
 }
 
 fn main() {
@@ -132,7 +154,7 @@ fn main() {
     // Receive response
     match receive_response(&mut stream) {
         Ok(response) => {
-            print_response(response);
+            print_response(response, args.show_sensitive);
         }
         Err(e) => {
             eprintln!("Failed to receive response: {}", e);
@@ -169,7 +191,7 @@ fn receive_response(stream: &mut UnixStream) -> Result<ControlResponse, Box<dyn 
     Ok(response)
 }
 
-fn print_response(response: ControlResponse) {
+fn print_response(response: ControlResponse, show_sensitive: bool) {
     match response {
         ControlResponse::Status {
             node_id,
@@ -178,42 +200,70 @@ fn print_response(response: ControlResponse) {
             incoming_queue_size,
             connected_peers,
         } => {
-            println!("Session Status:");
-            println!("  Node ID: {}", node_id);
-            println!("  Session: {}", session_id);
-            println!("  Outgoing Queue: {} messages", outgoing_queue_size);
-            println!("  Incoming Queue: {} messages", incoming_queue_size);
+            let mut builder = ui::table("Session Status")
+                .row("Node ID", node_id)
+                .row("Session", redact_session_id(session_id, show_sensitive))
+                .row("Outgoing Queue", format!("{} messages", outgoing_queue_size))
+                .row("Incoming Queue", format!("{} messages", incoming_queue_size));
+
             if let Some(peers) = connected_peers {
-                println!("  Connected Peers: {}", peers);
+                builder = builder.row("Connected Peers", peers);
             }
+
+            builder.render();
         }
         ControlResponse::SessionInfo(info) => {
-            println!("Session Info:");
-            println!("  ID: {}", info.session_id);
+            let mut builder = ui::table("Session Info")
+                .row("ID", redact_session_id(&info.session_id, show_sensitive));
+
             if let Some(ref name) = info.session_name {
-                println!("  Name: {}", name);
+                builder = builder.row("Name", name);
             }
-            println!("  State: {:?}", info.state);
-            println!("  Entities: {}", info.entity_count);
-            println!("  Created: {}", info.created_at);
-            println!("  Last Active: {}", info.last_active);
+
+            builder
+                .row("State", format!("{:?}", info.state))
+                .row("Entities", info.entity_count)
+                .row("Created", info.created_at)
+                .row("Last Active", info.last_active)
+                .render();
         }
         ControlResponse::Sessions(sessions) => {
-            println!("Sessions ({} total):", sessions.len());
-            for session in sessions {
-                println!("  {}: {:?} ({} entities)", session.session_id, session.state, session.entity_count);
+            if sessions.is_empty() {
+                println!("No sessions found");
+                return;
             }
+
+            let mut builder = ui::grid(&format!("Sessions ({})", sessions.len()))
+                .header(&["Session ID", "State", "Entities"]);
+
+            for session in sessions {
+                builder = builder.row(&[
+                    redact_session_id(&session.session_id, show_sensitive),
+                    format!("{:?}", session.state),
+                    session.entity_count.to_string(),
+                ]);
+            }
+
+            builder.render();
         }
         ControlResponse::Peers(peers) => {
-            println!("Connected Peers ({} total):", peers.len());
-            for peer in peers {
-                print!("  {}", peer.node_id);
-                if let Some(since) = peer.connected_since {
-                    println!(" (connected since: {})", since);
-                } else {
-                    println!();
-                }
+            if peers.is_empty() {
+                println!("No connected peers");
+                return;
             }
+
+            let mut builder = ui::list(&format!("Connected Peers ({})", peers.len()));
+
+            for peer in peers {
+                let item = if let Some(since) = peer.connected_since {
+                    format!("{} (connected since: {})", peer.node_id, since)
+                } else {
+                    peer.node_id.to_string()
+                };
+                builder = builder.item(item);
+            }
+
+            builder.render();
         }
         ControlResponse::Ok { message } => {
             println!("Success: {}", message);

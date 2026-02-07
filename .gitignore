@@ -78,3 +78,4 @@ emotion-gradient-config-*.json
 **/*.csv
 .op/
 .sere
+.envrc

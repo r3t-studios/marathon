@@ -1,0 +1,15 @@
+[package]
+name = "marathonctl"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "marathonctl"
+path = "src/main.rs"
+
+[dependencies]
+libmarathon = { path = "../libmarathon" }
+clap.workspace = true
+uuid.workspace = true
+ratatui = "0.29"
+crossterm = "0.28"
