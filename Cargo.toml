@@ -52,7 +52,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # Bevy and graphics
 bevy = "0.17.2"
 egui = { version = "0.33", default-features = false, features = ["bytemuck", "default_fonts"] }
-glam = "0.29"
+glam = "0.30"
 winit = "0.30"
 
 # Synchronization
