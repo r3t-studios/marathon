@@ -2,13 +2,18 @@
 name = "marathonctl"
 version = "0.1.0"
 edition.workspace = true
+description = "Command-line control interface for Marathon multiplayer game engine"
+license = "MIT"
+repository = "https://github.com/r3t-studios/marathon"
+keywords = ["gamedev", "multiplayer", "cli", "networking"]
+categories = ["command-line-utilities", "game-development", "network-programming"]
 
 [[bin]]
 name = "marathonctl"
 path = "src/main.rs"
 
 [dependencies]
-libmarathon = { path = "../libmarathon" }
+libmarathon = { version = "0.1.1", path = "../libmarathon" }
 clap.workspace = true
 uuid.workspace = true
 ratatui = "0.29"
