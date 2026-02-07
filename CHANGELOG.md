@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-07
+
+### Added
+
+- **marathonctl CLI Tool**: New standalone command-line tool for controlling Marathon instances
+  - Beautiful TUI using ratatui with inline viewport mode
+  - Session status, peer list, and entity management commands
+  - `--show-sensitive` flag for debugging with full session IDs
+  - Easy-to-extend UI module with builder pattern API
+
+### Security
+
+- **Session ID Redaction**: Marathon CLI now redacts session IDs by default to prevent accidental exposure
+  - Shows only first 8 characters (e.g., `abc-def-...`)
+  - Explicit `--show-sensitive` flag required to view full IDs
+  - Fixes CodeQL cleartext-logging alerts (#1, #2, #3)
+- **Dependency Updates**: Updated `lru` crate to v0.16.3 to address memory safety vulnerability
+  - Fixes Dependabot alert #1 (CVE: IterMut violates Stacked Borrows)
+  - Updated ratatui v0.29 → v0.30
+  - Updated pkarr v5.0.0 → v5.0.2
+
+### Changed
+
+- Extracted `marathonctl` from app crate into standalone publishable crate
+- Updated all Marathon crate versions to 0.1.2 for consistency
+  - libmarathon: 0.1.2
+  - libmarathon-macros: 0.1.2
+  - marathonctl: 0.1.2
+
+### Documentation
+
+- Added `.envrc` setup instructions in CONTRIBUTING.md for GitHub token management
+- Added crates.io publishing metadata to marathonctl
+
+### Fixed
+
+- Removed unnecessary ratatui/crossterm dependencies from app crate
+- Added CodeQL suppression comment for database secret storage (false positive)
+
 ## [0.1.0] - 2026-02-06
 
 ### Added
@@ -61,5 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This is an early development release (version 0.x.y). The API is unstable and breaking changes are expected. Not recommended for production use.
 
-[unreleased]: https://github.com/r3t-studios/marathon/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/r3t-studios/marathon/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/r3t-studios/marathon/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/r3t-studios/marathon/releases/tag/v0.1.0
