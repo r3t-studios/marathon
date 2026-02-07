@@ -1,6 +1,6 @@
 [package]
 name = "libmarathon"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 description = "A peer-to-peer game engine development kit with CRDT-based state synchronization"
 license = "MIT"

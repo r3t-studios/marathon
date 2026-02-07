@@ -1,6 +1,6 @@
 [package]
 name = "marathonctl"
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 description = "Command-line control interface for Marathon multiplayer game engine"
 license = "MIT"
@@ -13,8 +13,8 @@ name = "marathonctl"
 path = "src/main.rs"
 
 [dependencies]
-libmarathon = { version = "0.1.1", path = "../libmarathon" }
+libmarathon = { version = "0.1.2", path = "../libmarathon" }
 clap.workspace = true
 uuid.workspace = true
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
