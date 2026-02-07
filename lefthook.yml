@@ -1,0 +1,57 @@
+# lefthook.yml - Git hooks configuration
+# https://github.com/evilmartians/lefthook
+
+# Validate commit messages follow conventional commits format
+commit-msg:
+  commands:
+    conventional-commit:
+      run: |
+        commit_msg=$(cat {1})
+
+        # Conventional commit pattern
+        pattern="^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert)(\(.+\))?: .{1,}"
+
+        if ! echo "$commit_msg" | grep -qE "$pattern"; then
+          echo "❌ Invalid commit message format!"
+          echo ""
+          echo "Commit message must follow conventional commits:"
+          echo "  <type>(<scope>): <description>"
+          echo ""
+          echo "Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci, revert"
+          echo ""
+          echo "Example:"
+          echo "  feat(auth): add user login endpoint"
+          echo "  fix(ui): resolve button alignment issue"
+          echo "  docs: update README with installation steps"
+          echo ""
+          echo "Your message:"
+          echo "  $commit_msg"
+          exit 1
+        fi
+
+# Run checks before commit
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.rs"
+      run: cargo fmt --check
+      stage_fixed: true
+
+    clippy:
+      glob: "*.rs"
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+    trailing-whitespace:
+      glob: "*.{rs,toml,md,yml,yaml}"
+      run: |
+        if grep -n '[[:space:]]$' {staged_files}; then
+          echo "❌ Found trailing whitespace in staged files"
+          exit 1
+        fi
+
+# Run checks before push
+pre-push:
+  commands:
+    test:
+      run: cargo test --workspace
