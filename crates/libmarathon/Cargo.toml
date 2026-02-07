@@ -58,7 +58,7 @@ static_assertions = "1.1"
 blake3 = "1.5"
 blocking = "1.6"
 hex.workspace = true
-bytemuck = { version = "1.14", features = ["derive"] }
+bytemuck = { version = "1.25", features = ["derive"] }
 bytes.workspace = true
 chrono.workspace = true
 crdts.workspace = true
