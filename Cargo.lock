@@ -4733,7 +4733,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libmarathon"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -4814,7 +4814,7 @@ dependencies = [
 
 [[package]]
 name = "libmarathon-macros"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bevy",
@@ -4990,7 +4990,7 @@ dependencies = [
 
 [[package]]
 name = "marathonctl"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "clap",
  "crossterm 0.28.1",
