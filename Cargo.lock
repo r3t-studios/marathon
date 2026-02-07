@@ -594,7 +594,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aec80b84926f730f6df81b9bc07255c120f57aaf7ac577f38d12dd8e1a0268ad"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "quote",
  "syn",
 ]
@@ -690,7 +690,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d03711d2c087227f64ba85dd38a99d4d6893f80d2475c2e77fb90a883760a055"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "proc-macro2",
  "quote",
  "syn",
@@ -791,7 +791,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8c733807158f8fcac68e23222e69ed91a6492ae9410fc2c145b9bb182cfd63e"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "quote",
  "syn",
 ]
@@ -848,7 +848,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6eeddfb80a2e000663e87be9229c26b4da92bddbc06c8776bc0d1f4a7f679079"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "proc-macro2",
  "quote",
  "syn",
@@ -860,8 +860,18 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7449e5903594a00f007732ba232af0c527ad4e6e3d29bc3e195ec78dbd20c8b2"
 dependencies = [
- "bevy_macro_utils",
- "encase_derive_impl",
+ "bevy_macro_utils 0.17.2",
+ "encase_derive_impl 0.11.2",
+]
+
+[[package]]
+name = "bevy_encase_derive"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f89146a8fcbfe47310fc929ee762dd3b08d4de3e3371c601529cfa8eeb861de"
+dependencies = [
+ "bevy_macro_utils 0.18.0",
+ "encase_derive_impl 0.12.0",
 ]
 
 [[package]]
@@ -915,7 +925,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "714273aa7f285c0aaa874b7fbe37fe4e6e45355e3e6f3321aefa1b78cda259e0"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "quote",
  "syn",
 ]
@@ -1116,6 +1126,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17dbc3f8948da58b3c17767d20fd3cd35fe4721ed19a9a3204a6f1d6c9951bdd"
 dependencies = [
  "parking_lot",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "toml_edit",
+]
+
+[[package]]
+name = "bevy_macro_utils"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b7272fca0bf30d8ca2571a803598856104b63e5c596d52850f811ed37c5e1e3"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn",
@@ -1324,7 +1346,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0205dce9c5a4d8d041b263bcfd96e9d9d6f3d49416e12db347ab5778b3071fe1"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "indexmap",
  "proc-macro2",
  "quote",
@@ -1346,7 +1368,7 @@ dependencies = [
  "bevy_derive",
  "bevy_diagnostic",
  "bevy_ecs",
- "bevy_encase_derive",
+ "bevy_encase_derive 0.17.2",
  "bevy_image",
  "bevy_math",
  "bevy_mesh",
@@ -1387,7 +1409,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7e8b553adf0a4f9f059c5c2dcb52d9ac09abede1c322a92b43b9f4bb11c3843"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "proc-macro2",
  "quote",
  "syn",
@@ -1510,7 +1532,7 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c3e4e32b1b96585740a2b447661af7db1b9d688db5e4d96da50461cd8f5ce63"
 dependencies = [
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "quote",
  "syn",
 ]
@@ -2874,7 +2896,7 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5223d6c647f09870553224f6e37261fe5567bc5a4f4cf13ed337476e79990f2f"
 dependencies = [
- "encase_derive_impl",
+ "encase_derive_impl 0.11.2",
 ]
 
 [[package]]
@@ -2882,6 +2904,17 @@ name = "encase_derive_impl"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1796db3d892515842ca2dfb11124c4bb4a9e58d9f2c5c1072e5bca1b2334507b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "encase_derive_impl"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8bad72d8308f7a382de2391ec978ddd736e0103846b965d7e2a63a75768af30"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4547,7 +4580,7 @@ dependencies = [
  "bevy_derive",
  "bevy_diagnostic",
  "bevy_ecs",
- "bevy_encase_derive",
+ "bevy_encase_derive 0.18.0",
  "bevy_image",
  "bevy_light",
  "bevy_math",
@@ -4620,7 +4653,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bevy",
- "bevy_macro_utils",
+ "bevy_macro_utils 0.17.2",
  "bytes",
  "inventory",
  "libmarathon",
