@@ -38,7 +38,7 @@ fn bench_repeated_updates_same_component(c: &mut Criterion) {
                         let op = PersistenceOp::UpsertComponent {
                             entity_id,
                             component_type: "Transform".to_string(),
-                            data: vec![i as u8; 100], // 100 bytes per update
+                            data: vec![i as u8; 100].into(), // 100 bytes per update
                         };
                         buffer.add(op).ok(); // Ignore errors for benchmarking
                     }
@@ -73,7 +73,7 @@ fn bench_different_components(c: &mut Criterion) {
                         let op = PersistenceOp::UpsertComponent {
                             entity_id,
                             component_type: format!("Component{}", i),
-                            data: vec![i as u8; 100],
+                            data: vec![i as u8; 100].into(),
                         };
                         buffer.add(op).ok();
                     }
@@ -114,7 +114,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
                         let op = PersistenceOp::UpsertComponent {
                             entity_id,
                             component_type,
-                            data: vec![i as u8; data_size],
+                            data: vec![i as u8; data_size].into(),
                         };
                         buffer.add(op).ok();
                     }
@@ -147,7 +147,7 @@ fn bench_entity_updates(c: &mut Criterion) {
                     for i in 0..num_updates {
                         let op = PersistenceOp::UpsertEntity {
                             id: entity_id,
-                            data: lib::persistence::EntityData {
+                            data: libmarathon::persistence::EntityData {
                                 id: entity_id,
                                 created_at: chrono::Utc::now(),
                                 updated_at: chrono::Utc::now(),
@@ -187,7 +187,7 @@ fn bench_take_operations(c: &mut Criterion) {
                             let op = PersistenceOp::UpsertComponent {
                                 entity_id,
                                 component_type: format!("Component{}", i),
-                                data: vec![i as u8; 64],
+                                data: vec![i as u8; 64].into(),
                             };
                             buffer.add(op).ok();
                         }
