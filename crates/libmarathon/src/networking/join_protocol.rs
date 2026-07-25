@@ -36,13 +36,18 @@ use crate::networking::{
 /// * `node_id` - The UUID of the node requesting to join
 /// * `session_id` - The session to join
 /// * `session_secret` - Optional pre-shared secret for authentication
-/// * `last_known_clock` - Optional vector clock from previous session (for rejoin)
+/// * `last_known_clock` - Optional vector clock from previous session (for
+///   rejoin)
 /// * `join_type` - Whether this is a fresh join or rejoin
 ///
 /// # Example
 ///
 /// ```
-/// use libmarathon::networking::{build_join_request, SessionId, JoinType};
+/// use libmarathon::networking::{
+///     JoinType,
+///     SessionId,
+///     build_join_request,
+/// };
 /// use uuid::Uuid;
 ///
 /// let node_id = Uuid::new_v4();
@@ -88,11 +93,9 @@ pub fn build_full_state(
     node_clock: &NodeVectorClock,
     blob_store: Option<&BlobStore>,
 ) -> VersionedMessage {
-    use crate::{
-        networking::{
-            blob_support::create_component_data,
-            messages::ComponentState,
-        },
+    use crate::networking::{
+        blob_support::create_component_data,
+        messages::ComponentState,
     };
 
     let mut entities = Vec::new();
@@ -114,10 +117,7 @@ pub fn build_full_state(
                 crate::networking::ComponentData::Inline(serialized)
             };
 
-            components.push(ComponentState {
-                discriminant,
-                data,
-            });
+            components.push(ComponentState { discriminant, data });
         }
 
         entities.push(EntityState {
@@ -182,7 +182,9 @@ pub fn apply_full_state(
         if entity_state.is_deleted {
             tombstoned_count += 1;
             // Record tombstone
-            if let Some(mut registry) = world.get_resource_mut::<crate::networking::TombstoneRegistry>() {
+            if let Some(mut registry) =
+                world.get_resource_mut::<crate::networking::TombstoneRegistry>()
+            {
                 registry.record_deletion(
                     entity_state.entity_id,
                     entity_state.owner_node_id,
@@ -199,21 +201,24 @@ pub fn apply_full_state(
         };
 
         let entity = match entity {
-            Some(existing_entity) => {
+            | Some(existing_entity) => {
                 // Entity already exists - reuse it and update components
                 debug!(
                     "Entity {} already exists (local entity {:?}), updating components",
                     entity_state.entity_id, existing_entity
                 );
                 existing_entity
-            }
-            None => {
+            },
+            | None => {
                 // Spawn new entity with NetworkedEntity, Persisted, and Synced components
                 // This ensures entities received via FullState are persisted locally and
                 // will auto-sync their Transform if one is added
                 let entity = world
                     .spawn((
-                        NetworkedEntity::with_id(entity_state.entity_id, entity_state.owner_node_id),
+                        NetworkedEntity::with_id(
+                            entity_state.entity_id,
+                            entity_state.owner_node_id,
+                        ),
                         crate::persistence::Persisted::with_id(entity_state.entity_id),
                         Synced,
                     ))
@@ -227,7 +232,7 @@ pub fn apply_full_state(
 
                 spawned_count += 1;
                 entity
-            }
+            },
         };
 
         let num_components = entity_state.components.len();
@@ -267,25 +272,22 @@ pub fn apply_full_state(
             let boxed_component = match type_registry.deserialize(discriminant, &data_bytes) {
                 | Ok(component) => component,
                 | Err(e) => {
-                    error!(
-                        "Failed to deserialize discriminant {}: {}",
-                        discriminant, e
-                    );
+                    error!("Failed to deserialize discriminant {}: {}", discriminant, e);
                     continue;
                 },
             };
 
-            // Get the insert function for this discriminant
-            let Some(insert_fn) = type_registry.get_insert_fn(discriminant) else {
-                error!("No insert function for discriminant {}", discriminant);
-                continue;
-            };
-
-            // Insert the component directly
-            let type_name_for_log = type_registry.get_type_name(discriminant)
+            // Insert the component directly (or merge it, for CRDT types)
+            let type_name_for_log = type_registry
+                .get_type_name(discriminant)
                 .unwrap_or("unknown");
             if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-                insert_fn(&mut entity_mut, boxed_component);
+                crate::networking::apply_ops::insert_or_merge_component(
+                    type_registry,
+                    &mut entity_mut,
+                    discriminant,
+                    boxed_component,
+                );
                 debug!("Applied component {} from FullState", type_name_for_log);
             }
         }
@@ -427,7 +429,8 @@ pub fn handle_full_state_system(world: &mut World) {
 
     let bridge = world.resource::<GossipBridge>().clone();
     let type_registry = {
-        let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        let registry_resource =
+            world.resource::<crate::persistence::ComponentTypeRegistryResource>();
         registry_resource.0
     };
 
@@ -440,12 +443,7 @@ pub fn handle_full_state_system(world: &mut World) {
             } => {
                 info!("Received FullState with {} entities", entities.len());
 
-                apply_full_state(
-                    entities,
-                    vector_clock,
-                    world,
-                    type_registry,
-                );
+                apply_full_state(entities, vector_clock, world, type_registry);
             },
             | _ => {
                 // Not a FullState, ignore
@@ -576,17 +574,12 @@ mod tests {
 
         // Need a minimal Bevy app for testing
         let mut app = App::new();
-        
+
         // Insert required resources
         app.insert_resource(NetworkEntityMap::new());
         app.insert_resource(NodeVectorClock::new(node_id));
 
-        apply_full_state(
-            vec![],
-            remote_clock.clone(),
-            app.world_mut(),
-            type_registry,
-        );
+        apply_full_state(vec![], remote_clock.clone(), app.world_mut(), type_registry);
 
         // Should have merged clocks
         let node_clock = app.world().resource::<NodeVectorClock>();
