@@ -94,6 +94,42 @@ pub fn compare_operations_lww(
     }
 }
 
+/// A component whose replicas converge by merging remote state into local
+/// state (a state-based CRDT, a.k.a. CvRDT).
+///
+/// Components implementing this trait can be registered with a merge function
+/// (see [`merge_into`]) so the replication layer always merges remote `Set`
+/// operations instead of running them through the last-writer-wins gate — a
+/// CRDT merge is commutative, associative, and idempotent, so applying a remote
+/// state is always safe and never loses concurrent updates.
+pub trait CrdtMerge: Sized {
+    /// Merge a remote replica into this one.
+    ///
+    /// Must be commutative (`a.merge(b) == b.merge(a)`), associative, and
+    /// idempotent (`a.merge(a) == a`) for convergence to hold.
+    fn crdt_merge(&mut self, remote: Self);
+}
+
+/// Merge an incoming component into the entity in the shape the component type
+/// registry expects (`ComponentMeta::merge_fn`).
+///
+/// Downcasts the incoming component and merges it into the existing one via
+/// [`CrdtMerge::crdt_merge`]; inserts it if the entity doesn't have the
+/// component yet. Register as `merge_fn: Some(merge_into::<T>)`.
+pub fn merge_into<T>(entity_mut: &mut EntityWorldMut, boxed: Box<dyn std::any::Any>)
+where
+    T: Component<Mutability = bevy::ecs::component::Mutable> + CrdtMerge, {
+    let Ok(remote) = boxed.downcast::<T>() else {
+        error!("merge_into: incoming component type mismatch");
+        return;
+    };
+    if let Some(mut local) = entity_mut.get_mut::<T>() {
+        local.crdt_merge(*remote);
+    } else {
+        entity_mut.insert(*remote);
+    }
+}
+
 /// Determine if a remote Set operation should be applied
 ///
 /// This is a convenience wrapper around `compare_operations_lww` for Set
