@@ -51,10 +51,12 @@ mod control_socket;
 
 use anyhow::Result;
 use bevy::prelude::*;
-use libmarathon::networking::{GossipBridge, SessionId};
-use uuid::Uuid;
-
 use control_socket::spawn_control_socket;
+use libmarathon::networking::{
+    GossipBridge,
+    SessionId,
+};
+use uuid::Uuid;
 
 /// Session ID to use for network initialization
 ///
@@ -86,16 +88,16 @@ pub struct GossipBridgeChannel(crossbeam_channel::Receiver<GossipBridge>);
 ///
 /// The InitialSessionId resource must be inserted before this system runs.
 /// If not present, an error is logged and networking is disabled.
-pub fn setup_gossip_networking(
-    mut commands: Commands,
-    session_id: Option<Res<InitialSessionId>>,
-) {
+pub fn setup_gossip_networking(mut commands: Commands, session_id: Option<Res<InitialSessionId>>) {
     let Some(session_id) = session_id else {
         error!("InitialSessionId resource not found - cannot initialize networking");
         return;
     };
 
-    info!("Setting up gossip networking for session {}...", session_id.0);
+    info!(
+        "Setting up gossip networking for session {}...",
+        session_id.0
+    );
 
     // Spawn dedicated thread with Tokio runtime for gossip initialization
     #[cfg(not(target_os = "ios"))]
@@ -179,9 +181,9 @@ pub fn poll_gossip_bridge(
 #[cfg(not(target_os = "ios"))]
 async fn init_gossip(session_id: SessionId) -> Result<GossipBridge> {
     use iroh::{
+        Endpoint,
         discovery::mdns::MdnsDiscovery,
         protocol::Router,
-        Endpoint,
     };
     use iroh_gossip::{
         net::Gossip,
@@ -208,10 +210,7 @@ async fn init_gossip(session_id: SessionId) -> Result<GossipBridge> {
 
     // Derive session-specific ALPN for network isolation
     let session_alpn = session_id.to_alpn();
-    info!(
-        "Using session-specific ALPN (session: {})",
-        session_id
-    );
+    info!("Using session-specific ALPN (session: {})", session_id);
 
     info!("Setting up router...");
     let router = Router::builder(endpoint.clone())
@@ -293,7 +292,8 @@ fn spawn_bridge_tasks(
 
         loop {
             if let Some(msg) = bridge_out.try_recv_outgoing() {
-                if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec()) {
+                if let Ok(bytes) = rkyv::to_bytes::<rkyv::rancor::Failure>(&msg).map(|b| b.to_vec())
+                {
                     if let Err(e) = sender.broadcast(Bytes::from(bytes)).await {
                         error!("[Node {}] Broadcast failed: {}", node_id, e);
                     }
@@ -308,28 +308,31 @@ fn spawn_bridge_tasks(
     tokio::spawn(async move {
         loop {
             match tokio::time::timeout(Duration::from_millis(100), receiver.next()).await {
-                | Ok(Some(Ok(event))) => {
-                    match event {
-                        | iroh_gossip::api::Event::Received(msg) => {
-                            info!("[Node {}] Received message from gossip", node_id);
-                            if let Ok(versioned_msg) =
-                                rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content)
-                            {
-                                if let Err(e) = bridge_in.push_incoming(versioned_msg) {
-                                    error!("[Node {}] Push incoming failed: {}", node_id, e);
-                                }
+                | Ok(Some(Ok(event))) => match event {
+                    | iroh_gossip::api::Event::Received(msg) => {
+                        info!("[Node {}] Received message from gossip", node_id);
+                        if let Ok(versioned_msg) = rkyv::from_bytes::<
+                            VersionedMessage,
+                            rkyv::rancor::Failure,
+                        >(&msg.content)
+                        {
+                            if let Err(e) = bridge_in.push_incoming(versioned_msg) {
+                                error!("[Node {}] Push incoming failed: {}", node_id, e);
                             }
-                        },
-                        | iroh_gossip::api::Event::NeighborUp(peer_id) => {
-                            info!("[Node {}] Peer connected: {}", node_id, peer_id);
-                        },
-                        | iroh_gossip::api::Event::NeighborDown(peer_id) => {
-                            warn!("[Node {}] Peer disconnected: {}", node_id, peer_id);
-                        },
-                        | iroh_gossip::api::Event::Lagged => {
-                            warn!("[Node {}] Event stream lagged - some events may have been missed", node_id);
-                        },
-                    }
+                        }
+                    },
+                    | iroh_gossip::api::Event::NeighborUp(peer_id) => {
+                        info!("[Node {}] Peer connected: {}", node_id, peer_id);
+                    },
+                    | iroh_gossip::api::Event::NeighborDown(peer_id) => {
+                        warn!("[Node {}] Peer disconnected: {}", node_id, peer_id);
+                    },
+                    | iroh_gossip::api::Event::Lagged => {
+                        warn!(
+                            "[Node {}] Event stream lagged - some events may have been missed",
+                            node_id
+                        );
+                    },
                 },
                 | Ok(Some(Err(e))) => error!("[Node {}] Receiver error: {}", node_id, e),
                 | Ok(None) => break,

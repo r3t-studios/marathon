@@ -1,24 +1,46 @@
-use bevy_app::{App, Plugin};
-use bevy_color::{ColorToComponents, LinearRgba};
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_color::{
+    ColorToComponents,
+    LinearRgba,
+};
 use bevy_ecs::prelude::*;
-use bevy_math::{Vec3, Vec4};
-use crate::render::{
-    extract_component::ExtractComponentPlugin,
-    render_resource::{DynamicUniformBuffer, ShaderType},
-    renderer::{RenderDevice, RenderQueue},
-    view::ExtractedView,
-    Render, RenderApp, RenderSystems,
+use bevy_math::{
+    Vec3,
+    Vec4,
 };
 use bevy_shader::load_shader_library;
 
-use crate::render::pbr::{DistanceFog, FogFalloff};
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderSystems,
+    extract_component::ExtractComponentPlugin,
+    pbr::{
+        DistanceFog,
+        FogFalloff,
+    },
+    render_resource::{
+        DynamicUniformBuffer,
+        ShaderType,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    view::ExtractedView,
+};
 
-/// The GPU-side representation of the fog configuration that's sent as a uniform to the shader
+/// The GPU-side representation of the fog configuration that's sent as a
+/// uniform to the shader
 #[derive(Copy, Clone, ShaderType, Default, Debug)]
 pub struct GpuFog {
     /// Fog color
     base_color: Vec4,
-    /// The color used for the fog where the view direction aligns with directional lights
+    /// The color used for the fog where the view direction aligns with
+    /// directional lights
     directional_light_color: Vec4,
     /// Allocated differently depending on fog mode.
     /// See `mesh_view_types.wgsl` for a detailed explanation
@@ -64,7 +86,7 @@ pub fn prepare_fog(
     for (entity, fog) in views_iter {
         let gpu_fog = if let Some(fog) = fog {
             match &fog.falloff {
-                FogFalloff::Linear { start, end } => GpuFog {
+                | FogFalloff::Linear { start, end } => GpuFog {
                     mode: GPU_FOG_MODE_LINEAR,
                     base_color: LinearRgba::from(fog.color).to_vec4(),
                     directional_light_color: LinearRgba::from(fog.directional_light_color)
@@ -73,7 +95,7 @@ pub fn prepare_fog(
                     be: Vec3::new(*start, *end, 0.0),
                     ..Default::default()
                 },
-                FogFalloff::Exponential { density } => GpuFog {
+                | FogFalloff::Exponential { density } => GpuFog {
                     mode: GPU_FOG_MODE_EXPONENTIAL,
                     base_color: LinearRgba::from(fog.color).to_vec4(),
                     directional_light_color: LinearRgba::from(fog.directional_light_color)
@@ -82,7 +104,7 @@ pub fn prepare_fog(
                     be: Vec3::new(*density, 0.0, 0.0),
                     ..Default::default()
                 },
-                FogFalloff::ExponentialSquared { density } => GpuFog {
+                | FogFalloff::ExponentialSquared { density } => GpuFog {
                     mode: GPU_FOG_MODE_EXPONENTIAL_SQUARED,
                     base_color: LinearRgba::from(fog.color).to_vec4(),
                     directional_light_color: LinearRgba::from(fog.directional_light_color)
@@ -91,7 +113,7 @@ pub fn prepare_fog(
                     be: Vec3::new(*density, 0.0, 0.0),
                     ..Default::default()
                 },
-                FogFalloff::Atmospheric {
+                | FogFalloff::Atmospheric {
                     extinction,
                     inscattering,
                 } => GpuFog {
@@ -119,14 +141,15 @@ pub fn prepare_fog(
     }
 }
 
-/// Inserted on each `Entity` with an `ExtractedView` to keep track of its offset
-/// in the `gpu_fogs` `DynamicUniformBuffer` within `FogMeta`
+/// Inserted on each `Entity` with an `ExtractedView` to keep track of its
+/// offset in the `gpu_fogs` `DynamicUniformBuffer` within `FogMeta`
 #[derive(Component)]
 pub struct ViewFogUniformOffset {
     pub offset: u32,
 }
 
-/// A plugin that consolidates fog extraction, preparation and related resources/assets
+/// A plugin that consolidates fog extraction, preparation and related
+/// resources/assets
 pub struct FogPlugin;
 
 impl Plugin for FogPlugin {

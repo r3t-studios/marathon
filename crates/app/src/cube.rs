@@ -1,7 +1,10 @@
 //! Cube entity management
 
 use bevy::prelude::*;
-use libmarathon::networking::{NetworkEntityMap, Synced};
+use libmarathon::networking::{
+    NetworkEntityMap,
+    Synced,
+};
 use uuid::Uuid;
 
 /// Marker component for the replicated cube
@@ -51,11 +54,14 @@ impl Plugin for CubePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnCubeEvent>()
             .add_message::<DeleteCubeEvent>()
-            .add_systems(Update, (
-                handle_spawn_cube,
-                handle_delete_cube,
-                add_cube_rendering_system,  // Custom rendering!
-            ));
+            .add_systems(
+                Update,
+                (
+                    handle_spawn_cube,
+                    handle_delete_cube,
+                    add_cube_rendering_system, // Custom rendering!
+                ),
+            );
     }
 }
 
@@ -70,7 +76,7 @@ fn add_cube_rendering_system(
         commands.entity(entity).insert((
             Mesh3d(meshes.add(Cuboid::new(cube.size, cube.size, cube.size))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: cube.color(),  // Use the color() helper method
+                base_color: cube.color(), // Use the color() helper method
                 perceptual_roughness: 0.7,
                 metallic: 0.3,
                 ..default()
@@ -80,10 +86,7 @@ fn add_cube_rendering_system(
 }
 
 /// Handle cube spawn messages
-fn handle_spawn_cube(
-    mut commands: Commands,
-    mut messages: MessageReader<SpawnCubeEvent>,
-) {
+fn handle_spawn_cube(mut commands: Commands, mut messages: MessageReader<SpawnCubeEvent>) {
     for event in messages.read() {
         info!("Spawning cube at {:?}", event.position);
 
@@ -91,7 +94,7 @@ fn handle_spawn_cube(
             CubeMarker::with_color(Color::srgb(0.8, 0.3, 0.6), 1.0),
             Transform::from_translation(event.position),
             GlobalTransform::default(),
-            Synced,  // Auto-adds NetworkedEntity, Persisted, NetworkedTransform
+            Synced, // Auto-adds NetworkedEntity, Persisted, NetworkedTransform
         ));
     }
 }
@@ -111,7 +114,9 @@ fn handle_delete_cube(
             // 3. Record tombstone
             // 4. Broadcast deletion to peers
             // 5. Despawn entity locally
-            commands.entity(bevy_entity).insert(libmarathon::networking::ToDelete);
+            commands
+                .entity(bevy_entity)
+                .insert(libmarathon::networking::ToDelete);
         } else {
             warn!("Attempted to delete unknown cube {}", event.entity_id);
         }

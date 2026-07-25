@@ -1,16 +1,29 @@
-use core::{iter, mem};
+use core::{
+    iter,
+    mem,
+};
 
 use bevy_camera::visibility::ViewVisibility;
 use bevy_ecs::prelude::*;
-use bevy_mesh::morph::{MeshMorphWeights, MAX_MORPH_WEIGHTS};
-use crate::render::sync_world::MainEntityHashMap;
-use crate::render::{
-    batching::NoAutomaticBatching,
-    render_resource::{BufferUsages, RawBufferVec},
-    renderer::{RenderDevice, RenderQueue},
-    Extract,
+use bevy_mesh::morph::{
+    MAX_MORPH_WEIGHTS,
+    MeshMorphWeights,
 };
 use bytemuck::NoUninit;
+
+use crate::render::{
+    Extract,
+    batching::NoAutomaticBatching,
+    render_resource::{
+        BufferUsages,
+        RawBufferVec,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_world::MainEntityHashMap,
+};
 
 #[derive(Component)]
 pub struct MorphIndex {
@@ -80,12 +93,14 @@ const fn can_align(step: usize, target: usize) -> bool {
 
 const WGPU_MIN_ALIGN: usize = 256;
 
-/// Align a [`RawBufferVec`] to `N` bytes by padding the end with `T::default()` values.
+/// Align a [`RawBufferVec`] to `N` bytes by padding the end with `T::default()`
+/// values.
 fn add_to_alignment<T: NoUninit + Default>(buffer: &mut RawBufferVec<T>) {
     let n = WGPU_MIN_ALIGN;
     let t_size = size_of::<T>();
     if !can_align(n, t_size) {
-        // This panic is stripped at compile time, due to n, t_size and can_align being const
+        // This panic is stripped at compile time, due to n, t_size and can_align being
+        // const
         panic!(
             "RawBufferVec should contain only types with a size multiple or divisible by {n}, \
             {} has a size of {t_size}, which is neither multiple or divisible by {n}",
@@ -104,8 +119,8 @@ fn add_to_alignment<T: NoUninit + Default>(buffer: &mut RawBufferVec<T>) {
     buffer.extend(iter::repeat_with(T::default).take(ts_to_add));
 }
 
-// Notes on implementation: see comment on top of the extract_skins system in skin module.
-// This works similarly, but for `f32` instead of `Mat4`
+// Notes on implementation: see comment on top of the extract_skins system in
+// skin module. This works similarly, but for `f32` instead of `Mat4`
 pub fn extract_morphs(
     morph_indices: ResMut<MorphIndices>,
     uniform: ResMut<MorphUniforms>,
@@ -138,8 +153,8 @@ pub fn extract_morphs(
     }
 }
 
-// NOTE: Because morph targets require per-morph target texture bindings, they cannot
-// currently be batched.
+// NOTE: Because morph targets require per-morph target texture bindings, they
+// cannot currently be batched.
 pub fn no_automatic_morph_batching(
     mut commands: Commands,
     query: Query<Entity, (With<MeshMorphWeights>, Without<NoAutomaticBatching>)>,

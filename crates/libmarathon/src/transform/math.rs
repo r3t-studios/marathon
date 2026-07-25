@@ -3,8 +3,7 @@
 //! Vendored from bevy_math with rkyv derives added.
 
 /// A 3-dimensional vector.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[repr(C)]
 pub struct Vec3 {
     pub x: f32,
@@ -13,8 +12,16 @@ pub struct Vec3 {
 }
 
 impl Vec3 {
-    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
-    pub const ONE: Self = Self { x: 1.0, y: 1.0, z: 1.0 };
+    pub const ONE: Self = Self {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
 
     #[inline]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
@@ -23,8 +30,7 @@ impl Vec3 {
 }
 
 /// A quaternion representing an orientation.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[repr(C)]
 pub struct Quat {
     pub x: f32,
@@ -34,13 +40,22 @@ pub struct Quat {
 }
 
 impl Quat {
-    pub const IDENTITY: Self = Self { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
+    pub const IDENTITY: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        w: 1.0,
+    };
 }
 
 // Conversion from bevy_math types
 impl From<bevy::math::Vec3> for Vec3 {
     fn from(v: bevy::math::Vec3) -> Self {
-        Self { x: v.x, y: v.y, z: v.z }
+        Self {
+            x: v.x,
+            y: v.y,
+            z: v.z,
+        }
     }
 }
 
@@ -52,7 +67,12 @@ impl From<Vec3> for bevy::math::Vec3 {
 
 impl From<bevy::math::Quat> for Quat {
     fn from(q: bevy::math::Quat) -> Self {
-        Self { x: q.x, y: q.y, z: q.z, w: q.w }
+        Self {
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            w: q.w,
+        }
     }
 }
 

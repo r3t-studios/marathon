@@ -9,15 +9,15 @@
 //! entities they're attached to have:
 //!
 //! 1. If attached to a view, they represent the objects located a very far
-//!    distance from the view, in a similar manner to a skybox. Essentially, these
-//!    *view environment maps* represent a higher-quality replacement for
-//!    [`AmbientLight`](bevy_light::AmbientLight) for outdoor scenes. The indirect light from such
-//!    environment maps are added to every point of the scene, including
-//!    interior enclosed areas.
+//!    distance from the view, in a similar manner to a skybox. Essentially,
+//!    these *view environment maps* represent a higher-quality replacement for
+//!    [`AmbientLight`](bevy_light::AmbientLight) for outdoor scenes. The
+//!    indirect light from such environment maps are added to every point of the
+//!    scene, including interior enclosed areas.
 //!
-//! 2. If attached to a [`bevy_light::LightProbe`], environment maps represent the immediate
-//!    surroundings of a specific location in the scene. These types of
-//!    environment maps are known as *reflection probes*.
+//! 2. If attached to a [`bevy_light::LightProbe`], environment maps represent
+//!    the immediate surroundings of a specific location in the scene. These
+//!    types of environment maps are known as *reflection probes*.
 //!
 //! Typically, environment maps are static (i.e. "baked", calculated ahead of
 //! time) and so only reflect fixed static geometry. The environment maps must
@@ -44,30 +44,53 @@
 //!
 //! [several pre-filtered environment maps]: https://github.com/KhronosGroup/glTF-Sample-Environments
 
+use core::{
+    num::NonZero,
+    ops::Deref,
+};
+
 use bevy_asset::AssetId;
-use bevy_ecs::{query::QueryItem, system::lifetimeless::Read};
+use bevy_ecs::{
+    query::QueryItem,
+    system::lifetimeless::Read,
+};
 use bevy_image::Image;
 use bevy_light::EnvironmentMapLight;
+
+use super::{
+    LightProbeComponent,
+    RenderViewLightProbes,
+};
 use crate::render::{
     extract_instances::ExtractInstance,
+    pbr::{
+        EnvironmentMapUniform,
+        MAX_VIEW_LIGHT_PROBES,
+        add_cubemap_texture_view,
+        binding_arrays_are_usable,
+    },
     render_asset::RenderAssets,
     render_resource::{
-        binding_types::{self, uniform_buffer},
-        BindGroupLayoutEntryBuilder, Sampler, SamplerBindingType, ShaderStages, TextureSampleType,
+        BindGroupLayoutEntryBuilder,
+        Sampler,
+        SamplerBindingType,
+        ShaderStages,
+        TextureSampleType,
         TextureView,
+        binding_types::{
+            self,
+            uniform_buffer,
+        },
     },
-    renderer::{RenderAdapter, RenderDevice},
-    texture::{FallbackImage, GpuImage},
+    renderer::{
+        RenderAdapter,
+        RenderDevice,
+    },
+    texture::{
+        FallbackImage,
+        GpuImage,
+    },
 };
-
-use core::{num::NonZero, ops::Deref};
-
-use crate::render::pbr::{
-    add_cubemap_texture_view, binding_arrays_are_usable, EnvironmentMapUniform,
-    MAX_VIEW_LIGHT_PROBES,
-};
-
-use super::{LightProbeComponent, RenderViewLightProbes};
 
 /// Like [`EnvironmentMapLight`], but contains asset IDs instead of handles.
 ///
@@ -93,27 +116,28 @@ pub(crate) enum RenderViewEnvironmentMapBindGroupEntries<'a> {
         /// The texture view of the view's specular cubemap.
         specular_texture_view: &'a TextureView,
 
-        /// The sampler used to sample elements of both `diffuse_texture_views` and
-        /// `specular_texture_views`.
+        /// The sampler used to sample elements of both `diffuse_texture_views`
+        /// and `specular_texture_views`.
         sampler: &'a Sampler,
     },
 
     /// The version used when binding arrays are available on the current
     /// platform.
     Multiple {
-        /// A texture view of each diffuse cubemap, in the same order that they are
-        /// supplied to the view (i.e. in the same order as
+        /// A texture view of each diffuse cubemap, in the same order that they
+        /// are supplied to the view (i.e. in the same order as
         /// `binding_index_to_cubemap` in [`RenderViewLightProbes`]).
         ///
-        /// This is a vector of `wgpu::TextureView`s. But we don't want to import
-        /// `wgpu` in this crate, so we refer to it indirectly like this.
+        /// This is a vector of `wgpu::TextureView`s. But we don't want to
+        /// import `wgpu` in this crate, so we refer to it indirectly
+        /// like this.
         diffuse_texture_views: Vec<&'a <TextureView as Deref>::Target>,
 
         /// As above, but for specular cubemaps.
         specular_texture_views: Vec<&'a <TextureView as Deref>::Target>,
 
-        /// The sampler used to sample elements of both `diffuse_texture_views` and
-        /// `specular_texture_views`.
+        /// The sampler used to sample elements of both `diffuse_texture_views`
+        /// and `specular_texture_views`.
         sampler: &'a Sampler,
     },
 }
@@ -136,7 +160,6 @@ pub struct EnvironmentMapViewLightProbeInfo {
 
 impl ExtractInstance for EnvironmentMapIds {
     type QueryData = Read<EnvironmentMapLight>;
-
     type QueryFilter = ();
 
     fn extract(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self> {
@@ -215,9 +238,9 @@ impl<'a> RenderViewEnvironmentMapBindGroupEntries<'a> {
             };
         }
 
-        if let Some(environment_maps) = render_view_environment_maps
-            && let Some(cubemap) = environment_maps.binding_index_to_textures.first()
-            && let (Some(diffuse_image), Some(specular_image)) =
+        if let Some(environment_maps) = render_view_environment_maps &&
+            let Some(cubemap) = environment_maps.binding_index_to_textures.first() &&
+            let (Some(diffuse_image), Some(specular_image)) =
                 (images.get(cubemap.diffuse), images.get(cubemap.specular))
         {
             return RenderViewEnvironmentMapBindGroupEntries::Single {
@@ -237,14 +260,13 @@ impl<'a> RenderViewEnvironmentMapBindGroupEntries<'a> {
 
 impl LightProbeComponent for EnvironmentMapLight {
     type AssetId = EnvironmentMapIds;
-
     // Information needed to render with the environment map attached to the
     // view.
     type ViewLightProbeInfo = EnvironmentMapViewLightProbeInfo;
 
     fn id(&self, image_assets: &RenderAssets<GpuImage>) -> Option<Self::AssetId> {
-        if image_assets.get(&self.diffuse_map).is_none()
-            || image_assets.get(&self.specular_map).is_none()
+        if image_assets.get(&self.diffuse_map).is_none() ||
+            image_assets.get(&self.specular_map).is_none()
         {
             None
         } else {
@@ -277,8 +299,8 @@ impl LightProbeComponent for EnvironmentMapLight {
             intensity,
             affects_lightmapped_mesh_diffuse,
             ..
-        }) = view_component
-            && let (Some(_), Some(specular_map)) = (
+        }) = view_component &&
+            let (Some(_), Some(specular_map)) = (
                 image_assets.get(diffuse_map_handle),
                 image_assets.get(specular_map_handle),
             )

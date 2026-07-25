@@ -4,22 +4,34 @@ mod manual_texture_view;
 mod texture_attachment;
 mod texture_cache;
 
-pub use crate::render::render_resource::DefaultImageSampler;
-use bevy_image::{CompressedImageFormatSupport, CompressedImageFormats, ImageLoader, ImagePlugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_asset::AssetApp;
+use bevy_ecs::prelude::*;
+use bevy_image::{
+    CompressedImageFormatSupport,
+    CompressedImageFormats,
+    ImageLoader,
+    ImagePlugin,
+};
 pub use fallback_image::*;
 pub use gpu_image::*;
 pub use manual_texture_view::*;
 pub use texture_attachment::*;
 pub use texture_cache::*;
-
-use crate::render::{
-    extract_resource::ExtractResourcePlugin, render_asset::RenderAssetPlugin,
-    renderer::RenderDevice, Render, RenderApp, RenderSystems,
-};
-use bevy_app::{App, Plugin};
-use bevy_asset::AssetApp;
-use bevy_ecs::prelude::*;
 use tracing::warn;
+
+pub use crate::render::render_resource::DefaultImageSampler;
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderSystems,
+    extract_resource::ExtractResourcePlugin,
+    render_asset::RenderAssetPlugin,
+    renderer::RenderDevice,
+};
 
 #[derive(Default)]
 pub struct TexturePlugin;
@@ -46,8 +58,10 @@ impl Plugin for TexturePlugin {
             {
                 resource.0
             } else {
-                warn!("CompressedImageFormatSupport resource not found. It should either be initialized in finish() of \
-                       RenderPlugin, or manually if not using the RenderPlugin or the WGPU backend.");
+                warn!(
+                    "CompressedImageFormatSupport resource not found. It should either be initialized in finish() of \
+                       RenderPlugin, or manually if not using the RenderPlugin or the WGPU backend."
+                );
                 CompressedImageFormats::NONE
             };
 

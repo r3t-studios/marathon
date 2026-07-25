@@ -38,8 +38,6 @@ pub struct Persisted {
     pub network_id: uuid::Uuid,
 }
 
-
-
 impl Persisted {
     pub fn new() -> Self {
         Self {
@@ -52,4 +50,5 @@ impl Persisted {
     }
 }
 
-// All component serialization now uses #[derive(Synced)] with rkyv through ComponentTypeRegistry
+// All component serialization now uses #[derive(Synced)] with rkyv through
+// ComponentTypeRegistry

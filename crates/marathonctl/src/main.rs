@@ -17,11 +17,22 @@
 
 mod ui;
 
-use clap::{Parser, Subcommand};
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
+use std::{
+    io::{
+        Read,
+        Write,
+    },
+    os::unix::net::UnixStream,
+};
 
-use libmarathon::networking::{ControlCommand, ControlResponse};
+use clap::{
+    Parser,
+    Subcommand,
+};
+use libmarathon::networking::{
+    ControlCommand,
+    ControlResponse,
+};
 
 /// Marathon control CLI
 #[derive(Parser, Debug)]
@@ -79,8 +90,8 @@ enum Commands {
 }
 
 /// Redacts a session ID for safe logging
-/// Shows only the first 8 characters to prevent exposure of sensitive information
-/// unless show_sensitive is true
+/// Shows only the first 8 characters to prevent exposure of sensitive
+/// information unless show_sensitive is true
 fn redact_session_id(session_id: impl std::fmt::Display, show_sensitive: bool) -> String {
     if show_sensitive {
         session_id.to_string()
@@ -99,12 +110,15 @@ fn main() {
 
     // Build command from subcommand
     let command = match args.command {
-        Commands::Start { session_code } => ControlCommand::JoinSession { session_code },
-        Commands::Stop => ControlCommand::LeaveSession,
-        Commands::Status => ControlCommand::GetStatus,
-        Commands::Test { content } => ControlCommand::SendTestMessage { content },
-        Commands::Ping => {
-            use libmarathon::networking::{SyncMessage, VectorClock};
+        | Commands::Start { session_code } => ControlCommand::JoinSession { session_code },
+        | Commands::Stop => ControlCommand::LeaveSession,
+        | Commands::Status => ControlCommand::GetStatus,
+        | Commands::Test { content } => ControlCommand::SendTestMessage { content },
+        | Commands::Ping => {
+            use libmarathon::networking::{
+                SyncMessage,
+                VectorClock,
+            };
             use uuid::Uuid;
 
             // For ping, we send a SyncRequest (lightweight ping-like message)
@@ -115,34 +129,37 @@ fn main() {
                     vector_clock: VectorClock::new(),
                 },
             }
-        }
-        Commands::Spawn { entity_type, x, y, z } => {
-            ControlCommand::SpawnEntity {
-                entity_type,
-                position: [x, y, z],
-            }
-        }
-        Commands::Delete { entity_id } => {
+        },
+        | Commands::Spawn {
+            entity_type,
+            x,
+            y,
+            z,
+        } => ControlCommand::SpawnEntity {
+            entity_type,
+            position: [x, y, z],
+        },
+        | Commands::Delete { entity_id } => {
             use uuid::Uuid;
             match Uuid::parse_str(&entity_id) {
-                Ok(uuid) => ControlCommand::DeleteEntity { entity_id: uuid },
-                Err(e) => {
+                | Ok(uuid) => ControlCommand::DeleteEntity { entity_id: uuid },
+                | Err(e) => {
                     eprintln!("Invalid UUID '{}': {}", entity_id, e);
                     std::process::exit(1);
-                }
+                },
             }
-        }
+        },
     };
 
     // Connect to Unix socket
     let socket_path = &args.socket;
     let mut stream = match UnixStream::connect(&socket_path) {
-        Ok(s) => s,
-        Err(e) => {
+        | Ok(s) => s,
+        | Err(e) => {
             eprintln!("Failed to connect to {}: {}", socket_path, e);
             eprintln!("Is the Marathon app running?");
             std::process::exit(1);
-        }
+        },
     };
 
     // Send command
@@ -153,17 +170,20 @@ fn main() {
 
     // Receive response
     match receive_response(&mut stream) {
-        Ok(response) => {
+        | Ok(response) => {
             print_response(response, args.show_sensitive);
-        }
-        Err(e) => {
+        },
+        | Err(e) => {
             eprintln!("Failed to receive response: {}", e);
             std::process::exit(1);
-        }
+        },
     }
 }
 
-fn send_command(stream: &mut UnixStream, command: &ControlCommand) -> Result<(), Box<dyn std::error::Error>> {
+fn send_command(
+    stream: &mut UnixStream,
+    command: &ControlCommand,
+) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = command.to_bytes()?;
     let len = bytes.len() as u32;
 
@@ -176,7 +196,9 @@ fn send_command(stream: &mut UnixStream, command: &ControlCommand) -> Result<(),
     Ok(())
 }
 
-fn receive_response(stream: &mut UnixStream) -> Result<ControlResponse, Box<dyn std::error::Error>> {
+fn receive_response(
+    stream: &mut UnixStream,
+) -> Result<ControlResponse, Box<dyn std::error::Error>> {
     // Read length prefix
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf)?;
@@ -193,7 +215,7 @@ fn receive_response(stream: &mut UnixStream) -> Result<ControlResponse, Box<dyn 
 
 fn print_response(response: ControlResponse, show_sensitive: bool) {
     match response {
-        ControlResponse::Status {
+        | ControlResponse::Status {
             node_id,
             session_id,
             outgoing_queue_size,
@@ -203,16 +225,22 @@ fn print_response(response: ControlResponse, show_sensitive: bool) {
             let mut builder = ui::table("Session Status")
                 .row("Node ID", node_id)
                 .row("Session", redact_session_id(session_id, show_sensitive))
-                .row("Outgoing Queue", format!("{} messages", outgoing_queue_size))
-                .row("Incoming Queue", format!("{} messages", incoming_queue_size));
+                .row(
+                    "Outgoing Queue",
+                    format!("{} messages", outgoing_queue_size),
+                )
+                .row(
+                    "Incoming Queue",
+                    format!("{} messages", incoming_queue_size),
+                );
 
             if let Some(peers) = connected_peers {
                 builder = builder.row("Connected Peers", peers);
             }
 
             builder.render();
-        }
-        ControlResponse::SessionInfo(info) => {
+        },
+        | ControlResponse::SessionInfo(info) => {
             let mut builder = ui::table("Session Info")
                 .row("ID", redact_session_id(&info.session_id, show_sensitive));
 
@@ -226,15 +254,18 @@ fn print_response(response: ControlResponse, show_sensitive: bool) {
                 .row("Created", info.created_at)
                 .row("Last Active", info.last_active)
                 .render();
-        }
-        ControlResponse::Sessions(sessions) => {
+        },
+        | ControlResponse::Sessions(sessions) => {
             if sessions.is_empty() {
                 println!("No sessions found");
                 return;
             }
 
-            let mut builder = ui::grid(&format!("Sessions ({})", sessions.len()))
-                .header(&["Session ID", "State", "Entities"]);
+            let mut builder = ui::grid(&format!("Sessions ({})", sessions.len())).header(&[
+                "Session ID",
+                "State",
+                "Entities",
+            ]);
 
             for session in sessions {
                 builder = builder.row(&[
@@ -245,8 +276,8 @@ fn print_response(response: ControlResponse, show_sensitive: bool) {
             }
 
             builder.render();
-        }
-        ControlResponse::Peers(peers) => {
+        },
+        | ControlResponse::Peers(peers) => {
             if peers.is_empty() {
                 println!("No connected peers");
                 return;
@@ -264,13 +295,13 @@ fn print_response(response: ControlResponse, show_sensitive: bool) {
             }
 
             builder.render();
-        }
-        ControlResponse::Ok { message } => {
+        },
+        | ControlResponse::Ok { message } => {
             println!("Success: {}", message);
-        }
-        ControlResponse::Error { error } => {
+        },
+        | ControlResponse::Error { error } => {
             eprintln!("Error: {}", error);
             std::process::exit(1);
-        }
+        },
     }
 }

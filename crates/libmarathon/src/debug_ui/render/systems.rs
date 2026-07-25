@@ -4,37 +4,77 @@
 // This code is vendored from bevy_egui: https://github.com/vladbat00/bevy_egui
 // Original author: Vladyslav Batyrenko <vladyslav.batyrenko@gmail.com>
 
-use crate::debug_ui::{
-    EguiContextSettings, EguiManagedTextures, EguiRenderOutput, EguiUserTextures,
-    RenderComputedScaleFactor,
+use bevy::{
+    asset::prelude::*,
+    ecs::{
+        prelude::*,
+        system::SystemParam,
+    },
+    image::Image,
+    log,
+    math::{
+        URect,
+        UVec2,
+        Vec2,
+    },
+    platform::collections::HashMap,
+    prelude::{
+        Deref,
+        DerefMut,
+    },
     render::{
-        DrawCommand, DrawPrimitive, EguiBevyPaintCallback, EguiCameraView, EguiDraw, EguiPipeline,
-        EguiPipelineKey, EguiViewTarget, PaintCallbackDraw,
+        camera::ExtractedCamera,
+        extract_resource::ExtractResource,
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroup,
+            BindGroupEntry,
+            BindingResource,
+            Buffer,
+            BufferDescriptor,
+            BufferId,
+            CachedRenderPipelineId,
+            DynamicUniformBuffer,
+            PipelineCache,
+            SpecializedRenderPipelines,
+        },
+        renderer::{
+            RenderDevice,
+            RenderQueue,
+        },
+        sync_world::{
+            MainEntity,
+            RenderEntity,
+        },
+        texture::GpuImage,
+        view::ExtractedView,
     },
-};
-use bevy::asset::prelude::*;
-use bevy::prelude::{Deref, DerefMut};
-use bevy::ecs::{prelude::*, system::SystemParam};
-use bevy::image::Image;
-use bevy::log;
-use bevy::math::{URect, UVec2, Vec2};
-use bevy::platform::collections::HashMap;
-use bevy::render::{
-    camera::ExtractedCamera,
-    extract_resource::ExtractResource,
-    render_asset::RenderAssets,
-    render_resource::{
-        BindGroup, BindGroupEntry, BindingResource, Buffer, BufferDescriptor, BufferId,
-        CachedRenderPipelineId, DynamicUniformBuffer, PipelineCache, SpecializedRenderPipelines,
-    },
-    renderer::{RenderDevice, RenderQueue},
-    sync_world::{MainEntity, RenderEntity},
-    texture::GpuImage,
-    view::ExtractedView,
 };
 use bytemuck::cast_slice;
 use itertools::Itertools;
-use wgpu_types::{BufferAddress, BufferUsages};
+use wgpu_types::{
+    BufferAddress,
+    BufferUsages,
+};
+
+use crate::debug_ui::{
+    EguiContextSettings,
+    EguiManagedTextures,
+    EguiRenderOutput,
+    EguiUserTextures,
+    RenderComputedScaleFactor,
+    render::{
+        DrawCommand,
+        DrawPrimitive,
+        EguiBevyPaintCallback,
+        EguiCameraView,
+        EguiDraw,
+        EguiPipeline,
+        EguiPipelineKey,
+        EguiViewTarget,
+        PaintCallbackDraw,
+    },
+};
 
 /// Extracted Egui settings.
 #[derive(Resource, Deref, DerefMut, Default)]
@@ -101,18 +141,21 @@ pub struct EguiTransforms {
     pub bind_group: Option<(BufferId, BindGroup)>,
 }
 
-/// Scale and translation for rendering Egui shapes. Is needed to transform Egui coordinates from
-/// the screen space with the center at (0, 0) to the normalised viewport space.
+/// Scale and translation for rendering Egui shapes. Is needed to transform Egui
+/// coordinates from the screen space with the center at (0, 0) to the
+/// normalised viewport space.
 #[derive(bevy::render::render_resource::ShaderType, Default)]
 pub struct EguiTransform {
-    /// Is affected by render target size, scale factor and [`EguiContextSettings::scale_factor`].
+    /// Is affected by render target size, scale factor and
+    /// [`EguiContextSettings::scale_factor`].
     pub scale: Vec2,
     /// Normally equals `[-1.0, 1.0]`.
     pub translation: Vec2,
 }
 
 impl EguiTransform {
-    /// Calculates the transform from target size and target scale factor multiplied by [`EguiContextSettings::scale_factor`].
+    /// Calculates the transform from target size and target scale factor
+    /// multiplied by [`EguiContextSettings::scale_factor`].
     pub fn new(target_size: Vec2, scale_factor: f32) -> Self {
         EguiTransform {
             scale: Vec2::new(
@@ -143,9 +186,7 @@ pub fn prepare_egui_transforms_system(
 
         let &RenderComputedScaleFactor { scale_factor } = views.get(egui_camera_view.0)?;
         let transform = EguiTransform::new(target_size.as_vec2(), scale_factor);
-        let offset = egui_transforms
-            .buffer
-            .push(&transform);
+        let offset = egui_transforms.buffer.push(&transform);
         egui_transforms
             .offsets
             .insert(view.retained_view_entity.main_entity, offset);
@@ -157,8 +198,8 @@ pub fn prepare_egui_transforms_system(
 
     if let Some(buffer) = egui_transforms.buffer.buffer() {
         match egui_transforms.bind_group {
-            Some((id, _)) if buffer.id() == id => {}
-            _ => {
+            | Some((id, _)) if buffer.id() == id => {},
+            | _ => {
                 let transform_bind_group = render_device.create_bind_group(
                     Some("egui transform bind group"),
                     &egui_pipeline.transform_bind_group_layout,
@@ -168,7 +209,7 @@ pub fn prepare_egui_transforms_system(
                     }],
                 );
                 egui_transforms.bind_group = Some((buffer.id(), transform_bind_group));
-            }
+            },
         };
     }
 
@@ -418,18 +459,18 @@ pub fn prepare_egui_render_target_data_system(
             }
 
             let mesh = match primitive {
-                egui::epaint::Primitive::Mesh(mesh) => mesh,
-                egui::epaint::Primitive::Callback(paint_callback) => {
+                | egui::epaint::Primitive::Mesh(mesh) => mesh,
+                | egui::epaint::Primitive::Callback(paint_callback) => {
                     let callback = match paint_callback
                         .callback
                         .clone()
                         .downcast::<EguiBevyPaintCallback>()
                     {
-                        Ok(callback) => callback,
-                        Err(err) => {
+                        | Ok(callback) => callback,
+                        | Err(err) => {
                             log::error!("Unsupported Egui paint callback type: {err:?}");
                             continue;
-                        }
+                        },
                     };
 
                     data.postponed_updates.push((
@@ -448,7 +489,7 @@ pub fn prepare_egui_render_target_data_system(
                         clip_rect,
                     });
                     continue;
-                }
+                },
             };
 
             data.vertex_data
@@ -458,10 +499,10 @@ pub fn prepare_egui_render_target_data_system(
             index_offset += mesh.vertices.len() as u32;
 
             let texture_handle = match mesh.texture_id {
-                egui::TextureId::Managed(id) => {
+                | egui::TextureId::Managed(id) => {
                     EguiTextureId::Managed(view.retained_view_entity.main_entity, id)
-                }
-                egui::TextureId::User(id) => EguiTextureId::User(id),
+                },
+                | egui::TextureId::User(id) => EguiTextureId::User(id),
             };
 
             data.draw_commands.push(DrawCommand {
@@ -495,10 +536,10 @@ pub fn prepare_egui_render_target_data_system(
         }
 
         let (vertex_buffer, index_buffer) = match (&data.vertex_buffer, &data.index_buffer) {
-            (Some(vertex), Some(index)) => (vertex, index),
-            _ => {
+            | (Some(vertex), Some(index)) => (vertex, index),
+            | _ => {
                 continue;
-            }
+            },
         };
 
         render_queue.write_buffer(vertex_buffer, 0, &data.vertex_data);

@@ -1,35 +1,80 @@
-use crate::render::pbr::meshlet::asset::{MeshletAabb, MeshletAabbErrorOffset, MeshletCullData};
-
-use super::asset::{BvhNode, Meshlet, MeshletBoundingSphere, MeshletMesh};
-use std::borrow::Cow;
-use bevy_math::{
-    bounding::{Aabb3d, BoundingSphere, BoundingVolume},
-    ops::log2,
-    IVec3, Isometry3d, Vec2, Vec3, Vec3A, Vec3Swizzles,
+use core::{
+    f32,
+    ops::Range,
 };
-use bevy_mesh::{Indices, Mesh};
+use std::borrow::Cow;
+
+use bevy_math::{
+    IVec3,
+    Isometry3d,
+    Vec2,
+    Vec3,
+    Vec3A,
+    Vec3Swizzles,
+    bounding::{
+        Aabb3d,
+        BoundingSphere,
+        BoundingVolume,
+    },
+    ops::log2,
+};
+use bevy_mesh::{
+    Indices,
+    Mesh,
+};
 use bevy_platform::collections::HashMap;
-use crate::render::render_resource::PrimitiveTopology;
-use bevy_tasks::{AsyncComputeTaskPool, ParallelSlice};
-use bitvec::{order::Lsb0, vec::BitVec, view::BitView};
-use core::{f32, ops::Range};
+use bevy_tasks::{
+    AsyncComputeTaskPool,
+    ParallelSlice,
+};
+use bitvec::{
+    order::Lsb0,
+    vec::BitVec,
+    view::BitView,
+};
 use itertools::Itertools;
 use meshopt::{
-    build_meshlets, ffi::meshopt_Meshlet, generate_vertex_remap_multi,
-    simplify_with_attributes_and_locks, Meshlets, SimplifyOptions, VertexDataAdapter, VertexStream,
+    Meshlets,
+    SimplifyOptions,
+    VertexDataAdapter,
+    VertexStream,
+    build_meshlets,
+    ffi::meshopt_Meshlet,
+    generate_vertex_remap_multi,
+    simplify_with_attributes_and_locks,
 };
-use metis::{option::Opt, Graph};
+use metis::{
+    Graph,
+    option::Opt,
+};
 use smallvec::SmallVec;
 use thiserror::Error;
 use tracing::debug_span;
 
+use super::asset::{
+    BvhNode,
+    Meshlet,
+    MeshletBoundingSphere,
+    MeshletMesh,
+};
+use crate::render::{
+    pbr::meshlet::asset::{
+        MeshletAabb,
+        MeshletAabbErrorOffset,
+        MeshletCullData,
+    },
+    render_resource::PrimitiveTopology,
+};
+
 // Aim to have 8 meshlets per group
 const TARGET_MESHLETS_PER_GROUP: usize = 8;
-// Reject groups that keep over 60% of their original triangles. We'd much rather render a few
-// extra triangles than create too many meshlets, increasing cull overhead.
+// Reject groups that keep over 60% of their original triangles. We'd much
+// rather render a few extra triangles than create too many meshlets, increasing
+// cull overhead.
 const SIMPLIFICATION_FAILURE_PERCENTAGE: f32 = 0.60;
 
-/// Default vertex position quantization factor for use with [`MeshletMesh::from_mesh`].
+/// Default vertex position quantization factor for use with
+/// [`MeshletMesh::from_mesh`].
 ///
 /// Snaps vertices to the nearest 1/16th of a centimeter (1/2^4).
 pub const MESHLET_DEFAULT_VERTEX_POSITION_QUANTIZATION_FACTOR: u8 = 4;
@@ -39,7 +84,8 @@ const CENTIMETERS_PER_METER: f32 = 100.0;
 impl MeshletMesh {
     /// Process a [`Mesh`] to generate a [`MeshletMesh`].
     ///
-    /// This process is very slow, and should be done ahead of time, and not at runtime.
+    /// This process is very slow, and should be done ahead of time, and not at
+    /// runtime.
     ///
     /// # Requirements
     ///
@@ -48,22 +94,35 @@ impl MeshletMesh {
     /// The input mesh must:
     /// 1. Use [`PrimitiveTopology::TriangleList`]
     /// 2. Use indices
-    /// 3. Have the exact following set of vertex attributes: `{POSITION, NORMAL, UV_0}` (tangents can be used in material shaders, but are calculated at runtime and are not stored in the mesh)
+    /// 3. Have the exact following set of vertex attributes: `{POSITION,
+    ///    NORMAL, UV_0}` (tangents can be used in material shaders, but are
+    ///    calculated at runtime and are not stored in the mesh)
     ///
     /// # Vertex precision
     ///
-    /// `vertex_position_quantization_factor` is the amount of precision to use when quantizing vertex positions.
+    /// `vertex_position_quantization_factor` is the amount of precision to use
+    /// when quantizing vertex positions.
     ///
-    /// Vertices are snapped to the nearest (1/2^x)th of a centimeter, where x = `vertex_position_quantization_factor`.
-    /// E.g. if x = 4, then vertices are snapped to the nearest 1/2^4 = 1/16th of a centimeter.
+    /// Vertices are snapped to the nearest (1/2^x)th of a centimeter, where x =
+    /// `vertex_position_quantization_factor`. E.g. if x = 4, then vertices
+    /// are snapped to the nearest 1/2^4 = 1/16th of a centimeter.
     ///
-    /// Use [`MESHLET_DEFAULT_VERTEX_POSITION_QUANTIZATION_FACTOR`] as a default, adjusting lower to save memory and disk space, and higher to prevent artifacts if needed.
+    /// Use [`MESHLET_DEFAULT_VERTEX_POSITION_QUANTIZATION_FACTOR`] as a
+    /// default, adjusting lower to save memory and disk space, and higher to
+    /// prevent artifacts if needed.
     ///
-    /// To ensure that two different meshes do not have cracks between them when placed directly next to each other:
-    ///   * Use the same quantization factor when converting each mesh to a meshlet mesh
-    ///   * Ensure that their [`bevy_transform::components::Transform::translation`]s are a multiple of 1/2^x centimeters (note that translations are in meters)
-    ///   * Ensure that their [`bevy_transform::components::Transform::scale`]s are the same
-    ///   * Ensure that their [`bevy_transform::components::Transform::rotation`]s are a multiple of 90 degrees
+    /// To ensure that two different meshes do not have cracks between them when
+    /// placed directly next to each other:
+    ///   * Use the same quantization factor when converting each mesh to a
+    ///     meshlet mesh
+    ///   * Ensure that their
+    ///     [`bevy_transform::components::Transform::translation`]s are a
+    ///     multiple of 1/2^x centimeters (note that translations are in meters)
+    ///   * Ensure that their [`bevy_transform::components::Transform::scale`]s
+    ///     are the same
+    ///   * Ensure that their
+    ///     [`bevy_transform::components::Transform::rotation`]s are a multiple
+    ///     of 90 degrees
     pub fn from_mesh(
         mesh: &Mesh,
         vertex_position_quantization_factor: u8,
@@ -80,7 +139,8 @@ impl MeshletMesh {
         let vertices = VertexDataAdapter::new(&vertex_buffer, vertex_stride, 0).unwrap();
         let vertex_normals = bytemuck::cast_slice(&vertex_buffer[12..16]);
 
-        // Generate a position-only vertex buffer for determining triangle/meshlet connectivity
+        // Generate a position-only vertex buffer for determining triangle/meshlet
+        // connectivity
         let (position_only_vertex_count, position_only_vertex_remap) = generate_vertex_remap_multi(
             vertices.vertex_count,
             &[VertexStream::new_with_stride::<Vec3, _>(
@@ -110,7 +170,8 @@ impl MeshletMesh {
             let s = debug_span!("simplify lod", meshlets = simplification_queue.len());
             let _e = s.enter();
 
-            // For each meshlet build a list of connected meshlets (meshlets that share a vertex)
+            // For each meshlet build a list of connected meshlets (meshlets that share a
+            // vertex)
             let connected_meshlets_per_meshlet = find_connected_meshlets(
                 &simplification_queue,
                 &meshlets,
@@ -160,8 +221,8 @@ impl MeshletMesh {
                     return Err(group);
                 };
 
-                // Force the group error to be atleast as large as all of its constituent meshlet's
-                // individual errors.
+                // Force the group error to be atleast as large as all of its constituent
+                // meshlet's individual errors.
                 for &id in group.meshlets.iter() {
                     group_error = group_error.max(cull_data[id as usize].error);
                 }
@@ -184,7 +245,7 @@ impl MeshletMesh {
             let mut stuck_tris = 0;
             for group in simplified {
                 match group {
-                    Ok((group, (new_meshlets, new_cull_data))) => {
+                    | Ok((group, (new_meshlets, new_cull_data))) => {
                         let start = meshlets.len();
                         merge_meshlets(&mut meshlets, new_meshlets);
                         cull_data.extend(new_cull_data);
@@ -194,12 +255,12 @@ impl MeshletMesh {
                         passed_tris += triangles_in_meshlets(&meshlets, new_meshlet_ids.clone());
                         simplification_queue.extend(new_meshlet_ids);
                         all_groups.push(group);
-                    }
-                    Err(group) => {
+                    },
+                    | Err(group) => {
                         stuck_tris +=
                             triangles_in_meshlets(&meshlets, group.meshlets.iter().copied());
                         stuck.push(group);
-                    }
+                    },
                 }
             }
 
@@ -279,9 +340,9 @@ fn validate_input_mesh(mesh: &Mesh) -> Result<Cow<'_, [u32]>, MeshToMeshletMeshC
     }
 
     match mesh.indices() {
-        Some(Indices::U32(indices)) => Ok(Cow::Borrowed(indices.as_slice())),
-        Some(Indices::U16(indices)) => Ok(indices.iter().map(|i| *i as u32).collect()),
-        _ => Err(MeshToMeshletMeshConversionError::MeshMissingIndices),
+        | Some(Indices::U32(indices)) => Ok(Cow::Borrowed(indices.as_slice())),
+        | Some(Indices::U16(indices)) => Ok(indices.iter().map(|i| *i as u32).collect()),
+        | _ => Err(MeshToMeshletMeshConversionError::MeshMissingIndices),
     }
 }
 
@@ -320,7 +381,8 @@ fn compute_meshlets(
         }
     }
 
-    // For each triangle, gather all other triangles that share at least one vertex along with their shared vertex count
+    // For each triangle, gather all other triangles that share at least one vertex
+    // along with their shared vertex count
     let triangle_count = indices.len() / 3;
     let mut connected_triangles_per_triangle = vec![Vec::new(); triangle_count];
     for ((triangle_id1, triangle_id2), shared_vertex_count) in triangle_pair_to_shared_vertex_count
@@ -330,8 +392,9 @@ fn compute_meshlets(
         connected_triangles_per_triangle[triangle_id2].push((triangle_id1, shared_vertex_count));
     }
 
-    // The order of triangles depends on hash traversal order; to produce deterministic results, sort them
-    // TODO: Wouldn't it be faster to use a `BTreeMap` above instead of `HashMap` + sorting?
+    // The order of triangles depends on hash traversal order; to produce
+    // deterministic results, sort them TODO: Wouldn't it be faster to use a
+    // `BTreeMap` above instead of `HashMap` + sorting?
     for list in connected_triangles_per_triangle.iter_mut() {
         list.sort_unstable();
     }
@@ -344,7 +407,8 @@ fn compute_meshlets(
         for (connected_triangle_id, shared_vertex_count) in connected_triangles {
             adjncy.push(connected_triangle_id as i32);
             adjwgt.push(shared_vertex_count);
-            // TODO: Additional weight based on triangle center spatial proximity?
+            // TODO: Additional weight based on triangle center spatial
+            // proximity?
         }
     }
     xadj.push(adjncy.len() as i32);
@@ -417,8 +481,9 @@ fn find_connected_meshlets(
         for index in meshlet.triangles {
             let vertex_id = position_only_vertex_remap[meshlet.vertices[*index as usize] as usize];
             let vertex_to_meshlets = &mut vertices_to_meshlets[vertex_id as usize];
-            // Meshlets are added in order, so we can just check the last element to deduplicate,
-            // in the case of two triangles sharing the same vertex within a single meshlet
+            // Meshlets are added in order, so we can just check the last element to
+            // deduplicate, in the case of two triangles sharing the same vertex
+            // within a single meshlet
             if vertex_to_meshlets.last() != Some(&id_index) {
                 vertex_to_meshlets.push(id_index);
             }
@@ -436,7 +501,8 @@ fn find_connected_meshlets(
         }
     }
 
-    // For each meshlet, gather all other meshlets that share at least one vertex along with their shared vertex count
+    // For each meshlet, gather all other meshlets that share at least one vertex
+    // along with their shared vertex count
     let mut connected_meshlets_per_meshlet = vec![Vec::new(); simplification_queue.len()];
     for ((meshlet_id1, meshlet_id2), shared_vertex_count) in meshlet_pair_to_shared_vertex_count {
         // We record both id1->id2 and id2->id1 as adjacency is symmetrical
@@ -444,8 +510,9 @@ fn find_connected_meshlets(
         connected_meshlets_per_meshlet[meshlet_id2].push((meshlet_id1, shared_vertex_count));
     }
 
-    // The order of meshlets depends on hash traversal order; to produce deterministic results, sort them
-    // TODO: Wouldn't it be faster to use a `BTreeMap` above instead of `HashMap` + sorting?
+    // The order of meshlets depends on hash traversal order; to produce
+    // deterministic results, sort them TODO: Wouldn't it be faster to use a
+    // `BTreeMap` above instead of `HashMap` + sorting?
     for list in connected_meshlets_per_meshlet.iter_mut() {
         list.sort_unstable();
     }
@@ -517,9 +584,10 @@ fn lock_group_borders(
                 let vertex_id =
                     position_only_vertex_remap[meshlet.vertices[*index as usize] as usize] as usize;
 
-                // If the vertex is not yet claimed by any group, or was already claimed by this group
-                if position_only_locks[vertex_id] == -1
-                    || position_only_locks[vertex_id] == group_id as i32
+                // If the vertex is not yet claimed by any group, or was already claimed by this
+                // group
+                if position_only_locks[vertex_id] == -1 ||
+                    position_only_locks[vertex_id] == group_id as i32
                 {
                     position_only_locks[vertex_id] = group_id as i32; // Then claim the vertex for this group
                 } else {
@@ -544,7 +612,8 @@ fn simplify_meshlet_group(
     vertex_stride: usize,
     vertex_locks: &[bool],
 ) -> Option<(Vec<u32>, f32)> {
-    // Build a new index buffer into the mesh vertex data by combining all meshlet data in the group
+    // Build a new index buffer into the mesh vertex data by combining all meshlet
+    // data in the group
     let group_indices = group
         .meshlets
         .iter()
@@ -573,8 +642,8 @@ fn simplify_meshlet_group(
     );
 
     // Check if we were able to simplify
-    if simplified_group_indices.len() as f32 / group_indices.len() as f32
-        > SIMPLIFICATION_FAILURE_PERCENTAGE
+    if simplified_group_indices.len() as f32 / group_indices.len() as f32 >
+        SIMPLIFICATION_FAILURE_PERCENTAGE
     {
         return None;
     }
@@ -641,13 +710,15 @@ fn build_and_compress_per_meshlet_vertex_data(
         max_quantized_position_channels = max_quantized_position_channels.max(quantized_position);
     }
 
-    // Calculate bits needed to encode each quantized vertex position channel based on the range of each channel
+    // Calculate bits needed to encode each quantized vertex position channel based
+    // on the range of each channel
     let range = max_quantized_position_channels - min_quantized_position_channels + 1;
     let bits_per_vertex_position_channel_x = log2(range.x as f32).ceil() as u8;
     let bits_per_vertex_position_channel_y = log2(range.y as f32).ceil() as u8;
     let bits_per_vertex_position_channel_z = log2(range.z as f32).ceil() as u8;
 
-    // Lossless encoding of vertex positions in the minimum number of bits per channel
+    // Lossless encoding of vertex positions in the minimum number of bits per
+    // channel
     for quantized_position in quantized_positions.iter().take(meshlet_vertex_ids.len()) {
         // Remap [range_min, range_max] IVec3 to [0, range_max - range_min] UVec3
         let position = (quantized_position - min_quantized_position_channels).as_uvec3();
@@ -686,11 +757,7 @@ fn merge_spheres(a: BoundingSphere, b: BoundingSphere) -> BoundingSphere {
     let br = a.radius().max(b.radius());
     let len = a.center.distance(b.center);
     if len + sr <= br || sr == 0.0 || len == 0.0 {
-        if a.radius() > b.radius() {
-            a
-        } else {
-            b
-        }
+        if a.radius() > b.radius() { a } else { b }
     } else {
         let radius = (sr + br + len) / 2.0;
         let center =
@@ -820,11 +887,11 @@ impl BvhBuilder {
             });
             i as _
         } else {
-            // We need to split the nodes into 8 groups, with the smallest possible tree depth.
-            // Additionally, no child should be more than one level deeper than the others.
-            // At `l` levels, we can fit upto 8^l nodes.
-            // The `max_child_size` is the largest power of 8 <= `count` (any larger and we'd have
-            // unfilled nodes).
+            // We need to split the nodes into 8 groups, with the smallest possible tree
+            // depth. Additionally, no child should be more than one level
+            // deeper than the others. At `l` levels, we can fit upto 8^l nodes.
+            // The `max_child_size` is the largest power of 8 <= `count` (any larger and
+            // we'd have unfilled nodes).
             // The `min_child_size` is thus 1 level (8 times) smaller.
             // After distributing `min_child_size` to all children, we have distributed
             // `min_child_size * 8` nodes (== `max_child_size`).
@@ -1026,8 +1093,8 @@ fn verify_bvh(
                     child.aabbs[i].error <= error,
                     "BVH errors are not monotonic"
                 );
-                let sphere_error = (sphere.center - child.lod_bounds[i].center).length()
-                    - (sphere.radius - child.lod_bounds[i].radius);
+                let sphere_error = (sphere.center - child.lod_bounds[i].center).length() -
+                    (sphere.radius - child.lod_bounds[i].radius);
                 assert!(
                     sphere_error <= 0.0001,
                     "BVH lod spheres are not monotonic ({sphere_error})"
@@ -1040,8 +1107,8 @@ fn verify_bvh(
                 let meshlet = &cull_data[mid];
                 assert!(meshlet.error <= error, "meshlet errors are not monotonic");
                 let sphere_error = (Vec3A::from(sphere.center) - meshlet.lod_group_sphere.center)
-                    .length()
-                    - (sphere.radius - meshlet.lod_group_sphere.radius());
+                    .length() -
+                    (sphere.radius - meshlet.lod_group_sphere.radius());
                 assert!(
                     sphere_error <= 0.0001,
                     "meshlet lod spheres are not monotonic: ({sphere_error})"
@@ -1078,16 +1145,12 @@ fn sphere_to_meshlet(sphere: BoundingSphere) -> MeshletBoundingSphere {
 // TODO: Precise encode variant
 fn octahedral_encode(v: Vec3) -> Vec2 {
     let n = v / (v.x.abs() + v.y.abs() + v.z.abs());
-    let octahedral_wrap = (1.0 - n.yx().abs())
-        * Vec2::new(
+    let octahedral_wrap = (1.0 - n.yx().abs()) *
+        Vec2::new(
             if n.x >= 0.0 { 1.0 } else { -1.0 },
             if n.y >= 0.0 { 1.0 } else { -1.0 },
         );
-    if n.z >= 0.0 {
-        n.xy()
-    } else {
-        octahedral_wrap
-    }
+    if n.z >= 0.0 { n.xy() } else { octahedral_wrap }
 }
 
 // https://www.w3.org/TR/WGSL/#pack2x16snorm-builtin

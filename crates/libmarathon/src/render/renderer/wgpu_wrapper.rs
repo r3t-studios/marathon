@@ -1,4 +1,5 @@
-/// A wrapper to safely make `wgpu` types Send / Sync on web with atomics enabled.
+/// A wrapper to safely make `wgpu` types Send / Sync on web with atomics
+/// enabled.
 ///
 /// On web with `atomics` enabled the inner value can only be accessed
 /// or dropped on the `wgpu` thread or else a panic will occur.
@@ -18,7 +19,8 @@ unsafe impl<T> Send for WgpuWrapper<T> {}
 unsafe impl<T> Sync for WgpuWrapper<T> {}
 
 impl<T> WgpuWrapper<T> {
-    /// Constructs a new instance of `WgpuWrapper` which will wrap the specified value.
+    /// Constructs a new instance of `WgpuWrapper` which will wrap the specified
+    /// value.
     pub fn new(t: T) -> Self {
         #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
         return Self(t);

@@ -10,12 +10,16 @@
 //!
 //! ## Input Events (WindowEvent)
 //! - **Mouse**: Buttons, cursor movement, wheel scrolling, enter/exit
-//! - **Keyboard**: Full key event details with modifiers, logical keys, repeat detection
-//! - **Touch**: Multi-touch with phase tracking (Started, Moved, Ended, Cancelled)
-//! - **Apple Pencil**: Force/pressure detection via calibrated touch force, altitude angle for tilt
+//! - **Keyboard**: Full key event details with modifiers, logical keys, repeat
+//!   detection
+//! - **Touch**: Multi-touch with phase tracking (Started, Moved, Ended,
+//!   Cancelled)
+//! - **Apple Pencil**: Force/pressure detection via calibrated touch force,
+//!   altitude angle for tilt
 //! - **Gestures**: Pinch (zoom), rotation, pan, double-tap (trackpad/touch)
 //! - **File Drag & Drop**: Dropped files, hovered files, cancelled hovers
-//! - **IME**: International text input with preedit, commit, enabled/disabled states
+//! - **IME**: International text input with preedit, commit, enabled/disabled
+//!   states
 //!
 //! ## Window State Events
 //! - **Focus**: Window focused/unfocused tracking
@@ -26,7 +30,8 @@
 //! - **Scale Factor**: DPI/HiDPI scale factor changes
 //!
 //! ## Device Events
-//! - **Mouse Motion**: Raw mouse delta for FPS camera controls (unbounded movement)
+//! - **Mouse Motion**: Raw mouse delta for FPS camera controls (unbounded
+//!   movement)
 //!
 //! ## Application Lifecycle
 //! - **Suspended**: iOS/Android backgrounding support
@@ -45,18 +50,44 @@
 //! - `push_device_event()` for device events
 //! - `drain_as_input_events()` to consume buffered events each frame
 
-use crate::platform::input::{InputEvent, KeyCode, Modifiers, MouseButton, TouchPhase};
-use crossbeam_channel::{Receiver, Sender, unbounded};
-use glam::Vec2;
-use std::sync::{Mutex, OnceLock};
-use std::path::PathBuf;
-use winit::event::{
-    ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent,
-    Force as WinitForce, TouchPhase as WinitTouchPhase,
-    Ime as WinitIme,
+use std::{
+    path::PathBuf,
+    sync::{
+        Mutex,
+        OnceLock,
+    },
 };
-use winit::keyboard::{PhysicalKey, Key as LogicalKey};
-use winit::window::Theme as WinitTheme;
+
+use crossbeam_channel::{
+    Receiver,
+    Sender,
+    unbounded,
+};
+use glam::Vec2;
+use winit::{
+    event::{
+        ElementState,
+        Force as WinitForce,
+        Ime as WinitIme,
+        MouseButton as WinitMouseButton,
+        MouseScrollDelta,
+        TouchPhase as WinitTouchPhase,
+        WindowEvent,
+    },
+    keyboard::{
+        Key as LogicalKey,
+        PhysicalKey,
+    },
+    window::Theme as WinitTheme,
+};
+
+use crate::platform::input::{
+    InputEvent,
+    KeyCode,
+    Modifiers,
+    MouseButton,
+    TouchPhase,
+};
 
 /// Raw winit input events before conversion
 ///
@@ -89,7 +120,7 @@ pub enum RawWinitEvent {
         key: KeyCode,
         state: ElementState,
         modifiers: Modifiers,
-        logical_key: String, // Text representation for display
+        logical_key: String,  // Text representation for display
         text: Option<String>, // Actual character input
         repeat: bool,
     },
@@ -202,12 +233,12 @@ pub fn push_window_event(event: &WindowEvent) {
 
     match event {
         // === MOUSE EVENTS ===
-        WindowEvent::MouseInput { state, button, .. } => {
+        | WindowEvent::MouseInput { state, button, .. } => {
             let mouse_button = match button {
-                WinitMouseButton::Left => MouseButton::Left,
-                WinitMouseButton::Right => MouseButton::Right,
-                WinitMouseButton::Middle => MouseButton::Middle,
-                _ => return, // Ignore other buttons
+                | WinitMouseButton::Left => MouseButton::Left,
+                | WinitMouseButton::Right => MouseButton::Right,
+                | WinitMouseButton::Middle => MouseButton::Middle,
+                | _ => return, // Ignore other buttons
             };
 
             if let Ok(mut input_state) = INPUT_STATE.lock() {
@@ -215,9 +246,15 @@ pub fn push_window_event(event: &WindowEvent) {
 
                 // Update button state
                 match mouse_button {
-                    MouseButton::Left => input_state.left_pressed = *state == ElementState::Pressed,
-                    MouseButton::Right => input_state.right_pressed = *state == ElementState::Pressed,
-                    MouseButton::Middle => input_state.middle_pressed = *state == ElementState::Pressed,
+                    | MouseButton::Left => {
+                        input_state.left_pressed = *state == ElementState::Pressed
+                    },
+                    | MouseButton::Right => {
+                        input_state.right_pressed = *state == ElementState::Pressed
+                    },
+                    | MouseButton::Middle => {
+                        input_state.middle_pressed = *state == ElementState::Pressed
+                    },
                 }
 
                 let _ = sender.send(RawWinitEvent::MouseButton {
@@ -226,9 +263,9 @@ pub fn push_window_event(event: &WindowEvent) {
                     position,
                 });
             }
-        }
+        },
 
-        WindowEvent::CursorMoved { position, .. } => {
+        | WindowEvent::CursorMoved { position, .. } => {
             // Convert from physical pixels to logical pixels
             let scale_factor = SCALE_FACTOR.lock().map(|sf| *sf).unwrap_or(1.0);
             let pos = Vec2::new(
@@ -240,20 +277,20 @@ pub fn push_window_event(event: &WindowEvent) {
                 input_state.last_position = pos;
                 let _ = sender.send(RawWinitEvent::CursorMoved { position: pos });
             }
-        }
+        },
 
-        WindowEvent::CursorEntered { .. } => {
+        | WindowEvent::CursorEntered { .. } => {
             let _ = sender.send(RawWinitEvent::CursorEntered);
-        }
+        },
 
-        WindowEvent::CursorLeft { .. } => {
+        | WindowEvent::CursorLeft { .. } => {
             let _ = sender.send(RawWinitEvent::CursorLeft);
-        }
+        },
 
-        WindowEvent::MouseWheel { delta, .. } => {
+        | WindowEvent::MouseWheel { delta, .. } => {
             let scroll_delta = match delta {
-                MouseScrollDelta::LineDelta(x, y) => Vec2::new(*x, *y) * 20.0,
-                MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
+                | MouseScrollDelta::LineDelta(x, y) => Vec2::new(*x, *y) * 20.0,
+                | MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
             };
 
             if let Ok(input_state) = INPUT_STATE.lock() {
@@ -262,18 +299,22 @@ pub fn push_window_event(event: &WindowEvent) {
                     position: input_state.last_position,
                 });
             }
-        }
+        },
 
         // === KEYBOARD EVENTS ===
-        WindowEvent::KeyboardInput { event: key_event, is_synthetic: false, .. } => {
+        | WindowEvent::KeyboardInput {
+            event: key_event,
+            is_synthetic: false,
+            ..
+        } => {
             // Skip synthetic key events (we handle focus ourselves)
             if let PhysicalKey::Code(key_code) = key_event.physical_key {
                 if let Ok(input_state) = INPUT_STATE.lock() {
                     // Convert logical key to string for display
                     let logical_key_str = match &key_event.logical_key {
-                        LogicalKey::Character(s) => s.to_string(),
-                        LogicalKey::Named(named) => format!("{:?}", named),
-                        _ => String::new(),
+                        | LogicalKey::Character(s) => s.to_string(),
+                        | LogicalKey::Named(named) => format!("{:?}", named),
+                        | _ => String::new(),
                     };
 
                     let _ = sender.send(RawWinitEvent::Keyboard {
@@ -286,9 +327,9 @@ pub fn push_window_event(event: &WindowEvent) {
                     });
                 }
             }
-        }
+        },
 
-        WindowEvent::ModifiersChanged(new_modifiers) => {
+        | WindowEvent::ModifiersChanged(new_modifiers) => {
             if let Ok(mut input_state) = INPUT_STATE.lock() {
                 input_state.modifiers = Modifiers {
                     shift: new_modifiers.state().shift_key(),
@@ -297,10 +338,10 @@ pub fn push_window_event(event: &WindowEvent) {
                     meta: new_modifiers.state().super_key(),
                 };
             }
-        }
+        },
 
         // === TOUCH EVENTS (APPLE PENCIL!) ===
-        WindowEvent::Touch(touch) => {
+        | WindowEvent::Touch(touch) => {
             let scale_factor = SCALE_FACTOR.lock().map(|sf| *sf).unwrap_or(1.0);
             let position = Vec2::new(
                 (touch.location.x / scale_factor) as f32,
@@ -313,127 +354,117 @@ pub fn push_window_event(event: &WindowEvent) {
                 force: touch.force,
                 id: touch.id,
             });
-        }
+        },
 
         // === GESTURE EVENTS ===
-        WindowEvent::PinchGesture { delta, .. } => {
+        | WindowEvent::PinchGesture { delta, .. } => {
             let _ = sender.send(RawWinitEvent::PinchGesture {
                 delta: *delta as f32,
             });
-        }
+        },
 
-        WindowEvent::RotationGesture { delta, .. } => {
-            let _ = sender.send(RawWinitEvent::RotationGesture {
-                delta: *delta,
-            });
-        }
+        | WindowEvent::RotationGesture { delta, .. } => {
+            let _ = sender.send(RawWinitEvent::RotationGesture { delta: *delta });
+        },
 
-        WindowEvent::DoubleTapGesture { .. } => {
+        | WindowEvent::DoubleTapGesture { .. } => {
             let _ = sender.send(RawWinitEvent::DoubleTapGesture);
-        }
+        },
 
-        WindowEvent::PanGesture { delta, .. } => {
+        | WindowEvent::PanGesture { delta, .. } => {
             let _ = sender.send(RawWinitEvent::PanGesture {
                 delta: Vec2::new(delta.x, delta.y),
             });
-        }
+        },
 
         // === FILE DRAG & DROP ===
-        WindowEvent::DroppedFile(path) => {
-            let _ = sender.send(RawWinitEvent::DroppedFile {
-                path: path.clone(),
-            });
-        }
+        | WindowEvent::DroppedFile(path) => {
+            let _ = sender.send(RawWinitEvent::DroppedFile { path: path.clone() });
+        },
 
-        WindowEvent::HoveredFile(path) => {
-            let _ = sender.send(RawWinitEvent::HoveredFile {
-                path: path.clone(),
-            });
-        }
+        | WindowEvent::HoveredFile(path) => {
+            let _ = sender.send(RawWinitEvent::HoveredFile { path: path.clone() });
+        },
 
-        WindowEvent::HoveredFileCancelled => {
+        | WindowEvent::HoveredFileCancelled => {
             let _ = sender.send(RawWinitEvent::HoveredFileCancelled);
-        }
+        },
 
         // === IME (INTERNATIONAL TEXT INPUT) ===
-        WindowEvent::Ime(ime_event) => {
-            match ime_event {
-                WinitIme::Enabled => {
-                    let _ = sender.send(RawWinitEvent::ImeEnabled);
-                }
-                WinitIme::Preedit(value, cursor) => {
-                    let _ = sender.send(RawWinitEvent::ImePreedit {
-                        value: value.clone(),
-                        cursor: *cursor,
-                    });
-                }
-                WinitIme::Commit(value) => {
-                    let _ = sender.send(RawWinitEvent::ImeCommit {
-                        value: value.clone(),
-                    });
-                }
-                WinitIme::Disabled => {
-                    let _ = sender.send(RawWinitEvent::ImeDisabled);
-                }
-            }
-        }
+        | WindowEvent::Ime(ime_event) => match ime_event {
+            | WinitIme::Enabled => {
+                let _ = sender.send(RawWinitEvent::ImeEnabled);
+            },
+            | WinitIme::Preedit(value, cursor) => {
+                let _ = sender.send(RawWinitEvent::ImePreedit {
+                    value: value.clone(),
+                    cursor: *cursor,
+                });
+            },
+            | WinitIme::Commit(value) => {
+                let _ = sender.send(RawWinitEvent::ImeCommit {
+                    value: value.clone(),
+                });
+            },
+            | WinitIme::Disabled => {
+                let _ = sender.send(RawWinitEvent::ImeDisabled);
+            },
+        },
 
         // === WINDOW STATE EVENTS ===
-        WindowEvent::Focused(focused) => {
-            let _ = sender.send(RawWinitEvent::Focused {
-                focused: *focused,
-            });
-        }
+        | WindowEvent::Focused(focused) => {
+            let _ = sender.send(RawWinitEvent::Focused { focused: *focused });
+        },
 
-        WindowEvent::Occluded(occluded) => {
+        | WindowEvent::Occluded(occluded) => {
             let _ = sender.send(RawWinitEvent::Occluded {
                 occluded: *occluded,
             });
-        }
+        },
 
-        WindowEvent::ThemeChanged(theme) => {
-            let _ = sender.send(RawWinitEvent::ThemeChanged {
-                theme: *theme,
-            });
-        }
+        | WindowEvent::ThemeChanged(theme) => {
+            let _ = sender.send(RawWinitEvent::ThemeChanged { theme: *theme });
+        },
 
-        WindowEvent::Moved(position) => {
+        | WindowEvent::Moved(position) => {
             let _ = sender.send(RawWinitEvent::Moved {
                 x: position.x,
                 y: position.y,
             });
-        }
+        },
 
         // === EVENTS WE DON'T PROPAGATE (handled at executor level) ===
-        WindowEvent::Resized(_) |
+        | WindowEvent::Resized(_) |
         WindowEvent::ScaleFactorChanged { .. } |
         WindowEvent::CloseRequested |
         WindowEvent::Destroyed |
         WindowEvent::RedrawRequested => {
-            // These are handled directly by the executor, not converted to InputEvents
-        }
+            // These are handled directly by the executor, not converted to
+            // InputEvents
+        },
 
         // Catch-all for any future events
-        _ => {}
+        | _ => {},
     }
 }
 
 /// Push a device event into the event buffer
 ///
-/// Device events are low-level input events that don't correspond to a specific window.
-/// The most important one is MouseMotion, which gives raw mouse delta for FPS cameras.
+/// Device events are low-level input events that don't correspond to a specific
+/// window. The most important one is MouseMotion, which gives raw mouse delta
+/// for FPS cameras.
 pub fn push_device_event(event: &winit::event::DeviceEvent) {
     let (sender, _) = get_event_channel();
 
     match event {
-        winit::event::DeviceEvent::MouseMotion { delta: (x, y) } => {
+        | winit::event::DeviceEvent::MouseMotion { delta: (x, y) } => {
             let delta = Vec2::new(*x as f32, *y as f32);
             let _ = sender.send(RawWinitEvent::MouseMotion { delta });
-        }
+        },
 
         // Other device events (Added/Removed, Button, Key, etc.) are not needed
         // for our use case. Mouse delta is the main one.
-        _ => {}
+        | _ => {},
     }
 }
 
@@ -442,19 +473,20 @@ pub fn drain_as_input_events() -> Vec<InputEvent> {
 
     // Drain all events from the channel and convert to InputEvents
     // Each raw event may generate multiple InputEvents (e.g., Keyboard + Text)
-    receiver
-        .try_iter()
-        .flat_map(raw_to_input_event)
-        .collect()
+    receiver.try_iter().flat_map(raw_to_input_event).collect()
 }
 
 fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
     match event {
         // === MOUSE INPUT ===
-        RawWinitEvent::MouseButton { button, state, position } => {
+        | RawWinitEvent::MouseButton {
+            button,
+            state,
+            position,
+        } => {
             let phase = match state {
-                ElementState::Pressed => TouchPhase::Started,
-                ElementState::Released => TouchPhase::Ended,
+                | ElementState::Pressed => TouchPhase::Started,
+                | ElementState::Released => TouchPhase::Ended,
             };
 
             vec![InputEvent::Mouse {
@@ -462,9 +494,9 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
                 button,
                 phase,
             }]
-        }
+        },
 
-        RawWinitEvent::CursorMoved { position } => {
+        | RawWinitEvent::CursorMoved { position } => {
             // Check if any button is pressed
             let Some(input_state) = INPUT_STATE.lock().ok() else {
                 return vec![];
@@ -492,23 +524,29 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
                 // No button pressed - hover tracking
                 vec![InputEvent::MouseMove { pos: position }]
             }
-        }
+        },
 
-        RawWinitEvent::MouseWheel { delta, position } => {
+        | RawWinitEvent::MouseWheel { delta, position } => {
             vec![InputEvent::MouseWheel {
                 delta,
                 pos: position,
             }]
-        }
+        },
 
         // === KEYBOARD INPUT ===
-        RawWinitEvent::Keyboard { key, state, modifiers, text, .. } => {
+        | RawWinitEvent::Keyboard {
+            key,
+            state,
+            modifiers,
+            text,
+            ..
+        } => {
             let mut events = vec![InputEvent::Keyboard {
                 key,
                 pressed: state == ElementState::Pressed,
                 modifiers,
             }];
-            
+
             // If there's text input and the key was pressed, send a Text event too
             // But only for printable characters, not control characters (backspace, etc.)
             if state == ElementState::Pressed {
@@ -519,23 +557,32 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
                     }
                 }
             }
-            
+
             events
-        }
+        },
 
         // === TOUCH INPUT (APPLE PENCIL!) ===
-        RawWinitEvent::Touch { phase, position, force, id } => {
+        | RawWinitEvent::Touch {
+            phase,
+            position,
+            force,
+            id,
+        } => {
             // Convert winit TouchPhase to engine TouchPhase
             let touch_phase = match phase {
-                WinitTouchPhase::Started => TouchPhase::Started,
-                WinitTouchPhase::Moved => TouchPhase::Moved,
-                WinitTouchPhase::Ended => TouchPhase::Ended,
-                WinitTouchPhase::Cancelled => TouchPhase::Cancelled,
+                | WinitTouchPhase::Started => TouchPhase::Started,
+                | WinitTouchPhase::Moved => TouchPhase::Moved,
+                | WinitTouchPhase::Ended => TouchPhase::Ended,
+                | WinitTouchPhase::Cancelled => TouchPhase::Cancelled,
             };
 
             // Check if this is a stylus (has force/pressure data)
             match force {
-                Some(WinitForce::Calibrated { force, max_possible_force, altitude_angle }) => {
+                | Some(WinitForce::Calibrated {
+                    force,
+                    max_possible_force,
+                    altitude_angle,
+                }) => {
                     // This is Apple Pencil or similar stylus!
                     // Normalize pressure to 0-1 range (though Apple Pencil can exceed 1.0)
                     let pressure = if max_possible_force > 0.0 {
@@ -558,8 +605,8 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
                         phase: touch_phase,
                         timestamp: 0.0, // TODO: Get actual timestamp from winit when available
                     }]
-                }
-                Some(WinitForce::Normalized(pressure)) => {
+                },
+                | Some(WinitForce::Normalized(pressure)) => {
                     // Normalized pressure (0.0-1.0), likely a stylus
                     vec![InputEvent::Stylus {
                         pos: position,
@@ -568,43 +615,43 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
                         phase: touch_phase,
                         timestamp: 0.0,
                     }]
-                }
-                None => {
+                },
+                | None => {
                     // No force data - regular touch (finger)
                     vec![InputEvent::Touch {
                         pos: position,
                         phase: touch_phase,
                         id,
                     }]
-                }
+                },
             }
-        }
+        },
 
         // === GESTURE INPUT ===
-        RawWinitEvent::PinchGesture { delta } => {
+        | RawWinitEvent::PinchGesture { delta } => {
             vec![InputEvent::PinchGesture { delta }]
-        }
+        },
 
-        RawWinitEvent::RotationGesture { delta } => {
+        | RawWinitEvent::RotationGesture { delta } => {
             vec![InputEvent::RotationGesture { delta }]
-        }
+        },
 
-        RawWinitEvent::PanGesture { delta } => {
+        | RawWinitEvent::PanGesture { delta } => {
             vec![InputEvent::PanGesture { delta }]
-        }
+        },
 
-        RawWinitEvent::DoubleTapGesture => {
+        | RawWinitEvent::DoubleTapGesture => {
             vec![InputEvent::DoubleTapGesture]
-        }
+        },
 
         // === MOUSE MOTION (RAW DELTA) ===
-        RawWinitEvent::MouseMotion { delta } => {
+        | RawWinitEvent::MouseMotion { delta } => {
             vec![InputEvent::MouseMotion { delta }]
-        }
+        },
 
         // === NON-INPUT EVENTS ===
         // These are window/system events, not user input
-        RawWinitEvent::CursorEntered |
+        | RawWinitEvent::CursorEntered |
         RawWinitEvent::CursorLeft |
         RawWinitEvent::DroppedFile { .. } |
         RawWinitEvent::HoveredFile { .. } |
@@ -620,6 +667,6 @@ fn raw_to_input_event(event: RawWinitEvent) -> Vec<InputEvent> {
             // These are window/UI events, should be sent to Bevy messages
             // (to be implemented when we add Bevy window event forwarding)
             vec![]
-        }
+        },
     }
 }

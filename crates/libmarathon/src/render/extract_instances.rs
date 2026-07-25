@@ -6,18 +6,35 @@
 
 use core::marker::PhantomData;
 
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_camera::visibility::ViewVisibility;
-use bevy_derive::{Deref, DerefMut};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     prelude::Entity,
-    query::{QueryFilter, QueryItem, ReadOnlyQueryData},
+    query::{
+        QueryFilter,
+        QueryItem,
+        ReadOnlyQueryData,
+    },
     resource::Resource,
-    system::{Query, ResMut},
+    system::{
+        Query,
+        ResMut,
+    },
 };
 
-use crate::render::sync_world::MainEntityHashMap;
-use crate::render::{Extract, ExtractSchedule, RenderApp};
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    RenderApp,
+    sync_world::MainEntityHashMap,
+};
 
 /// Describes how to extract data needed for rendering from a component or
 /// components.
@@ -46,8 +63,7 @@ pub trait ExtractInstance: Send + Sync + Sized + 'static {
 #[derive(Default)]
 pub struct ExtractInstancesPlugin<EI>
 where
-    EI: ExtractInstance,
-{
+    EI: ExtractInstance, {
     only_extract_visible: bool,
     marker: PhantomData<fn() -> EI>,
 }
@@ -71,8 +87,8 @@ impl<EI> ExtractInstancesPlugin<EI>
 where
     EI: ExtractInstance,
 {
-    /// Creates a new [`ExtractInstancesPlugin`] that unconditionally extracts to
-    /// the render world, whether the entity is visible or not.
+    /// Creates a new [`ExtractInstancesPlugin`] that unconditionally extracts
+    /// to the render world, whether the entity is visible or not.
     pub fn new() -> Self {
         Self {
             only_extract_visible: false,
@@ -80,8 +96,8 @@ where
         }
     }
 
-    /// Creates a new [`ExtractInstancesPlugin`] that extracts to the render world
-    /// if and only if the entity it's attached to is visible.
+    /// Creates a new [`ExtractInstancesPlugin`] that extracts to the render
+    /// world if and only if the entity it's attached to is visible.
     pub fn extract_visible() -> Self {
         Self {
             only_extract_visible: true,
@@ -110,8 +126,7 @@ fn extract_all<EI>(
     mut extracted_instances: ResMut<ExtractedInstances<EI>>,
     query: Extract<Query<(Entity, EI::QueryData), EI::QueryFilter>>,
 ) where
-    EI: ExtractInstance,
-{
+    EI: ExtractInstance, {
     extracted_instances.clear();
     for (entity, other) in &query {
         if let Some(extract_instance) = EI::extract(other) {
@@ -124,12 +139,11 @@ fn extract_visible<EI>(
     mut extracted_instances: ResMut<ExtractedInstances<EI>>,
     query: Extract<Query<(Entity, &ViewVisibility, EI::QueryData), EI::QueryFilter>>,
 ) where
-    EI: ExtractInstance,
-{
+    EI: ExtractInstance, {
     extracted_instances.clear();
     for (entity, view_visibility, other) in &query {
-        if view_visibility.get()
-            && let Some(extract_instance) = EI::extract(other)
+        if view_visibility.get() &&
+            let Some(extract_instance) = EI::extract(other)
         {
             extracted_instances.insert(entity.into(), extract_instance);
         }

@@ -1,22 +1,44 @@
-use bevy_ecs::{query::QueryItem, system::lifetimeless::Read, world::World};
-use bevy_math::{UVec2, Vec3Swizzles};
+use bevy_ecs::{
+    query::QueryItem,
+    system::lifetimeless::Read,
+    world::World,
+};
+use bevy_math::{
+    UVec2,
+    Vec3Swizzles,
+};
+
+use super::{
+    Atmosphere,
+    GpuAtmosphereSettings,
+    resources::{
+        AtmosphereBindGroups,
+        AtmosphereLutPipelines,
+        AtmosphereTransformsOffset,
+        RenderSkyPipelineId,
+    },
+};
 use crate::render::{
     diagnostic::RecordDiagnostics,
     extract_component::DynamicUniformIndex,
-    render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
-    render_resource::{ComputePass, ComputePassDescriptor, PipelineCache, RenderPassDescriptor},
-    renderer::RenderContext,
-    view::{ViewTarget, ViewUniformOffset},
-};
-
-use crate::render::pbr::ViewLightsUniformOffset;
-
-use super::{
-    resources::{
-        AtmosphereBindGroups, AtmosphereLutPipelines, AtmosphereTransformsOffset,
-        RenderSkyPipelineId,
+    pbr::ViewLightsUniformOffset,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        RenderLabel,
+        ViewNode,
     },
-    Atmosphere, GpuAtmosphereSettings,
+    render_resource::{
+        ComputePass,
+        ComputePassDescriptor,
+        PipelineCache,
+        RenderPassDescriptor,
+    },
+    renderer::RenderContext,
+    view::{
+        ViewTarget,
+        ViewUniformOffset,
+    },
 };
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone, Hash, RenderLabel)]

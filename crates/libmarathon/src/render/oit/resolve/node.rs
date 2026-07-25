@@ -1,15 +1,38 @@
-use bevy_camera::{MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::*, query::QueryItem};
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
+};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
+};
+
+use super::{
+    OitResolveBindGroup,
+    OitResolvePipeline,
+    OitResolvePipelineId,
+};
 use crate::render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
-    render_resource::{BindGroupEntries, PipelineCache, RenderPassDescriptor},
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        RenderLabel,
+        ViewNode,
+    },
+    render_resource::{
+        BindGroupEntries,
+        PipelineCache,
+        RenderPassDescriptor,
+    },
     renderer::RenderContext,
-    view::{ViewDepthTexture, ViewTarget, ViewUniformOffset},
+    view::{
+        ViewDepthTexture,
+        ViewTarget,
+        ViewUniformOffset,
+    },
 };
-
-use super::{OitResolveBindGroup, OitResolvePipeline, OitResolvePipelineId};
 
 /// Render label for the OIT resolve pass.
 #[derive(RenderLabel, Debug, Clone, Hash, PartialEq, Eq)]

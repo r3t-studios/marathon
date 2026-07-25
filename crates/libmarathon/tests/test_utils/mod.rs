@@ -1,19 +1,32 @@
 //! Shared test utilities for integration tests
 //!
-//! This module provides common test infrastructure that all integration tests use:
+//! This module provides common test infrastructure that all integration tests
+//! use:
 //! - Real iroh-gossip setup with localhost connections
 //! - Test app creation with networking + persistence
 //! - Wait helpers for async sync verification
 
 pub mod gossip;
 
-pub use gossip::{init_gossip_node, setup_gossip_pair, setup_gossip_trio, spawn_gossip_bridge_tasks};
+use std::{
+    path::PathBuf,
+    time::Duration,
+};
 
 use anyhow::Result;
 use bevy::{
     MinimalPlugins,
-    app::{App, ScheduleRunnerPlugin},
+    app::{
+        App,
+        ScheduleRunnerPlugin,
+    },
     prelude::*,
+};
+pub use gossip::{
+    init_gossip_node,
+    setup_gossip_pair,
+    setup_gossip_trio,
+    spawn_gossip_bridge_tasks,
 };
 use libmarathon::{
     networking::{
@@ -25,10 +38,6 @@ use libmarathon::{
         PersistenceConfig,
         PersistencePlugin,
     },
-};
-use std::{
-    path::PathBuf,
-    time::Duration,
 };
 use tempfile::TempDir;
 use tokio::time::Instant;
@@ -57,12 +66,18 @@ pub fn create_test_app(node_id: Uuid, db_path: PathBuf, bridge: GossipBridge) ->
 }
 
 /// Create a test app with optional bridge (for testing offline scenarios)
-pub fn create_test_app_maybe_offline(node_id: Uuid, db_path: PathBuf, bridge: Option<GossipBridge>) -> App {
+pub fn create_test_app_maybe_offline(
+    node_id: Uuid,
+    db_path: PathBuf,
+    bridge: Option<GossipBridge>,
+) -> App {
     let mut app = App::new();
 
-    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-        Duration::from_secs_f64(1.0 / 60.0),
-    )))
+    app.add_plugins(
+        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
+            1.0 / 60.0,
+        ))),
+    )
     .add_plugins(NetworkingPlugin::new(NetworkingConfig {
         node_id,
         sync_interval_secs: 0.5,
@@ -87,9 +102,13 @@ pub fn create_test_app_maybe_offline(node_id: Uuid, db_path: PathBuf, bridge: Op
     app
 }
 
-/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a fixed timestep)
+/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a
+/// fixed timestep)
 pub fn update_with_fixed(app: &mut App) {
-    use bevy::prelude::{FixedUpdate, FixedPostUpdate};
+    use bevy::prelude::{
+        FixedPostUpdate,
+        FixedUpdate,
+    };
     // Run Main schedule (which includes Update)
     app.update();
     // Explicitly run FixedUpdate to ensure systems there execute
@@ -106,8 +125,7 @@ pub async fn wait_for_sync<F>(
     check_fn: F,
 ) -> Result<()>
 where
-    F: Fn(&mut World, &mut World) -> bool,
-{
+    F: Fn(&mut World, &mut World) -> bool, {
     let start = Instant::now();
     let mut tick_count = 0;
 

@@ -1,56 +1,60 @@
 //! Like [`EnvironmentMapLight`], but filtered in realtime from a cubemap.
 //!
-//! An environment map needs to be processed to be able to support uses beyond a simple skybox,
-//! such as reflections, and ambient light contribution.
-//! This process is called filtering, and can either be done ahead of time (prefiltering), or
-//! in realtime, although at a reduced quality. Prefiltering is preferred, but not always possible:
-//! sometimes you only gain access to an environment map at runtime, for whatever reason.
-//! Typically this is from realtime reflection probes, but can also be from other sources.
+//! An environment map needs to be processed to be able to support uses beyond a
+//! simple skybox, such as reflections, and ambient light contribution.
+//! This process is called filtering, and can either be done ahead of time
+//! (prefiltering), or in realtime, although at a reduced quality. Prefiltering
+//! is preferred, but not always possible: sometimes you only gain access to an
+//! environment map at runtime, for whatever reason. Typically this is from
+//! realtime reflection probes, but can also be from other sources.
 //!
 //! In any case, Bevy supports both modes of filtering.
-//! This module provides realtime filtering via [`bevy_light::GeneratedEnvironmentMapLight`].
-//! For prefiltered environment maps, see [`bevy_light::EnvironmentMapLight`].
-//! These components are intended to be added to a camera.
-use bevy_app::{App, Plugin, Update};
-use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer, Assets, RenderAssetUsages};
-use crate::render::core_3d::graph::{Core3d, Node3d};
+//! This module provides realtime filtering via
+//! [`bevy_light::GeneratedEnvironmentMapLight`]. For prefiltered environment
+//! maps, see [`bevy_light::EnvironmentMapLight`]. These components are intended
+//! to be added to a camera.
+use core::cmp::min;
+
+use bevy_app::{
+    App,
+    Plugin,
+    Update,
+};
+use bevy_asset::{
+    AssetServer,
+    Assets,
+    RenderAssetUsages,
+    embedded_asset,
+    load_embedded_asset,
+};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    query::{QueryState, With, Without},
+    query::{
+        QueryState,
+        With,
+        Without,
+    },
     resource::Resource,
     schedule::IntoScheduleConfigs,
-    system::{lifetimeless::Read, Commands, Query, Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+        lifetimeless::Read,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
 use bevy_image::Image;
-use bevy_math::{Quat, UVec2, Vec2};
-use crate::render::{
-    diagnostic::RecordDiagnostics,
-    render_asset::RenderAssets,
-    render_graph::{Node, NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel},
-    render_resource::{
-        binding_types::*, AddressMode, BindGroup, BindGroupEntries, BindGroupLayout,
-        BindGroupLayoutEntries, CachedComputePipelineId, ComputePassDescriptor,
-        ComputePipelineDescriptor, DownlevelFlags, Extent3d, FilterMode, PipelineCache, Sampler,
-        SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, StorageTextureAccess,
-        Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat,
-        TextureFormatFeatureFlags, TextureSampleType, TextureUsages, TextureView,
-        TextureViewDescriptor, TextureViewDimension, UniformBuffer,
-    },
-    renderer::{RenderAdapter, RenderContext, RenderDevice, RenderQueue},
-    settings::WgpuFeatures,
-    sync_component::SyncComponentPlugin,
-    sync_world::RenderEntity,
-    texture::{CachedTexture, GpuImage, TextureCache},
-    Extract, ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
-};
-
 // Implementation: generate diffuse and specular cubemaps required by PBR
 // from a given high-res cubemap by
 //
-// 1. Copying the base mip (level 0) of the source cubemap into an intermediate
-//    storage texture.
+// 1. Copying the base mip (level 0) of the source cubemap into an intermediate storage
+//    texture.
 // 2. Generating mipmaps using [single-pass down-sampling] (SPD).
 // 3. Convolving the mip chain twice:
 //    * a [Lambertian convolution] for the 32 × 32 diffuse cubemap
@@ -59,13 +63,87 @@ use crate::render::{
 // [single-pass down-sampling]: https://gpuopen.com/fidelityfx-spd/
 // [Lambertian convolution]: https://bruop.github.io/ibl/#:~:text=Lambertian%20Diffuse%20Component
 // [GGX convolution]: https://gpuopen.com/download/Bounded_VNDF_Sampling_for_Smith-GGX_Reflections.pdf
-
-use bevy_light::{EnvironmentMapLight, GeneratedEnvironmentMapLight};
+use bevy_light::{
+    EnvironmentMapLight,
+    GeneratedEnvironmentMapLight,
+};
+use bevy_math::{
+    Quat,
+    UVec2,
+    Vec2,
+};
 use bevy_shader::ShaderDefVal;
-use core::cmp::min;
 use tracing::info;
 
-use crate::render::pbr::Bluenoise;
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
+    diagnostic::RecordDiagnostics,
+    pbr::Bluenoise,
+    render_asset::RenderAssets,
+    render_graph::{
+        Node,
+        NodeRunError,
+        RenderGraphContext,
+        RenderGraphExt,
+        RenderLabel,
+    },
+    render_resource::{
+        AddressMode,
+        BindGroup,
+        BindGroupEntries,
+        BindGroupLayout,
+        BindGroupLayoutEntries,
+        CachedComputePipelineId,
+        ComputePassDescriptor,
+        ComputePipelineDescriptor,
+        DownlevelFlags,
+        Extent3d,
+        FilterMode,
+        PipelineCache,
+        Sampler,
+        SamplerBindingType,
+        SamplerDescriptor,
+        ShaderStages,
+        ShaderType,
+        StorageTextureAccess,
+        Texture,
+        TextureAspect,
+        TextureDescriptor,
+        TextureDimension,
+        TextureFormat,
+        TextureFormatFeatureFlags,
+        TextureSampleType,
+        TextureUsages,
+        TextureView,
+        TextureViewDescriptor,
+        TextureViewDimension,
+        UniformBuffer,
+        binding_types::*,
+    },
+    renderer::{
+        RenderAdapter,
+        RenderContext,
+        RenderDevice,
+        RenderQueue,
+    },
+    settings::WgpuFeatures,
+    sync_component::SyncComponentPlugin,
+    sync_world::RenderEntity,
+    texture::{
+        CachedTexture,
+        GpuImage,
+        TextureCache,
+    },
+};
 
 /// Labels for the environment map generation nodes
 #[derive(PartialEq, Eq, Debug, Copy, Clone, Hash, RenderLabel)]
@@ -111,15 +189,16 @@ pub struct EnvironmentMapGenerationPlugin;
 
 impl Plugin for EnvironmentMapGenerationPlugin {
     fn build(&self, _: &mut App) {}
+
     fn finish(&self, app: &mut App) {
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             let adapter = render_app.world().resource::<RenderAdapter>();
             let device = render_app.world().resource::<RenderDevice>();
 
             // Cubemap SPD requires at least 6 storage textures
-            let limit_support = device.limits().max_storage_textures_per_shader_stage >= 6
-                && device.limits().max_compute_workgroup_storage_size != 0
-                && device.limits().max_compute_workgroup_size_x != 0;
+            let limit_support = device.limits().max_storage_textures_per_shader_stage >= 6 &&
+                device.limits().max_compute_workgroup_storage_size != 0 &&
+                device.limits().max_compute_workgroup_size_x != 0;
 
             let downlevel_support = adapter
                 .get_downlevel_capabilities()
@@ -127,7 +206,9 @@ impl Plugin for EnvironmentMapGenerationPlugin {
                 .contains(DownlevelFlags::COMPUTE_SHADERS);
 
             if !limit_support || !downlevel_support {
-                info!("Disabling EnvironmentMapGenerationPlugin because compute is not supported on this platform. This is safe to ignore if you are not using EnvironmentMapGenerationPlugin.");
+                info!(
+                    "Disabling EnvironmentMapGenerationPlugin because compute is not supported on this platform. This is safe to ignore if you are not using EnvironmentMapGenerationPlugin."
+                );
                 return;
             }
         } else {
@@ -181,8 +262,8 @@ impl Plugin for EnvironmentMapGenerationPlugin {
 // The number of storage textures required to combine the bind group
 const REQUIRED_STORAGE_TEXTURES: u32 = 12;
 
-/// Initializes all render-world resources used by the environment-map generator once on
-/// [`bevy_render::RenderStartup`].
+/// Initializes all render-world resources used by the environment-map generator
+/// once on [`bevy_render::RenderStartup`].
 pub fn initialize_generated_environment_map_resources(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -239,7 +320,8 @@ pub fn initialize_generated_environment_map_resources(
 
         (downsampling.clone(), downsampling)
     } else {
-        // Split layout: first pass outputs 1–6, second pass outputs 7–12 (input mip6 read-only)
+        // Split layout: first pass outputs 1–6, second pass outputs 7–12 (input mip6
+        // read-only)
 
         let downsampling_first = render_device.create_bind_group_layout(
             "downsampling_first_bind_group_layout",
@@ -295,7 +377,8 @@ pub fn initialize_generated_environment_map_resources(
                     StorageTextureAccess::WriteOnly,
                 ),
                 uniform_buffer::<FilteringConstants>(false), // Uniforms
-                texture_2d_array(TextureSampleType::Float { filterable: true }), // Blue noise texture
+                texture_2d_array(TextureSampleType::Float { filterable: true }), /* Blue noise
+                                                                                  * texture */
             ),
         ),
     );
@@ -314,7 +397,8 @@ pub fn initialize_generated_environment_map_resources(
                     StorageTextureAccess::WriteOnly,
                 ),
                 uniform_buffer::<FilteringConstants>(false), // Uniforms
-                texture_2d_array(TextureSampleType::Float { filterable: true }), // Blue noise texture
+                texture_2d_array(TextureSampleType::Float { filterable: true }), /* Blue noise
+                                                                                  * texture */
             ),
         ),
     );
@@ -430,7 +514,8 @@ pub fn initialize_generated_environment_map_resources(
         zero_initialize_workgroup_memory: false,
     });
 
-    // Copy pipeline handles format conversion and populates mip0 when formats differ
+    // Copy pipeline handles format conversion and populates mip0 when formats
+    // differ
     let copy_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("copy_pipeline".into()),
         layout: vec![layouts.copy.clone()],
@@ -498,7 +583,8 @@ pub fn extract_generated_environment_map_entities(
     }
 }
 
-// A render-world specific version of FilteredEnvironmentMapLight that uses CachedTexture
+// A render-world specific version of FilteredEnvironmentMapLight that uses
+// CachedTexture
 #[derive(Component, Clone)]
 pub struct RenderEnvironmentMap {
     pub environment_map: GpuImage,
@@ -515,7 +601,8 @@ pub struct IntermediateTextures {
 }
 
 /// Returns the total number of mip levels for the provided square texture size.
-/// `size` must be a power of two greater than zero. For example, `size = 512` → `9`.
+/// `size` must be a power of two greater than zero. For example, `size = 512` →
+/// `9`.
 #[inline]
 fn compute_mip_count(size: u32) -> u32 {
     debug_assert!(size.is_power_of_two());
@@ -546,9 +633,9 @@ pub fn prepare_generated_environment_map_intermediate_textures(
                 sample_count: 1,
                 dimension: TextureDimension::D2,
                 format: TextureFormat::Rgba16Float,
-                usage: TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::STORAGE_BINDING
-                    | TextureUsages::COPY_DST,
+                usage: TextureUsages::TEXTURE_BINDING |
+                    TextureUsages::STORAGE_BINDING |
+                    TextureUsages::COPY_DST,
                 view_formats: &[],
             },
         );
@@ -643,12 +730,14 @@ pub fn prepare_generated_environment_map_bind_groups(
             if level <= last_mip {
                 create_storage_view(&textures.environment_map.texture, level, &render_device)
             } else {
-                // Return a fresh 1×1 placeholder view so each binding has its own sub-resource and cannot alias.
+                // Return a fresh 1×1 placeholder view so each binding has its own sub-resource
+                // and cannot alias.
                 create_placeholder_storage_view(&render_device)
             }
         };
 
-        // Depending on device limits, build either a combined or split bind group layout
+        // Depending on device limits, build either a combined or split bind group
+        // layout
         let (downsampling_first_bind_group, downsampling_second_bind_group) =
             if config.combine_bind_group {
                 // Combined layout expects destinations 1–12 in both bind groups
@@ -735,7 +824,8 @@ pub fn prepare_generated_environment_map_bind_groups(
 
         for mip in 0..num_mips {
             // Calculate roughness from 0.0 (mip 0) to 0.889 (mip 8)
-            // We don't need roughness=1.0 as a mip level because it's handled by the separate diffuse irradiance map
+            // We don't need roughness=1.0 as a mip level because it's handled by the
+            // separate diffuse irradiance map
             let roughness = mip as f32 / (num_mips - 1) as f32;
             let sample_count = 32u32 * 2u32.pow((roughness * 4.0) as u32);
 
@@ -845,8 +935,8 @@ fn create_storage_view(texture: &Texture, mip: u32, _render_device: &RenderDevic
     })
 }
 
-/// To ensure compatibility in web browsers, each call returns a unique resource so that multiple missing mip
-/// bindings in the same bind-group never alias.
+/// To ensure compatibility in web browsers, each call returns a unique resource
+/// so that multiple missing mip bindings in the same bind-group never alias.
 fn create_placeholder_storage_view(render_device: &RenderDevice) -> TextureView {
     let tex = render_device.create_texture(&TextureDescriptor {
         label: Some("lightprobe_placeholder"),
@@ -1093,7 +1183,8 @@ impl Node for FilteringNode {
     }
 }
 
-/// System that generates an `EnvironmentMapLight` component based on the `GeneratedEnvironmentMapLight` component
+/// System that generates an `EnvironmentMapLight` component based on the
+/// `GeneratedEnvironmentMapLight` component
 pub fn generate_environment_map_light(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
@@ -1109,9 +1200,9 @@ pub fn generate_environment_map_light(
         let base_size = src_image.texture_descriptor.size.width;
 
         // Sanity checks – square, power-of-two, ≤ 8192
-        if src_image.texture_descriptor.size.height != base_size
-            || !base_size.is_power_of_two()
-            || base_size > 8192
+        if src_image.texture_descriptor.size.height != base_size ||
+            !base_size.is_power_of_two() ||
+            base_size > 8192
         {
             panic!(
                 "GeneratedEnvironmentMapLight source cubemap must be square power-of-two ≤ 8192, got {}×{}",
@@ -1144,7 +1235,8 @@ pub fn generate_environment_map_light(
 
         let diffuse_handle = images.add(diffuse);
 
-        // Create a placeholder for the specular map. It matches the input cubemap resolution.
+        // Create a placeholder for the specular map. It matches the input cubemap
+        // resolution.
         let mut specular = Image::new_fill(
             Extent3d {
                 width: base_size,
@@ -1163,7 +1255,8 @@ pub fn generate_environment_map_light(
         specular.texture_descriptor.mip_level_count = mip_count;
 
         // When setting mip_level_count, we need to allocate appropriate data size
-        // For GPU-generated mipmaps, we can set data to None since the GPU will generate the data
+        // For GPU-generated mipmaps, we can set data to None since the GPU will
+        // generate the data
         specular.data = None;
 
         specular.texture_view_descriptor = Some(TextureViewDescriptor {

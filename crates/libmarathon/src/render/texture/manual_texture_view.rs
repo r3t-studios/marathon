@@ -1,5 +1,8 @@
 use bevy_camera::ManualTextureViewHandle;
-use bevy_ecs::{prelude::Component, resource::Resource};
+use bevy_ecs::{
+    prelude::Component,
+    resource::Resource,
+};
 use bevy_image::BevyDefault;
 use bevy_math::UVec2;
 use bevy_platform::collections::HashMap;
@@ -8,7 +11,8 @@ use wgpu::TextureFormat;
 
 use crate::render::render_resource::TextureView;
 
-/// A manually managed [`TextureView`] for use as a [`bevy_camera::RenderTarget`].
+/// A manually managed [`TextureView`] for use as a
+/// [`bevy_camera::RenderTarget`].
 #[derive(Debug, Clone, Component)]
 pub struct ManualTextureView {
     pub texture_view: TextureView,
@@ -26,10 +30,12 @@ impl ManualTextureView {
     }
 }
 
-/// Resource that stores manually managed [`ManualTextureView`]s for use as a [`RenderTarget`](bevy_camera::RenderTarget).
-/// This type dereferences to a `HashMap<ManualTextureViewHandle, ManualTextureView>`.
-/// To add a new texture view, pick a new [`ManualTextureViewHandle`] and insert it into the map.
-/// Then, to render to the view, set a [`Camera`](bevy_camera::Camera)s `target` to `RenderTarget::TextureView(handle)`.
+/// Resource that stores manually managed [`ManualTextureView`]s for use as a
+/// [`RenderTarget`](bevy_camera::RenderTarget). This type dereferences to a
+/// `HashMap<ManualTextureViewHandle, ManualTextureView>`. To add a new texture
+/// view, pick a new [`ManualTextureViewHandle`] and insert it into the map.
+/// Then, to render to the view, set a [`Camera`](bevy_camera::Camera)s `target`
+/// to `RenderTarget::TextureView(handle)`. 
 /// ```ignore
 /// # use bevy_ecs::prelude::*;
 /// # let mut world = World::default();
@@ -49,7 +55,8 @@ impl ManualTextureView {
 ///     ..Default::default()
 /// });
 /// ```
-/// Bevy will then use the `ManualTextureViews` resource to find your texture view and render to it.
+/// Bevy will then use the `ManualTextureViews` resource to find your texture
+/// view and render to it.
 #[derive(Default, Clone, Resource, ExtractResource)]
 pub struct ManualTextureViews(HashMap<ManualTextureViewHandle, ManualTextureView>);
 

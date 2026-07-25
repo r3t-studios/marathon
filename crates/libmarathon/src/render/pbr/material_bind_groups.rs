@@ -4,33 +4,85 @@
 //! allocator manages each bind group, assigning slots to materials as
 //! appropriate.
 
-use crate::render::pbr::Material;
-use bevy_derive::{Deref, DerefMut};
+use core::{
+    cmp::Ordering,
+    hash::Hash,
+    iter,
+    mem,
+    ops::Range,
+};
+
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     resource::Resource,
-    system::{Commands, Res},
-};
-use bevy_platform::collections::{HashMap, HashSet};
-use bevy_reflect::{prelude::ReflectDefault, Reflect};
-use crate::render::render_resource::BindlessSlabResourceLimit;
-use crate::render::{
-    render_resource::{
-        BindGroup, BindGroupEntry, BindGroupLayout, BindingNumber, BindingResource,
-        BindingResources, BindlessDescriptor, BindlessIndex, BindlessIndexTableDescriptor,
-        BindlessResourceType, Buffer, BufferBinding, BufferDescriptor, BufferId,
-        BufferInitDescriptor, BufferUsages, CompareFunction, FilterMode, OwnedBindingResource,
-        PreparedBindGroup, RawBufferVec, Sampler, SamplerDescriptor, SamplerId, TextureView,
-        TextureViewDimension, TextureViewId, UnpreparedBindGroup, WgpuSampler, WgpuTextureView,
+    system::{
+        Commands,
+        Res,
     },
-    renderer::{RenderDevice, RenderQueue},
+};
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+};
+use bevy_reflect::{
+    Reflect,
+    prelude::ReflectDefault,
+};
+use bevy_utils::{
+    TypeIdMap,
+    default,
+};
+use bytemuck::Pod;
+use tracing::{
+    error,
+    trace,
+};
+
+use crate::render::{
+    pbr::Material,
+    render_resource::{
+        BindGroup,
+        BindGroupEntry,
+        BindGroupLayout,
+        BindingNumber,
+        BindingResource,
+        BindingResources,
+        BindlessDescriptor,
+        BindlessIndex,
+        BindlessIndexTableDescriptor,
+        BindlessResourceType,
+        BindlessSlabResourceLimit,
+        Buffer,
+        BufferBinding,
+        BufferDescriptor,
+        BufferId,
+        BufferInitDescriptor,
+        BufferUsages,
+        CompareFunction,
+        FilterMode,
+        OwnedBindingResource,
+        PreparedBindGroup,
+        RawBufferVec,
+        Sampler,
+        SamplerDescriptor,
+        SamplerId,
+        TextureView,
+        TextureViewDimension,
+        TextureViewId,
+        UnpreparedBindGroup,
+        WgpuSampler,
+        WgpuTextureView,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
     settings::WgpuFeatures,
     texture::FallbackImage,
 };
-use bevy_utils::{default, TypeIdMap};
-use bytemuck::Pod;
-use core::hash::Hash;
-use core::{cmp::Ordering, iter, mem, ops::Range};
-use tracing::{error, trace};
 
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct MaterialBindGroupAllocators(TypeIdMap<MaterialBindGroupAllocator>);
@@ -138,8 +190,7 @@ struct MaterialBindlessIndexTable {
 /// necessary to allocate into it.
 struct MaterialBindlessBindingArray<R>
 where
-    R: GetBindingResourceId,
-{
+    R: GetBindingResourceId, {
     /// The number of the binding that we attach this binding array to.
     binding_number: BindingNumber,
     /// A mapping from bindless slot index to the resource stored in that slot,
@@ -164,8 +215,7 @@ where
 /// reference count drops to zero, the resource is freed.
 struct MaterialBindlessBinding<R>
 where
-    R: GetBindingResourceId,
-{
+    R: GetBindingResourceId, {
     /// The sampler, texture, or buffer.
     resource: R,
     /// The number of materials currently allocated within the containing slab
@@ -383,8 +433,7 @@ struct MaterialDataBuffer {
 #[derive(Deref, DerefMut)]
 struct RetainedRawBufferVec<T>
 where
-    T: Pod,
-{
+    T: Pod, {
     /// The contents of the buffer.
     #[deref]
     buffer: RawBufferVec<T>,
@@ -413,14 +462,14 @@ impl From<MaterialBindGroupSlot> for u32 {
 impl<'a> From<&'a OwnedBindingResource> for BindingResourceId {
     fn from(value: &'a OwnedBindingResource) -> Self {
         match *value {
-            OwnedBindingResource::Buffer(ref buffer) => BindingResourceId::Buffer(buffer.id()),
-            OwnedBindingResource::Data(_) => BindingResourceId::DataBuffer,
-            OwnedBindingResource::TextureView(ref texture_view_dimension, ref texture_view) => {
+            | OwnedBindingResource::Buffer(ref buffer) => BindingResourceId::Buffer(buffer.id()),
+            | OwnedBindingResource::Data(_) => BindingResourceId::DataBuffer,
+            | OwnedBindingResource::TextureView(ref texture_view_dimension, ref texture_view) => {
                 BindingResourceId::TextureView(*texture_view_dimension, texture_view.id())
-            }
-            OwnedBindingResource::Sampler(_, ref sampler) => {
+            },
+            | OwnedBindingResource::Sampler(_, ref sampler) => {
                 BindingResourceId::Sampler(sampler.id())
-            }
+            },
         }
     }
 }
@@ -440,13 +489,13 @@ impl GetBindingResourceId for Sampler {
 impl GetBindingResourceId for TextureView {
     fn binding_resource_id(&self, resource_type: BindlessResourceType) -> BindingResourceId {
         let texture_view_dimension = match resource_type {
-            BindlessResourceType::Texture1d => TextureViewDimension::D1,
-            BindlessResourceType::Texture2d => TextureViewDimension::D2,
-            BindlessResourceType::Texture2dArray => TextureViewDimension::D2Array,
-            BindlessResourceType::Texture3d => TextureViewDimension::D3,
-            BindlessResourceType::TextureCube => TextureViewDimension::Cube,
-            BindlessResourceType::TextureCubeArray => TextureViewDimension::CubeArray,
-            _ => panic!("Resource type is not a texture"),
+            | BindlessResourceType::Texture1d => TextureViewDimension::D1,
+            | BindlessResourceType::Texture2d => TextureViewDimension::D2,
+            | BindlessResourceType::Texture2dArray => TextureViewDimension::D2Array,
+            | BindlessResourceType::Texture3d => TextureViewDimension::D3,
+            | BindlessResourceType::TextureCube => TextureViewDimension::Cube,
+            | BindlessResourceType::TextureCubeArray => TextureViewDimension::CubeArray,
+            | _ => panic!("Resource type is not a texture"),
         };
         BindingResourceId::TextureView(texture_view_dimension, self.id())
     }
@@ -480,18 +529,19 @@ impl MaterialBindGroupAllocator {
     /// Returns the slab with the given index, if one exists.
     pub fn get(&self, group: MaterialBindGroupIndex) -> Option<MaterialSlab<'_>> {
         match *self {
-            MaterialBindGroupAllocator::Bindless(ref bindless_allocator) => bindless_allocator
+            | MaterialBindGroupAllocator::Bindless(ref bindless_allocator) => bindless_allocator
                 .get(group)
                 .map(|bindless_slab| MaterialSlab(MaterialSlabImpl::Bindless(bindless_slab))),
-            MaterialBindGroupAllocator::NonBindless(ref non_bindless_allocator) => {
+            | MaterialBindGroupAllocator::NonBindless(ref non_bindless_allocator) => {
                 non_bindless_allocator.get(group).map(|non_bindless_slab| {
                     MaterialSlab(MaterialSlabImpl::NonBindless(non_bindless_slab))
                 })
-            }
+            },
         }
     }
 
-    /// Allocates an [`UnpreparedBindGroup`] and returns the resulting binding ID.
+    /// Allocates an [`UnpreparedBindGroup`] and returns the resulting binding
+    /// ID.
     ///
     /// This method should generally be preferred over
     /// [`Self::allocate_prepared`], because this method supports both bindless
@@ -503,10 +553,10 @@ impl MaterialBindGroupAllocator {
         bind_group_layout: &BindGroupLayout,
     ) -> MaterialBindingId {
         match *self {
-            MaterialBindGroupAllocator::Bindless(
+            | MaterialBindGroupAllocator::Bindless(
                 ref mut material_bind_group_bindless_allocator,
             ) => material_bind_group_bindless_allocator.allocate_unprepared(unprepared_bind_group),
-            MaterialBindGroupAllocator::NonBindless(
+            | MaterialBindGroupAllocator::NonBindless(
                 ref mut material_bind_group_non_bindless_allocator,
             ) => material_bind_group_non_bindless_allocator
                 .allocate_unprepared(unprepared_bind_group, (*bind_group_layout).clone()),
@@ -527,15 +577,15 @@ impl MaterialBindGroupAllocator {
         prepared_bind_group: PreparedBindGroup,
     ) -> MaterialBindingId {
         match *self {
-            MaterialBindGroupAllocator::Bindless(_) => {
+            | MaterialBindGroupAllocator::Bindless(_) => {
                 panic!(
                     "Bindless resources are incompatible with implementing `as_bind_group` \
                      directly; implement `unprepared_bind_group` instead or disable bindless"
                 )
-            }
-            MaterialBindGroupAllocator::NonBindless(ref mut non_bindless_allocator) => {
+            },
+            | MaterialBindGroupAllocator::NonBindless(ref mut non_bindless_allocator) => {
                 non_bindless_allocator.allocate_prepared(prepared_bind_group)
-            }
+            },
         }
     }
 
@@ -544,10 +594,10 @@ impl MaterialBindGroupAllocator {
     /// Any resources that are no longer referenced are removed from the slab.
     pub fn free(&mut self, material_binding_id: MaterialBindingId) {
         match *self {
-            MaterialBindGroupAllocator::Bindless(
+            | MaterialBindGroupAllocator::Bindless(
                 ref mut material_bind_group_bindless_allocator,
             ) => material_bind_group_bindless_allocator.free(material_binding_id),
-            MaterialBindGroupAllocator::NonBindless(
+            | MaterialBindGroupAllocator::NonBindless(
                 ref mut material_bind_group_non_bindless_allocator,
             ) => material_bind_group_non_bindless_allocator.free(material_binding_id),
         }
@@ -562,14 +612,14 @@ impl MaterialBindGroupAllocator {
         fallback_image: &FallbackImage,
     ) {
         match *self {
-            MaterialBindGroupAllocator::Bindless(
+            | MaterialBindGroupAllocator::Bindless(
                 ref mut material_bind_group_bindless_allocator,
             ) => material_bind_group_bindless_allocator.prepare_bind_groups(
                 render_device,
                 fallback_bindless_resources,
                 fallback_image,
             ),
-            MaterialBindGroupAllocator::NonBindless(
+            | MaterialBindGroupAllocator::NonBindless(
                 ref mut material_bind_group_non_bindless_allocator,
             ) => material_bind_group_non_bindless_allocator.prepare_bind_groups(render_device),
         }
@@ -582,12 +632,12 @@ impl MaterialBindGroupAllocator {
     /// method only has an effect for bindless allocators.
     pub fn write_buffers(&mut self, render_device: &RenderDevice, render_queue: &RenderQueue) {
         match *self {
-            MaterialBindGroupAllocator::Bindless(
+            | MaterialBindGroupAllocator::Bindless(
                 ref mut material_bind_group_bindless_allocator,
             ) => material_bind_group_bindless_allocator.write_buffers(render_device, render_queue),
-            MaterialBindGroupAllocator::NonBindless(_) => {
+            | MaterialBindGroupAllocator::NonBindless(_) => {
                 // Not applicable.
-            }
+            },
         }
     }
 }
@@ -597,10 +647,11 @@ impl MaterialBindlessIndexTable {
     fn new(
         bindless_index_table_descriptor: &BindlessIndexTableDescriptor,
     ) -> MaterialBindlessIndexTable {
-        // Preallocate space for one bindings table, so that there will always be a buffer.
+        // Preallocate space for one bindings table, so that there will always be a
+        // buffer.
         let mut buffer = RetainedRawBufferVec::new(BufferUsages::STORAGE);
-        for _ in *bindless_index_table_descriptor.indices.start
-            ..*bindless_index_table_descriptor.indices.end
+        for _ in *bindless_index_table_descriptor.indices.start..
+            *bindless_index_table_descriptor.indices.end
         {
             buffer.push(0);
         }
@@ -701,23 +752,23 @@ where
     /// Recreates the GPU backing buffer if needed.
     fn prepare(&mut self, render_device: &RenderDevice) {
         match self.dirty {
-            BufferDirtyState::Clean | BufferDirtyState::NeedsUpload => {}
-            BufferDirtyState::NeedsReserve => {
+            | BufferDirtyState::Clean | BufferDirtyState::NeedsUpload => {},
+            | BufferDirtyState::NeedsReserve => {
                 let capacity = self.buffer.len();
                 self.buffer.reserve(capacity, render_device);
                 self.dirty = BufferDirtyState::NeedsUpload;
-            }
+            },
         }
     }
 
     /// Writes the current contents of the buffer to the GPU if necessary.
     fn write(&mut self, render_device: &RenderDevice, render_queue: &RenderQueue) {
         match self.dirty {
-            BufferDirtyState::Clean => {}
-            BufferDirtyState::NeedsReserve | BufferDirtyState::NeedsUpload => {
+            | BufferDirtyState::Clean => {},
+            | BufferDirtyState::NeedsReserve | BufferDirtyState::NeedsUpload => {
                 self.buffer.write_buffer(render_device, render_queue);
                 self.dirty = BufferDirtyState::Clean;
-            }
+            },
         }
     }
 }
@@ -741,8 +792,8 @@ impl MaterialBindGroupBindlessAllocator {
                     render_device.create_buffer(&BufferDescriptor {
                         label: Some("bindless fallback buffer"),
                         size: match bindless_buffer_descriptor.size {
-                            Some(size) => size as u64,
-                            None => DEFAULT_BINDLESS_FALLBACK_BUFFER_SIZE,
+                            | Some(size) => size as u64,
+                            | None => DEFAULT_BINDLESS_FALLBACK_BUFFER_SIZE,
                         },
                         usage: BufferUsages::STORAGE,
                         mapped_at_creation: false,
@@ -778,13 +829,13 @@ impl MaterialBindGroupBindlessAllocator {
         for (slab_index, slab) in self.slabs.iter_mut().enumerate() {
             trace!("Trying to allocate in slab {}", slab_index);
             match slab.try_allocate(unprepared_bind_group, self.slab_capacity) {
-                Ok(slot) => {
+                | Ok(slot) => {
                     return MaterialBindingId {
                         group: MaterialBindGroupIndex(slab_index as u32),
                         slot,
                     };
-                }
-                Err(bind_group) => unprepared_bind_group = bind_group,
+                },
+                | Err(bind_group) => unprepared_bind_group = bind_group,
             }
         }
 
@@ -881,9 +932,9 @@ impl MaterialBindlessSlab {
         // platform's maximum bindless count is set too low to hold even a
         // single material, we can still place each material into a separate
         // slab instead of failing outright.
-        if self.allocated_resource_count > 0
-            && self.allocated_resource_count + allocation_candidate.needed_free_slots
-                > slot_capacity
+        if self.allocated_resource_count > 0 &&
+            self.allocated_resource_count + allocation_candidate.needed_free_slots >
+                slot_capacity
         {
             trace!("Slab is full, can't allocate");
             return Err(unprepared_bind_group);
@@ -927,7 +978,7 @@ impl MaterialBindlessSlab {
         for &(bindless_index, ref owned_binding_resource) in unprepared_bind_group.bindings.iter() {
             let bindless_index = BindlessIndex(bindless_index);
             match *owned_binding_resource {
-                OwnedBindingResource::Buffer(ref buffer) => {
+                | OwnedBindingResource::Buffer(ref buffer) => {
                     let Some(binding_array) = self.buffers.get(&bindless_index) else {
                         error!(
                             "Binding array wasn't present for buffer at index {:?}",
@@ -936,20 +987,20 @@ impl MaterialBindlessSlab {
                         return None;
                     };
                     match binding_array.find(BindingResourceId::Buffer(buffer.id())) {
-                        Some(slot) => {
+                        | Some(slot) => {
                             allocation_candidate
                                 .pre_existing_resources
                                 .insert(bindless_index, slot);
-                        }
-                        None => allocation_candidate.needed_free_slots += 1,
+                        },
+                        | None => allocation_candidate.needed_free_slots += 1,
                     }
-                }
+                },
 
-                OwnedBindingResource::Data(_) => {
+                | OwnedBindingResource::Data(_) => {
                     // The size of a data buffer is unlimited.
-                }
+                },
 
-                OwnedBindingResource::TextureView(texture_view_dimension, ref texture_view) => {
+                | OwnedBindingResource::TextureView(texture_view_dimension, ref texture_view) => {
                     let bindless_resource_type = BindlessResourceType::from(texture_view_dimension);
                     match self
                         .textures
@@ -959,18 +1010,18 @@ impl MaterialBindlessSlab {
                             texture_view_dimension,
                             texture_view.id(),
                         )) {
-                        Some(slot) => {
+                        | Some(slot) => {
                             allocation_candidate
                                 .pre_existing_resources
                                 .insert(bindless_index, slot);
-                        }
-                        None => {
+                        },
+                        | None => {
                             allocation_candidate.needed_free_slots += 1;
-                        }
+                        },
                     }
-                }
+                },
 
-                OwnedBindingResource::Sampler(sampler_binding_type, ref sampler) => {
+                | OwnedBindingResource::Sampler(sampler_binding_type, ref sampler) => {
                     let bindless_resource_type = BindlessResourceType::from(sampler_binding_type);
                     match self
                         .samplers
@@ -978,16 +1029,16 @@ impl MaterialBindlessSlab {
                         .expect("Missing binding array for sampler")
                         .find(BindingResourceId::Sampler(sampler.id()))
                     {
-                        Some(slot) => {
+                        | Some(slot) => {
                             allocation_candidate
                                 .pre_existing_resources
                                 .insert(bindless_index, slot);
-                        }
-                        None => {
+                        },
+                        | None => {
                             allocation_candidate.needed_free_slots += 1;
-                        }
+                        },
                     }
-                }
+                },
             }
         }
 
@@ -1015,7 +1066,7 @@ impl MaterialBindlessSlab {
             // Otherwise, we need to insert it anew.
             let binding_resource_id = BindingResourceId::from(&owned_binding_resource);
             let increment_allocated_resource_count = match owned_binding_resource {
-                OwnedBindingResource::Buffer(buffer) => {
+                | OwnedBindingResource::Buffer(buffer) => {
                     let slot = self
                         .buffers
                         .get_mut(&bindless_index)
@@ -1030,8 +1081,8 @@ impl MaterialBindlessSlab {
                     } else {
                         true
                     }
-                }
-                OwnedBindingResource::Data(data) => {
+                },
+                | OwnedBindingResource::Data(data) => {
                     if pre_existing_slot.is_some() {
                         panic!("Data buffers can't be deduplicated")
                     }
@@ -1043,8 +1094,8 @@ impl MaterialBindlessSlab {
                         .insert(&data);
                     allocated_resource_slots.insert(bindless_index, slot);
                     false
-                }
-                OwnedBindingResource::TextureView(texture_view_dimension, texture_view) => {
+                },
+                | OwnedBindingResource::TextureView(texture_view_dimension, texture_view) => {
                     let bindless_resource_type = BindlessResourceType::from(texture_view_dimension);
                     let slot = self
                         .textures
@@ -1060,8 +1111,8 @@ impl MaterialBindlessSlab {
                     } else {
                         true
                     }
-                }
-                OwnedBindingResource::Sampler(sampler_binding_type, sampler) => {
+                },
+                | OwnedBindingResource::Sampler(sampler_binding_type, sampler) => {
                     let bindless_resource_type = BindlessResourceType::from(sampler_binding_type);
                     let slot = self
                         .samplers
@@ -1077,7 +1128,7 @@ impl MaterialBindlessSlab {
                     } else {
                         true
                     }
-                }
+                },
             };
 
             // Bump the allocated resource count.
@@ -1109,32 +1160,32 @@ impl MaterialBindlessSlab {
             // than a data buffer, then it has a reference count and
             // consequently we need to decrement it.
             let decrement_allocated_resource_count = match *bindless_resource_type {
-                BindlessResourceType::None => false,
-                BindlessResourceType::Buffer => self
+                | BindlessResourceType::None => false,
+                | BindlessResourceType::Buffer => self
                     .buffers
                     .get_mut(&bindless_index)
                     .expect("Buffer should exist with that bindless index")
                     .remove(bindless_binding),
-                BindlessResourceType::DataBuffer => {
+                | BindlessResourceType::DataBuffer => {
                     self.data_buffers
                         .get_mut(&bindless_index)
                         .expect("Data buffer should exist with that bindless index")
                         .remove(bindless_binding);
                     false
-                }
-                BindlessResourceType::SamplerFiltering
-                | BindlessResourceType::SamplerNonFiltering
-                | BindlessResourceType::SamplerComparison => self
+                },
+                | BindlessResourceType::SamplerFiltering |
+                BindlessResourceType::SamplerNonFiltering |
+                BindlessResourceType::SamplerComparison => self
                     .samplers
                     .get_mut(bindless_resource_type)
                     .expect("Sampler array should exist")
                     .remove(bindless_binding),
-                BindlessResourceType::Texture1d
-                | BindlessResourceType::Texture2d
-                | BindlessResourceType::Texture2dArray
-                | BindlessResourceType::Texture3d
-                | BindlessResourceType::TextureCube
-                | BindlessResourceType::TextureCubeArray => self
+                | BindlessResourceType::Texture1d |
+                BindlessResourceType::Texture2d |
+                BindlessResourceType::Texture2dArray |
+                BindlessResourceType::Texture3d |
+                BindlessResourceType::TextureCube |
+                BindlessResourceType::TextureCubeArray => self
                     .textures
                     .get_mut(bindless_resource_type)
                     .expect("Texture array should exist")
@@ -1238,15 +1289,15 @@ impl MaterialBindlessSlab {
             bind_group_entries.push(BindGroupEntry {
                 binding,
                 resource: match *binding_resource_array {
-                    BindingResourceArray::Buffers(ref buffer_bindings) => {
+                    | BindingResourceArray::Buffers(ref buffer_bindings) => {
                         BindingResource::BufferArray(&buffer_bindings[..])
-                    }
-                    BindingResourceArray::TextureViews(ref texture_views) => {
+                    },
+                    | BindingResourceArray::TextureViews(ref texture_views) => {
                         BindingResource::TextureViewArray(&texture_views[..])
-                    }
-                    BindingResourceArray::Samplers(ref samplers) => {
+                    },
+                    | BindingResourceArray::Samplers(ref samplers) => {
                         BindingResource::SamplerArray(&samplers[..])
-                    }
+                    },
                 },
             });
         }
@@ -1346,21 +1397,21 @@ impl MaterialBindlessSlab {
             let mut sampler_bindings = vec![];
 
             match self.samplers.get(&bindless_resource_type) {
-                Some(sampler_bindless_binding_array) => {
+                | Some(sampler_bindless_binding_array) => {
                     for maybe_bindless_binding in sampler_bindless_binding_array.bindings.iter() {
                         match *maybe_bindless_binding {
-                            Some(ref bindless_binding) => {
+                            | Some(ref bindless_binding) => {
                                 sampler_bindings.push(&*bindless_binding.resource);
-                            }
-                            None => sampler_bindings.push(&**fallback_sampler),
+                            },
+                            | None => sampler_bindings.push(&**fallback_sampler),
                         }
                     }
-                }
+                },
 
-                None => {
+                | None => {
                     // Fill with a single fallback sampler.
                     sampler_bindings.push(&**fallback_sampler);
-                }
+                },
             }
 
             if let Some(required_binding_array_size) = required_binding_array_size {
@@ -1410,21 +1461,21 @@ impl MaterialBindlessSlab {
                 .expect("Texture bindless resource type must have a binding number");
 
             match self.textures.get(&bindless_resource_type) {
-                Some(texture_bindless_binding_array) => {
+                | Some(texture_bindless_binding_array) => {
                     for maybe_bindless_binding in texture_bindless_binding_array.bindings.iter() {
                         match *maybe_bindless_binding {
-                            Some(ref bindless_binding) => {
+                            | Some(ref bindless_binding) => {
                                 texture_bindings.push(&*bindless_binding.resource);
-                            }
-                            None => texture_bindings.push(&*fallback_image.texture_view),
+                            },
+                            | None => texture_bindings.push(&*fallback_image.texture_view),
                         }
                     }
-                }
+                },
 
-                None => {
+                | None => {
                     // Fill with a single fallback image.
                     texture_bindings.push(&*fallback_image.texture_view);
-                }
+                },
             }
 
             if let Some(required_binding_array_size) = required_binding_array_size {
@@ -1469,8 +1520,8 @@ impl MaterialBindlessSlab {
                 .iter()
                 .map(|maybe_bindless_binding| {
                     let buffer = match *maybe_bindless_binding {
-                        None => fallback_buffer,
-                        Some(ref bindless_binding) => &bindless_binding.resource,
+                        | None => fallback_buffer,
+                        | Some(ref bindless_binding) => &bindless_binding.resource,
                     };
                     BufferBinding {
                         buffer,
@@ -1557,7 +1608,7 @@ where
     /// of the slot it was inserted into.
     fn insert(&mut self, binding_resource_id: BindingResourceId, resource: R) -> u32 {
         match self.resource_to_slot.entry(binding_resource_id) {
-            bevy_platform::collections::hash_map::Entry::Occupied(o) => {
+            | bevy_platform::collections::hash_map::Entry::Occupied(o) => {
                 let slot = *o.get();
 
                 self.bindings[slot as usize]
@@ -1566,8 +1617,8 @@ where
                     .ref_count += 1;
 
                 slot
-            }
-            bevy_platform::collections::hash_map::Entry::Vacant(v) => {
+            },
+            | bevy_platform::collections::hash_map::Entry::Vacant(v) => {
                 let slot = self.free_slots.pop().unwrap_or(self.len);
                 v.insert(slot);
 
@@ -1578,7 +1629,7 @@ where
 
                 self.len += 1;
                 slot
-            }
+            },
         }
     }
 
@@ -1630,8 +1681,7 @@ where
 /// into account.
 pub fn material_uses_bindless_resources<M>(render_device: &RenderDevice) -> bool
 where
-    M: Material,
-{
+    M: Material, {
     M::bindless_slot_count().is_some_and(|bindless_slot_count| {
         M::bindless_supported(render_device) && bindless_slot_count.resolve() > 1
     })
@@ -1653,8 +1703,8 @@ impl MaterialBindlessSlab {
         {
             let bindless_index = BindlessIndex(bindless_index as u32);
             match *bindless_resource_type {
-                BindlessResourceType::None => {}
-                BindlessResourceType::Buffer => {
+                | BindlessResourceType::None => {},
+                | BindlessResourceType::Buffer => {
                     let binding_number = bindless_descriptor
                         .buffers
                         .iter()
@@ -1670,8 +1720,8 @@ impl MaterialBindlessSlab {
                         bindless_index,
                         MaterialBindlessBindingArray::new(binding_number, *bindless_resource_type),
                     );
-                }
-                BindlessResourceType::DataBuffer => {
+                },
+                | BindlessResourceType::DataBuffer => {
                     // Copy the data in.
                     let buffer_descriptor = bindless_descriptor
                         .buffers
@@ -1693,10 +1743,10 @@ impl MaterialBindlessSlab {
                                 as u32,
                         ),
                     );
-                }
-                BindlessResourceType::SamplerFiltering
-                | BindlessResourceType::SamplerNonFiltering
-                | BindlessResourceType::SamplerComparison => {
+                },
+                | BindlessResourceType::SamplerFiltering |
+                BindlessResourceType::SamplerNonFiltering |
+                BindlessResourceType::SamplerComparison => {
                     samplers.insert(
                         *bindless_resource_type,
                         MaterialBindlessBindingArray::new(
@@ -1704,13 +1754,13 @@ impl MaterialBindlessSlab {
                             *bindless_resource_type,
                         ),
                     );
-                }
-                BindlessResourceType::Texture1d
-                | BindlessResourceType::Texture2d
-                | BindlessResourceType::Texture2dArray
-                | BindlessResourceType::Texture3d
-                | BindlessResourceType::TextureCube
-                | BindlessResourceType::TextureCubeArray => {
+                },
+                | BindlessResourceType::Texture1d |
+                BindlessResourceType::Texture2d |
+                BindlessResourceType::Texture2dArray |
+                BindlessResourceType::Texture3d |
+                BindlessResourceType::TextureCube |
+                BindlessResourceType::TextureCubeArray => {
                     textures.insert(
                         *bindless_resource_type,
                         MaterialBindlessBindingArray::new(
@@ -1718,7 +1768,7 @@ impl MaterialBindlessSlab {
                             *bindless_resource_type,
                         ),
                     );
-                }
+                },
             }
         }
 
@@ -1841,12 +1891,12 @@ impl MaterialBindGroupNonBindlessAllocator {
         self.bind_groups[group.0 as usize]
             .as_ref()
             .map(|bind_group| match bind_group {
-                MaterialNonBindlessAllocatedBindGroup::Prepared { bind_group, .. } => {
+                | MaterialNonBindlessAllocatedBindGroup::Prepared { bind_group, .. } => {
                     MaterialNonBindlessSlab::Prepared(bind_group)
-                }
-                MaterialNonBindlessAllocatedBindGroup::Unprepared { .. } => {
+                },
+                | MaterialNonBindlessAllocatedBindGroup::Unprepared { .. } => {
                     MaterialNonBindlessSlab::Unprepared
-                }
+                },
             })
     }
 
@@ -1886,7 +1936,7 @@ impl MaterialBindGroupNonBindlessAllocator {
             let mut uniform_buffers_iter = uniform_buffers.iter();
             for (index, binding) in unprepared_bind_group.bindings.iter() {
                 match *binding {
-                    OwnedBindingResource::Data(_) => {
+                    | OwnedBindingResource::Data(_) => {
                         bind_group_entries.push(BindGroupEntry {
                             binding: *index,
                             resource: uniform_buffers_iter
@@ -1894,8 +1944,8 @@ impl MaterialBindGroupNonBindlessAllocator {
                                 .expect("We should have created uniform buffers for each `Data`")
                                 .as_entire_binding(),
                         });
-                    }
-                    _ => bind_group_entries.push(BindGroupEntry {
+                    },
+                    | _ => bind_group_entries.push(BindGroupEntry {
                         binding: *index,
                         resource: binding.get_binding(),
                     }),
@@ -1930,13 +1980,13 @@ impl<'a> MaterialSlab<'a> {
     /// isn't ready, this method returns `None`.
     pub fn bind_group(&self) -> Option<&'a BindGroup> {
         match self.0 {
-            MaterialSlabImpl::Bindless(material_bindless_slab) => {
+            | MaterialSlabImpl::Bindless(material_bindless_slab) => {
                 material_bindless_slab.bind_group()
-            }
-            MaterialSlabImpl::NonBindless(MaterialNonBindlessSlab::Prepared(
+            },
+            | MaterialSlabImpl::NonBindless(MaterialNonBindlessSlab::Prepared(
                 prepared_bind_group,
             )) => Some(&prepared_bind_group.bind_group),
-            MaterialSlabImpl::NonBindless(MaterialNonBindlessSlab::Unprepared) => None,
+            | MaterialSlabImpl::NonBindless(MaterialNonBindlessSlab::Unprepared) => None,
         }
     }
 }

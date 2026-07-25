@@ -36,7 +36,6 @@ pub enum ControlCommand {
     Shutdown,
 
     // Session lifecycle commands
-
     /// Join a specific session by code
     JoinSession { session_code: String },
 
@@ -56,7 +55,6 @@ pub enum ControlCommand {
     ListPeers,
 
     // Entity commands
-
     /// Spawn an entity with a given type and position
     SpawnEntity {
         entity_type: String,

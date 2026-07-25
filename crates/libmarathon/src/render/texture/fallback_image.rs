@@ -1,24 +1,44 @@
-use crate::render::{
-    render_resource::*,
-    renderer::{RenderDevice, RenderQueue},
-    texture::{DefaultImageSampler, GpuImage},
-};
 use bevy_asset::RenderAssetUsages;
-use bevy_derive::{Deref, DerefMut};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
-    prelude::{FromWorld, Res, ResMut},
+    prelude::{
+        FromWorld,
+        Res,
+        ResMut,
+    },
     resource::Resource,
     system::SystemParam,
 };
-use bevy_image::{BevyDefault, Image, ImageSampler, TextureFormatPixelInfo};
+use bevy_image::{
+    BevyDefault,
+    Image,
+    ImageSampler,
+    TextureFormatPixelInfo,
+};
 use bevy_platform::collections::HashMap;
 
-/// A [`RenderApp`](crate::RenderApp) resource that contains the default "fallback image",
-/// which can be used in situations where an image was not explicitly defined. The most common
-/// use case is [`AsBindGroup`] implementations (such as materials) that support optional textures.
+use crate::render::{
+    render_resource::*,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    texture::{
+        DefaultImageSampler,
+        GpuImage,
+    },
+};
+
+/// A [`RenderApp`](crate::RenderApp) resource that contains the default
+/// "fallback image", which can be used in situations where an image was not
+/// explicitly defined. The most common use case is [`AsBindGroup`]
+/// implementations (such as materials) that support optional textures.
 ///
-/// Defaults to a 1x1 fully opaque white texture, (1.0, 1.0, 1.0, 1.0) which makes multiplying
-/// it with other colors a no-op.
+/// Defaults to a 1x1 fully opaque white texture, (1.0, 1.0, 1.0, 1.0) which
+/// makes multiplying it with other colors a no-op.
 #[derive(Resource)]
 pub struct FallbackImage {
     /// Fallback image for [`TextureViewDimension::D1`].
@@ -39,28 +59,30 @@ impl FallbackImage {
     /// Returns the appropriate fallback image for the given texture dimension.
     pub fn get(&self, texture_dimension: TextureViewDimension) -> &GpuImage {
         match texture_dimension {
-            TextureViewDimension::D1 => &self.d1,
-            TextureViewDimension::D2 => &self.d2,
-            TextureViewDimension::D2Array => &self.d2_array,
-            TextureViewDimension::Cube => &self.cube,
-            TextureViewDimension::CubeArray => &self.cube_array,
-            TextureViewDimension::D3 => &self.d3,
+            | TextureViewDimension::D1 => &self.d1,
+            | TextureViewDimension::D2 => &self.d2,
+            | TextureViewDimension::D2Array => &self.d2_array,
+            | TextureViewDimension::Cube => &self.cube,
+            | TextureViewDimension::CubeArray => &self.cube_array,
+            | TextureViewDimension::D3 => &self.d3,
         }
     }
 }
 
-/// A [`RenderApp`](crate::RenderApp) resource that contains a _zero-filled_ "fallback image",
-/// which can be used in place of [`FallbackImage`], when a fully transparent or black fallback
-/// is required instead of fully opaque white.
+/// A [`RenderApp`](crate::RenderApp) resource that contains a _zero-filled_
+/// "fallback image", which can be used in place of [`FallbackImage`], when a
+/// fully transparent or black fallback is required instead of fully opaque
+/// white.
 ///
-/// Defaults to a 1x1 fully transparent black texture, (0.0, 0.0, 0.0, 0.0) which makes adding
-/// or alpha-blending it to other colors a no-op.
+/// Defaults to a 1x1 fully transparent black texture, (0.0, 0.0, 0.0, 0.0)
+/// which makes adding or alpha-blending it to other colors a no-op.
 #[derive(Resource, Deref)]
 pub struct FallbackImageZero(GpuImage);
 
-/// A [`RenderApp`](crate::RenderApp) resource that contains a "cubemap fallback image",
-/// which can be used in situations where an image was not explicitly defined. The most common
-/// use case is [`AsBindGroup`] implementations (such as materials) that support optional textures.
+/// A [`RenderApp`](crate::RenderApp) resource that contains a "cubemap fallback
+/// image", which can be used in situations where an image was not explicitly
+/// defined. The most common use case is [`AsBindGroup`] implementations (such
+/// as materials) that support optional textures.
 #[derive(Resource, Deref)]
 pub struct FallbackImageCubemap(GpuImage);
 
@@ -79,12 +101,13 @@ fn fallback_image_new(
         width: 1,
         height: 1,
         depth_or_array_layers: match dimension {
-            TextureViewDimension::Cube | TextureViewDimension::CubeArray => 6,
-            _ => 1,
+            | TextureViewDimension::Cube | TextureViewDimension::CubeArray => 6,
+            | _ => 1,
         },
     };
 
-    // We can't create textures with data when it's a depth texture or when using multiple samples
+    // We can't create textures with data when it's a depth texture or when using
+    // multiple samples
     let create_texture_with_data = !format.is_depth_stencil_format() && samples == 1;
 
     let image_dimension = dimension.compatible_texture_dimension();
@@ -126,10 +149,10 @@ fn fallback_image_new(
         ..TextureViewDescriptor::default()
     });
     let sampler = match image.sampler {
-        ImageSampler::Default => (**default_sampler).clone(),
-        ImageSampler::Descriptor(ref descriptor) => {
+        | ImageSampler::Default => (**default_sampler).clone(),
+        | ImageSampler::Descriptor(ref descriptor) => {
             render_device.create_sampler(&descriptor.as_wgpu())
-        }
+        },
     };
     GpuImage {
         texture,
@@ -239,11 +262,12 @@ impl FromWorld for FallbackImageCubemap {
     }
 }
 
-/// A Cache of fallback textures that uses the sample count and `TextureFormat` as a key
+/// A Cache of fallback textures that uses the sample count and `TextureFormat`
+/// as a key
 ///
 /// # WARNING
-/// Images using MSAA with sample count > 1 are not initialized with data, therefore,
-/// you shouldn't sample them before writing data to them first.
+/// Images using MSAA with sample count > 1 are not initialized with data,
+/// therefore, you shouldn't sample them before writing data to them first.
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct FallbackImageFormatMsaaCache(HashMap<(u32, TextureFormat), GpuImage>);
 

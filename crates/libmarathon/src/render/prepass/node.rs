@@ -1,24 +1,52 @@
-use bevy_camera::{MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::*, query::QueryItem};
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    experimental::occlusion_culling::OcclusionCulling,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, PipelineCache, RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, NoIndirectDrawing, ViewDepthTexture, ViewUniformOffset},
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
+};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use crate::render::skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup};
-
 use super::{
-    AlphaMask3dPrepass, DeferredPrepass, Opaque3dPrepass, PreviousViewUniformOffset,
+    AlphaMask3dPrepass,
+    DeferredPrepass,
+    Opaque3dPrepass,
+    PreviousViewUniformOffset,
     ViewPrepassTextures,
+};
+use crate::render::{
+    camera::ExtractedCamera,
+    diagnostic::RecordDiagnostics,
+    experimental::occlusion_culling::OcclusionCulling,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::{
+        TrackedRenderPass,
+        ViewBinnedRenderPhases,
+    },
+    render_resource::{
+        CommandEncoderDescriptor,
+        PipelineCache,
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    skybox::prepass::{
+        RenderSkyboxPrepassPipeline,
+        SkyboxPrepassBindGroup,
+    },
+    view::{
+        ExtractedView,
+        NoIndirectDrawing,
+        ViewDepthTexture,
+        ViewUniformOffset,
+    },
 };
 
 /// The phase of the prepass that draws meshes that were visible last frame.
@@ -158,7 +186,8 @@ fn run_prepass<'w>(
         None,
     ];
 
-    // If all color attachments are none: clear the color attachment list so that no fragment shader is required
+    // If all color attachments are none: clear the color attachment list so that no
+    // fragment shader is required
     if color_attachments.iter().all(Option::is_none) {
         color_attachments.clear();
     }
@@ -237,9 +266,10 @@ fn run_prepass<'w>(
         pass_span.end(&mut render_pass);
         drop(render_pass);
 
-        // After rendering to the view depth texture, copy it to the prepass depth texture if deferred isn't going to
-        if deferred_prepass.is_none()
-            && let Some(prepass_depth_texture) = &view_prepass_textures.depth
+        // After rendering to the view depth texture, copy it to the prepass depth
+        // texture if deferred isn't going to
+        if deferred_prepass.is_none() &&
+            let Some(prepass_depth_texture) = &view_prepass_textures.depth
         {
             command_encoder.copy_texture_to_texture(
                 view_depth_texture.texture.as_image_copy(),

@@ -4,16 +4,30 @@
 // This code is vendored from bevy_egui: https://github.com/vladbat00/bevy_egui
 // Original author: Vladyslav Batyrenko <vladyslav.batyrenko@gmail.com>
 
+use bevy::{
+    ecs::{
+        entity::Entity,
+        system::{
+            Commands,
+            Local,
+            Query,
+            Res,
+        },
+    },
+    platform::collections::HashMap,
+    window::CursorIcon,
+};
+
 use super::{
-    EguiContext, EguiContextSettings, EguiFullOutput, EguiGlobalSettings, EguiOutput,
-    EguiRenderOutput, helpers, input::WindowToEguiContextMap,
+    EguiContext,
+    EguiContextSettings,
+    EguiFullOutput,
+    EguiGlobalSettings,
+    EguiOutput,
+    EguiRenderOutput,
+    helpers,
+    input::WindowToEguiContextMap,
 };
-use bevy::ecs::{
-    entity::Entity,
-    system::{Commands, Local, Query, Res},
-};
-use bevy::platform::collections::HashMap;
-use bevy::window::CursorIcon;
 
 /// Reads Egui output.
 #[allow(clippy::too_many_arguments)]
@@ -63,18 +77,18 @@ pub fn process_output_system(
 
         for command in &egui_output.platform_output.commands {
             match command {
-                egui::OutputCommand::CopyText(_text) =>
+                | egui::OutputCommand::CopyText(_text) =>
                 {
                     #[cfg(all(feature = "manage_clipboard", not(target_os = "android")))]
                     if !_text.is_empty() {
                         egui_clipboard.set_text(_text);
                     }
-                }
-                egui::OutputCommand::CopyImage(_image) => {
+                },
+                | egui::OutputCommand::CopyImage(_image) => {
                     #[cfg(all(feature = "manage_clipboard", not(target_os = "android")))]
                     egui_clipboard.set_image(_image);
-                }
-                egui::OutputCommand::OpenUrl(_url) => {
+                },
+                | egui::OutputCommand::OpenUrl(_url) => {
                     #[cfg(feature = "open_url")]
                     {
                         let egui::output::OpenUrl { url, new_tab } = _url;
@@ -94,13 +108,13 @@ pub fn process_output_system(
                             bevy::log::error!("Failed to open '{}': {:?}", url, err);
                         }
                     }
-                }
+                },
             }
         }
 
-        if egui_global_settings.enable_cursor_icon_updates
-            && settings.enable_cursor_icon_updates
-            && let Some(window_entity) = window_to_egui_context_map.context_to_window.get(&entity)
+        if egui_global_settings.enable_cursor_icon_updates &&
+            settings.enable_cursor_icon_updates &&
+            let Some(window_entity) = window_to_egui_context_map.context_to_window.get(&entity)
         {
             let last_cursor_icon = last_cursor_icon.entry(entity).or_default();
             if *last_cursor_icon != egui_output.platform_output.cursor_icon {
@@ -118,8 +132,8 @@ pub fn process_output_system(
         _should_request_redraw |= ctx.has_requested_repaint() && needs_repaint;
     }
 
-    // NOTE: RequestRedraw not needed - we own winit and run unbounded (continuous redraws)
-    // if should_request_redraw {
+    // NOTE: RequestRedraw not needed - we own winit and run unbounded
+    // (continuous redraws) if should_request_redraw {
     //     request_redraw_writer.write(RequestRedraw);
     // }
 }

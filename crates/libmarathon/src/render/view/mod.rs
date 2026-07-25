@@ -1,48 +1,109 @@
 pub mod visibility;
 pub mod window;
 
+use core::{
+    ops::Range,
+    sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    },
+};
+use std::sync::Arc;
+
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_camera::{
-    primitives::Frustum, CameraMainTextureUsages, ClearColor, ClearColorConfig, Exposure,
-    MainPassResolutionOverride, NormalizedRenderTarget,
+    CameraMainTextureUsages,
+    ClearColor,
+    ClearColorConfig,
+    Exposure,
+    MainPassResolutionOverride,
+    NormalizedRenderTarget,
+    primitives::Frustum,
+};
+use bevy_color::LinearRgba;
+use bevy_derive::{
+    Deref,
+    DerefMut,
 };
 use bevy_diagnostic::FrameCount;
+use bevy_ecs::prelude::*;
+use bevy_image::{
+    BevyDefault as _,
+    ToExtents,
+};
+use bevy_math::{
+    Mat3,
+    Mat4,
+    UVec4,
+    Vec2,
+    Vec3,
+    Vec4,
+    Vec4Swizzles,
+    mat3,
+    vec2,
+    vec3,
+};
+use bevy_platform::collections::{
+    HashMap,
+    hash_map::Entry,
+};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
+use bevy_shader::load_shader_library;
+use bevy_transform::components::GlobalTransform;
+use libmarathon_macros::ExtractComponent;
 pub use visibility::*;
+use wgpu::{
+    BufferUsages,
+    RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment,
+    StoreOp,
+    TextureDescriptor,
+    TextureDimension,
+    TextureFormat,
+    TextureUsages,
+};
 pub use window::*;
 
 use crate::render::{
-    camera::{ExtractedCamera, MipBias, NormalizedRenderTargetExt as _, TemporalJitter},
+    Render,
+    RenderApp,
+    RenderSystems,
+    camera::{
+        ExtractedCamera,
+        MipBias,
+        NormalizedRenderTargetExt as _,
+        TemporalJitter,
+    },
     experimental::occlusion_culling::OcclusionCulling,
     extract_component::ExtractComponentPlugin,
     render_asset::RenderAssets,
     render_phase::ViewRangefinder3d,
-    render_resource::{DynamicUniformBuffer, ShaderType, Texture, TextureView},
-    renderer::{RenderDevice, RenderQueue},
+    render_resource::{
+        DynamicUniformBuffer,
+        ShaderType,
+        Texture,
+        TextureView,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
     sync_world::MainEntity,
     texture::{
-        CachedTexture, ColorAttachment, DepthAttachment, GpuImage, ManualTextureViews,
-        OutputColorAttachment, TextureCache,
+        CachedTexture,
+        ColorAttachment,
+        DepthAttachment,
+        GpuImage,
+        ManualTextureViews,
+        OutputColorAttachment,
+        TextureCache,
     },
-    Render, RenderApp, RenderSystems,
-};
-use std::sync::Arc;
-use bevy_app::{App, Plugin};
-use bevy_color::LinearRgba;
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::prelude::*;
-use bevy_image::{BevyDefault as _, ToExtents};
-use bevy_math::{mat3, vec2, vec3, Mat3, Mat4, UVec4, Vec2, Vec3, Vec4, Vec4Swizzles};
-use bevy_platform::collections::{hash_map::Entry, HashMap};
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use libmarathon_macros::ExtractComponent;
-use bevy_shader::load_shader_library;
-use bevy_transform::components::GlobalTransform;
-use core::{
-    ops::Range,
-    sync::atomic::{AtomicUsize, Ordering},
-};
-use wgpu::{
-    BufferUsages, RenderPassColorAttachment, RenderPassDepthStencilAttachment, StoreOp,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
 /// The matrix that converts from the RGB to the LMS color space.
@@ -164,7 +225,7 @@ impl Plugin for ViewPlugin {
 )]
 #[reflect(Component, Default, PartialEq, Hash, Debug)]
 pub enum Msaa {
-    Off = 1,
+    Off     = 1,
     Sample2 = 2,
     #[default]
     Sample4 = 4,
@@ -179,18 +240,19 @@ impl Msaa {
 
     pub fn from_samples(samples: u32) -> Self {
         match samples {
-            1 => Msaa::Off,
-            2 => Msaa::Sample2,
-            4 => Msaa::Sample4,
-            8 => Msaa::Sample8,
-            _ => panic!("Unsupported MSAA sample count: {samples}"),
+            | 1 => Msaa::Off,
+            | 2 => Msaa::Sample2,
+            | 4 => Msaa::Sample4,
+            | 8 => Msaa::Sample8,
+            | _ => panic!("Unsupported MSAA sample count: {samples}"),
         }
     }
 }
 
-/// If this component is added to a camera, the camera will use an intermediate "high dynamic range" render texture.
-/// This allows rendering with a wider range of lighting values. However, this does *not* affect
-/// whether the camera will render with hdr display output (which bevy does not support currently)
+/// If this component is added to a camera, the camera will use an intermediate
+/// "high dynamic range" render texture. This allows rendering with a wider
+/// range of lighting values. However, this does *not* affect whether the camera
+/// will render with hdr display output (which bevy does not support currently)
 /// and only affects the intermediate render texture.
 #[derive(
     Component, Default, Copy, Clone, ExtractComponent, Reflect, PartialEq, Eq, Hash, Debug,
@@ -287,9 +349,11 @@ pub struct ExtractedView {
     /// ⎣     0      0      0        1 ⎦
     /// ```
     ///
-    /// `clip_from_view[3][3] == 1.0` is the standard way to check if a projection is orthographic
+    /// `clip_from_view[3][3] == 1.0` is the standard way to check if a
+    /// projection is orthographic
     ///
-    /// Glam matrices are column major, so for example getting the near plane of a perspective projection is `clip_from_view[3][2]`
+    /// Glam matrices are column major, so for example getting the near plane of
+    /// a perspective projection is `clip_from_view[3][2]`
     ///
     /// Custom projections are also possible however.
     pub clip_from_view: Mat4,
@@ -378,8 +442,8 @@ pub struct ColorGradingGlobal {
     pub hue: f32,
 
     /// Saturation adjustment applied after tonemapping.
-    /// Values below 1.0 desaturate, with a value of 0.0 resulting in a grayscale image
-    /// with luminance defined by ITU-R BT.709
+    /// Values below 1.0 desaturate, with a value of 0.0 resulting in a
+    /// grayscale image with luminance defined by ITU-R BT.709
     /// Values above 1.0 increase saturation.
     pub post_saturation: f32,
 
@@ -415,8 +479,8 @@ pub struct ColorGradingUniform {
 #[derive(Reflect, Debug, Copy, Clone, PartialEq)]
 #[reflect(Clone, PartialEq)]
 pub struct ColorGradingSection {
-    /// Values below 1.0 desaturate, with a value of 0.0 resulting in a grayscale image
-    /// with luminance defined by ITU-R BT.709.
+    /// Values below 1.0 desaturate, with a value of 0.0 resulting in a
+    /// grayscale image with luminance defined by ITU-R BT.709.
     /// Values above 1.0 increase saturation.
     pub saturation: f32,
 
@@ -556,9 +620,11 @@ pub struct ViewUniform {
     /// ⎣     0      0      0        1 ⎦
     /// ```
     ///
-    /// `clip_from_view[3][3] == 1.0` is the standard way to check if a projection is orthographic
+    /// `clip_from_view[3][3] == 1.0` is the standard way to check if a
+    /// projection is orthographic
     ///
-    /// Glam matrices are column major, so for example getting the near plane of a perspective projection is `clip_from_view[3][2]`
+    /// Glam matrices are column major, so for example getting the near plane of
+    /// a perspective projection is `clip_from_view[3][2]`
     ///
     /// Custom projections are also possible however.
     pub clip_from_view: Mat4,
@@ -568,9 +634,10 @@ pub struct ViewUniform {
     // viewport(x_origin, y_origin, width, height)
     pub viewport: Vec4,
     pub main_pass_viewport: Vec4,
-    /// 6 world-space half spaces (normal: vec3, distance: f32) ordered left, right, top, bottom, near, far.
-    /// The normal vectors point towards the interior of the frustum.
-    /// A half space contains `p` if `normal.dot(p) + distance > 0.`
+    /// 6 world-space half spaces (normal: vec3, distance: f32) ordered left,
+    /// right, top, bottom, near, far. The normal vectors point towards the
+    /// interior of the frustum. A half space contains `p` if `normal.dot(p)
+    /// + distance > 0.`
     pub frustum: [Vec4; 6],
     pub color_grading: ColorGradingUniform,
     pub mip_bias: f32,
@@ -611,10 +678,11 @@ pub struct ViewTarget {
     out_texture: OutputColorAttachment,
 }
 
-/// Contains [`OutputColorAttachment`] used for each target present on any view in the current
-/// frame, after being prepared by [`prepare_view_attachments`]. Users that want to override
-/// the default output color attachment for a specific target can do so by adding a
-/// [`OutputColorAttachment`] to this resource before [`prepare_view_targets`] is called.
+/// Contains [`OutputColorAttachment`] used for each target present on any view
+/// in the current frame, after being prepared by [`prepare_view_attachments`].
+/// Users that want to override the default output color attachment for a
+/// specific target can do so by adding a [`OutputColorAttachment`] to this
+/// resource before [`prepare_view_targets`] is called.
 #[derive(Resource, Default, Deref, DerefMut)]
 pub struct ViewTargetAttachments(HashMap<NormalizedRenderTarget, OutputColorAttachment>);
 
@@ -654,10 +722,10 @@ impl From<ColorGrading> for ColorGradingUniform {
         //
         // The following formula is just a simplification of the above.
 
-        let white_point_lms = vec3(0.701634, 1.15856, -0.904175)
-            + (vec3(-0.051461, 0.045854, 0.953127)
-                + vec3(0.452749, -0.296122, -0.955206) * white_point_xy.x)
-                / white_point_xy.y;
+        let white_point_lms = vec3(0.701634, 1.15856, -0.904175) +
+            (vec3(-0.051461, 0.045854, 0.953127) +
+                vec3(0.452749, -0.296122, -0.955206) * white_point_xy.x) /
+                white_point_xy.y;
 
         // Now that we're in LMS space, perform the white point scaling.
         let white_point_adjustment = Mat3::from_diagonal(D65_LMS / white_point_lms);
@@ -716,8 +784,8 @@ impl From<ColorGrading> for ColorGradingUniform {
 /// The vast majority of applications will not need to use this component, as it
 /// generally reduces rendering performance.
 ///
-/// Note: This component should only be added when initially spawning a camera. Adding
-/// or removing after spawn can result in unspecified behavior.
+/// Note: This component should only be added when initially spawning a camera.
+/// Adding or removing after spawn can result in unspecified behavior.
 #[derive(Component, Default)]
 pub struct NoIndirectDrawing;
 
@@ -752,11 +820,12 @@ impl ViewTarget {
     }
 
     /// The _other_ "main" unsampled texture.
-    /// In most cases you should use [`Self::main_texture`] instead and never this.
-    /// The textures will naturally be swapped when [`Self::post_process_write`] is called.
+    /// In most cases you should use [`Self::main_texture`] instead and never
+    /// this. The textures will naturally be swapped when
+    /// [`Self::post_process_write`] is called.
     ///
-    /// A use case for this is to be able to prepare a bind group for all main textures
-    /// ahead of time.
+    /// A use case for this is to be able to prepare a bind group for all main
+    /// textures ahead of time.
     pub fn main_texture_other(&self) -> &Texture {
         if self.main_texture.load(Ordering::SeqCst) == 0 {
             &self.main_textures.b.texture.texture
@@ -775,11 +844,12 @@ impl ViewTarget {
     }
 
     /// The _other_ "main" unsampled texture view.
-    /// In most cases you should use [`Self::main_texture_view`] instead and never this.
-    /// The textures will naturally be swapped when [`Self::post_process_write`] is called.
+    /// In most cases you should use [`Self::main_texture_view`] instead and
+    /// never this. The textures will naturally be swapped when
+    /// [`Self::post_process_write`] is called.
     ///
-    /// A use case for this is to be able to prepare a bind group for all main textures
-    /// ahead of time.
+    /// A use case for this is to be able to prepare a bind group for all main
+    /// textures ahead of time.
     pub fn main_texture_other_view(&self) -> &TextureView {
         if self.main_texture.load(Ordering::SeqCst) == 0 {
             &self.main_textures.b.texture.default_view
@@ -811,7 +881,8 @@ impl ViewTarget {
         self.main_texture_format
     }
 
-    /// Returns `true` if and only if the main texture is [`Self::TEXTURE_FORMAT_HDR`]
+    /// Returns `true` if and only if the main texture is
+    /// [`Self::TEXTURE_FORMAT_HDR`]
     #[inline]
     pub fn is_hdr(&self) -> bool {
         self.main_texture_format == ViewTarget::TEXTURE_FORMAT_HDR
@@ -836,13 +907,15 @@ impl ViewTarget {
         self.out_texture.format
     }
 
-    /// This will start a new "post process write", which assumes that the caller
-    /// will write the [`PostProcessWrite`]'s `source` to the `destination`.
+    /// This will start a new "post process write", which assumes that the
+    /// caller will write the [`PostProcessWrite`]'s `source` to the
+    /// `destination`.
     ///
     /// `source` is the "current" main texture. This will internally flip this
-    /// [`ViewTarget`]'s main texture to the `destination` texture, so the caller
-    /// _must_ ensure `source` is copied to `destination`, with or without modifications.
-    /// Failing to do so will cause the current main texture information to be lost.
+    /// [`ViewTarget`]'s main texture to the `destination` texture, so the
+    /// caller _must_ ensure `source` is copied to `destination`, with or
+    /// without modifications. Failing to do so will cause the current main
+    /// texture information to be lost.
     pub fn post_process_write(&self) -> PostProcessWrite<'_> {
         let old_is_a_main_texture = self.main_texture.fetch_xor(1, Ordering::SeqCst);
         // if the old main texture is a, then the post processing must write from a to b
@@ -990,7 +1063,8 @@ struct MainTargetTextures {
     main_texture: Arc<AtomicUsize>,
 }
 
-/// Prepares the view target [`OutputColorAttachment`] for each view in the current frame.
+/// Prepares the view target [`OutputColorAttachment`] for each view in the
+/// current frame.
 pub fn prepare_view_attachments(
     windows: Res<ExtractedWindows>,
     images: Res<RenderAssets<GpuImage>>,
@@ -1004,8 +1078,8 @@ pub fn prepare_view_attachments(
         };
 
         match view_target_attachments.entry(target.clone()) {
-            Entry::Occupied(_) => {}
-            Entry::Vacant(entry) => {
+            | Entry::Occupied(_) => {},
+            | Entry::Vacant(entry) => {
                 let Some(attachment) = target
                     .get_texture_view(&windows, &images, &manual_texture_views)
                     .cloned()
@@ -1017,7 +1091,7 @@ pub fn prepare_view_attachments(
                     continue;
                 };
                 entry.insert(attachment);
-            }
+            },
         };
     }
 }
@@ -1059,9 +1133,9 @@ pub fn prepare_view_targets(
         };
 
         let clear_color = match camera.clear_color {
-            ClearColorConfig::Custom(color) => Some(color),
-            ClearColorConfig::None => None,
-            _ => Some(clear_color_global.0),
+            | ClearColorConfig::Custom(color) => Some(color),
+            | ClearColorConfig::None => None,
+            | _ => Some(clear_color_global.0),
         };
 
         let (a, b, sampled, main_texture) = textures
@@ -1076,9 +1150,9 @@ pub fn prepare_view_targets(
                     format: main_texture_format,
                     usage: texture_usage.0,
                     view_formats: match main_texture_format {
-                        TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
-                        TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
-                        _ => &[],
+                        | TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
+                        | TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
+                        | _ => &[],
                     },
                 };
                 let a = texture_cache.get(

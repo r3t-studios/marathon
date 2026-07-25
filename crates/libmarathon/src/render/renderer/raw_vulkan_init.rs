@@ -1,13 +1,24 @@
+use core::any::{
+    Any,
+    TypeId,
+};
 use std::sync::Arc;
+
 use bevy_ecs::resource::Resource;
 use bevy_platform::collections::HashSet;
-use core::any::{Any, TypeId};
 use thiserror::Error;
 use wgpu::{
-    hal::api::Vulkan, Adapter, Device, DeviceDescriptor, Instance, InstanceDescriptor, Queue,
+    Adapter,
+    Device,
+    DeviceDescriptor,
+    Instance,
+    InstanceDescriptor,
+    Queue,
+    hal::api::Vulkan,
 };
 
-/// When the `raw_vulkan_init` feature is enabled, these settings will be used to configure the raw vulkan instance.
+/// When the `raw_vulkan_init` feature is enabled, these settings will be used
+/// to configure the raw vulkan instance.
 #[derive(Resource, Default, Clone)]
 pub struct RawVulkanInitSettings {
     // SAFETY: this must remain private to ensure that registering callbacks is unsafe
@@ -34,22 +45,27 @@ pub struct RawVulkanInitSettings {
 }
 
 impl RawVulkanInitSettings {
-    /// Adds a new Vulkan create instance callback. See [`wgpu::hal::vulkan::Instance::init_with_callback`] for details.
+    /// Adds a new Vulkan create instance callback. See
+    /// [`wgpu::hal::vulkan::Instance::init_with_callback`] for details.
     ///
     /// # Safety
     /// - Callback must not remove features.
-    /// - Callback must not change anything to what the instance does not support.
+    /// - Callback must not change anything to what the instance does not
+    ///   support.
     pub unsafe fn add_create_instance_callback(
         &mut self,
-        callback: impl Fn(&mut wgpu::hal::vulkan::CreateInstanceCallbackArgs, &mut AdditionalVulkanFeatures)
-            + Send
-            + Sync
-            + 'static,
+        callback: impl Fn(
+            &mut wgpu::hal::vulkan::CreateInstanceCallbackArgs,
+            &mut AdditionalVulkanFeatures,
+        ) + Send
+        + Sync
+        + 'static,
     ) {
         self.create_instance_callbacks.push(Arc::new(callback));
     }
 
-    /// Adds a new Vulkan create device callback. See [`wgpu::hal::vulkan::Adapter::open_with_callback`] for details.
+    /// Adds a new Vulkan create device callback. See
+    /// [`wgpu::hal::vulkan::Adapter::open_with_callback`] for details.
     ///
     /// # Safety
     /// - Callback must not remove features.
@@ -57,12 +73,12 @@ impl RawVulkanInitSettings {
     pub unsafe fn add_create_device_callback(
         &mut self,
         callback: impl Fn(
-                &mut wgpu::hal::vulkan::CreateDeviceCallbackArgs,
-                &wgpu::hal::vulkan::Adapter,
-                &mut AdditionalVulkanFeatures,
-            ) + Send
-            + Sync
-            + 'static,
+            &mut wgpu::hal::vulkan::CreateDeviceCallbackArgs,
+            &wgpu::hal::vulkan::Adapter,
+            &mut AdditionalVulkanFeatures,
+        ) + Send
+        + Sync
+        + 'static,
     ) {
         self.create_device_callbacks.push(Arc::new(callback));
     }
@@ -73,8 +89,8 @@ pub(crate) fn create_raw_vulkan_instance(
     settings: &RawVulkanInitSettings,
     additional_features: &mut AdditionalVulkanFeatures,
 ) -> Instance {
-    // SAFETY: Registering callbacks is unsafe. Callback authors promise not to remove features
-    // or change the instance to something it does not support
+    // SAFETY: Registering callbacks is unsafe. Callback authors promise not to
+    // remove features or change the instance to something it does not support
     unsafe {
         wgpu::hal::vulkan::Instance::init_with_callback(
             &wgpu::hal::InstanceDescriptor {
@@ -100,8 +116,8 @@ pub(crate) async fn create_raw_device(
     settings: &RawVulkanInitSettings,
     additional_features: &mut AdditionalVulkanFeatures,
 ) -> Result<(Device, Queue), CreateRawVulkanDeviceError> {
-    // SAFETY: Registering callbacks is unsafe. Callback authors promise not to remove features
-    // or change the adapter to something it does not support
+    // SAFETY: Registering callbacks is unsafe. Callback authors promise not to
+    // remove features or change the adapter to something it does not support
     unsafe {
         let Some(raw_adapter) = adapter.as_hal::<Vulkan>() else {
             return Ok(adapter.request_device(device_descriptor).await?);
@@ -128,8 +144,9 @@ pub(crate) enum CreateRawVulkanDeviceError {
     DeviceError(#[from] wgpu::hal::DeviceError),
 }
 
-/// A list of additional Vulkan features that are supported by the current wgpu instance / adapter. This is populated
-/// by callbacks defined in [`RawVulkanInitSettings`]
+/// A list of additional Vulkan features that are supported by the current wgpu
+/// instance / adapter. This is populated by callbacks defined in
+/// [`RawVulkanInitSettings`]
 #[derive(Resource, Default, Clone)]
 pub struct AdditionalVulkanFeatures(HashSet<TypeId>);
 

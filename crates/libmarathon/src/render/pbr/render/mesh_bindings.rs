@@ -2,12 +2,19 @@
 
 use bevy_math::Mat4;
 use bevy_mesh::morph::MAX_MORPH_WEIGHTS;
-use crate::render::{
-    render_resource::*,
-    renderer::{RenderAdapter, RenderDevice},
-};
 
-use crate::render::pbr::{binding_arrays_are_usable, render::skin::MAX_JOINTS, LightmapSlab};
+use crate::render::{
+    pbr::{
+        LightmapSlab,
+        binding_arrays_are_usable,
+        render::skin::MAX_JOINTS,
+    },
+    render_resource::*,
+    renderer::{
+        RenderAdapter,
+        RenderDevice,
+    },
+};
 
 const MORPH_WEIGHT_SIZE: usize = size_of::<f32>();
 
@@ -25,16 +32,30 @@ pub(crate) const JOINT_BUFFER_SIZE: usize = MAX_JOINTS * JOINT_SIZE;
 mod layout_entry {
     use core::num::NonZeroU32;
 
-    use super::{JOINT_BUFFER_SIZE, MORPH_BUFFER_SIZE};
-    use crate::render::pbr::{render::skin, MeshUniform, LIGHTMAPS_PER_SLAB};
+    use super::{
+        JOINT_BUFFER_SIZE,
+        MORPH_BUFFER_SIZE,
+    };
     use crate::render::{
+        pbr::{
+            LIGHTMAPS_PER_SLAB,
+            MeshUniform,
+            render::skin,
+        },
         render_resource::{
+            BindGroupLayoutEntryBuilder,
+            BufferSize,
+            GpuArrayBuffer,
+            SamplerBindingType,
+            ShaderStages,
+            TextureSampleType,
             binding_types::{
-                sampler, storage_buffer_read_only_sized, texture_2d, texture_3d,
+                sampler,
+                storage_buffer_read_only_sized,
+                texture_2d,
+                texture_3d,
                 uniform_buffer_sized,
             },
-            BindGroupLayoutEntryBuilder, BufferSize, GpuArrayBuffer, SamplerBindingType,
-            ShaderStages, TextureSampleType,
         },
         renderer::RenderDevice,
     };
@@ -80,13 +101,22 @@ mod layout_entry {
 /// Individual [`BindGroupEntry`]
 /// for bind groups.
 mod entry {
-    use crate::render::pbr::render::skin;
-
-    use super::{JOINT_BUFFER_SIZE, MORPH_BUFFER_SIZE};
+    use super::{
+        JOINT_BUFFER_SIZE,
+        MORPH_BUFFER_SIZE,
+    };
     use crate::render::{
+        pbr::render::skin,
         render_resource::{
-            BindGroupEntry, BindingResource, Buffer, BufferBinding, BufferSize, Sampler,
-            TextureView, WgpuSampler, WgpuTextureView,
+            BindGroupEntry,
+            BindingResource,
+            Buffer,
+            BufferBinding,
+            BufferSize,
+            Sampler,
+            TextureView,
+            WgpuSampler,
+            WgpuTextureView,
         },
         renderer::RenderDevice,
     };
@@ -160,7 +190,8 @@ mod entry {
     }
 }
 
-/// All possible [`BindGroupLayout`]s in bevy's default mesh shader (`mesh.wgsl`).
+/// All possible [`BindGroupLayout`]s in bevy's default mesh shader
+/// (`mesh.wgsl`).
 #[derive(Clone)]
 pub struct MeshLayouts {
     /// The mesh model uniform (transform) and nothing else.

@@ -5,10 +5,17 @@
 //! - Accessibility (alternative input methods)
 //! - Context-aware bindings (different actions in different modes)
 
-use crate::engine::GameAction;
-use super::events::{InputEvent, KeyCode, MouseButton, TouchPhase};
-use glam::Vec2;
 use std::collections::HashMap;
+
+use glam::Vec2;
+
+use super::events::{
+    InputEvent,
+    KeyCode,
+    MouseButton,
+    TouchPhase,
+};
+use crate::engine::GameAction;
 
 /// Input binding - maps an input trigger to a game action
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -169,42 +176,56 @@ impl InputController {
         let mut actions = Vec::new();
 
         match event {
-            InputEvent::MouseMove { pos: _ } => {
+            | InputEvent::MouseMove { pos: _ } => {
                 // Mouse hover - no game actions, just UI tracking
                 // This is handled by egui's custom_input_system
-            }
+            },
 
-            InputEvent::Mouse { pos, button, phase } => {
+            | InputEvent::Mouse { pos, button, phase } => {
                 self.process_mouse(*pos, *button, *phase, &mut actions);
-            }
+            },
 
-            InputEvent::MouseWheel { delta, pos: _ } => {
+            | InputEvent::MouseWheel { delta, pos: _ } => {
                 let adjusted_delta = delta.y * self.accessibility.scroll_sensitivity;
-                actions.push(GameAction::MoveEntityDepth { delta: adjusted_delta });
-            }
+                actions.push(GameAction::MoveEntityDepth {
+                    delta: adjusted_delta,
+                });
+            },
 
-            InputEvent::Keyboard { key, pressed, modifiers: _ } => {
+            | InputEvent::Keyboard {
+                key,
+                pressed,
+                modifiers: _,
+            } => {
                 if *pressed {
                     self.process_key(*key, &mut actions);
                 }
-            }
+            },
 
-            InputEvent::Stylus { pos, pressure: _, tilt: _, phase, timestamp: _ } => {
+            | InputEvent::Stylus {
+                pos,
+                pressure: _,
+                tilt: _,
+                phase,
+                timestamp: _,
+            } => {
                 self.process_stylus(*pos, *phase, &mut actions);
-            }
+            },
 
-            InputEvent::Touch { pos, phase, id: _ } => {
+            | InputEvent::Touch { pos, phase, id: _ } => {
                 self.process_touch(*pos, *phase, &mut actions);
-            }
+            },
 
-            InputEvent::PinchGesture { delta } => {
+            | InputEvent::PinchGesture { delta } => {
                 // Pinch gesture - use for zoom/scale
                 // Positive delta = pinch out (zoom in), negative = pinch in (zoom out)
                 let adjusted_delta = delta * self.accessibility.scroll_sensitivity;
-                actions.push(GameAction::MoveEntityDepth { delta: adjusted_delta });
-            }
+                actions.push(GameAction::MoveEntityDepth {
+                    delta: adjusted_delta,
+                });
+            },
 
-            InputEvent::RotationGesture { delta } => {
+            | InputEvent::RotationGesture { delta } => {
                 // Rotation gesture - use for rotating entities or camera
                 let adjusted_delta = if self.accessibility.invert_y {
                     -*delta
@@ -214,70 +235,84 @@ impl InputController {
                 // Convert rotation delta to 2D delta for rotation action
                 let delta_vec = Vec2::new(adjusted_delta, 0.0);
                 actions.push(GameAction::RotateEntity { delta: delta_vec });
-            }
+            },
 
-            InputEvent::PanGesture { delta } => {
+            | InputEvent::PanGesture { delta } => {
                 // Pan gesture - use for camera movement or entity translation
                 let adjusted_delta = *delta * self.accessibility.mouse_sensitivity;
                 match self.current_context {
-                    InputContext::CameraControl => {
-                        actions.push(GameAction::MoveCamera { delta: adjusted_delta });
-                    }
-                    InputContext::EntityManipulation => {
-                        actions.push(GameAction::MoveEntity { delta: adjusted_delta });
-                    }
-                    _ => {}
+                    | InputContext::CameraControl => {
+                        actions.push(GameAction::MoveCamera {
+                            delta: adjusted_delta,
+                        });
+                    },
+                    | InputContext::EntityManipulation => {
+                        actions.push(GameAction::MoveEntity {
+                            delta: adjusted_delta,
+                        });
+                    },
+                    | _ => {},
                 }
-            }
+            },
 
-            InputEvent::DoubleTapGesture => {
+            | InputEvent::DoubleTapGesture => {
                 // Double-tap gesture - quick reset/center action
                 actions.push(GameAction::ResetEntity);
-            }
+            },
 
-            InputEvent::MouseMotion { delta } => {
+            | InputEvent::MouseMotion { delta } => {
                 // Raw mouse motion delta - only used in CameraControl mode for FPS-style camera
                 // This is unbounded mouse movement (different from cursor position)
                 // and would conflict with normal cursor-based dragging if used elsewhere
                 if self.current_context == InputContext::CameraControl {
                     let adjusted_delta = *delta * self.accessibility.mouse_sensitivity;
-                    actions.push(GameAction::MoveCamera { delta: adjusted_delta });
+                    actions.push(GameAction::MoveCamera {
+                        delta: adjusted_delta,
+                    });
                 }
-                // In other contexts, ignore MouseMotion to avoid conflicts with cursor-based input
-            }
+                // In other contexts, ignore MouseMotion to avoid conflicts with
+                // cursor-based input
+            },
 
-            InputEvent::Text { text: _ } => {
+            | InputEvent::Text { text: _ } => {
                 // Text input is handled by egui, not by game actions
                 // This is for typing in text fields, not game controls
-            }
+            },
         }
 
         actions
     }
 
     /// Process mouse input
-    fn process_mouse(&mut self, pos: Vec2, button: MouseButton, phase: TouchPhase, actions: &mut Vec<GameAction>) {
+    fn process_mouse(
+        &mut self,
+        pos: Vec2,
+        button: MouseButton,
+        phase: TouchPhase,
+        actions: &mut Vec<GameAction>,
+    ) {
         match phase {
-            TouchPhase::Started => {
+            | TouchPhase::Started => {
                 // Single click = select
                 actions.push(GameAction::SelectEntity { position: pos });
 
                 // Start drag tracking
                 self.drag_state.active = true;
                 self.drag_state.source = Some(match button {
-                    MouseButton::Left => DragSource::MouseLeft,
-                    MouseButton::Right => DragSource::MouseRight,
-                    MouseButton::Middle => return, // Don't handle middle button
+                    | MouseButton::Left => DragSource::MouseLeft,
+                    | MouseButton::Right => DragSource::MouseRight,
+                    | MouseButton::Middle => return, // Don't handle middle button
                 });
                 self.drag_state.start_pos = pos;
                 self.drag_state.last_pos = pos;
 
                 actions.push(GameAction::BeginDrag { position: pos });
-            }
+            },
 
-            TouchPhase::Moved => {
+            | TouchPhase::Moved => {
                 if self.drag_state.active {
-                    let delta = (pos - self.drag_state.last_pos) * self.accessibility.mouse_sensitivity;
+                    let delta =
+                        (pos - self.drag_state.last_pos) * self.accessibility.mouse_sensitivity;
                     self.drag_state.last_pos = pos;
 
                     // Check if we've exceeded drag threshold
@@ -286,89 +321,96 @@ impl InputController {
                         return; // Too small to count as drag
                     }
 
-                    actions.push(GameAction::ContinueDrag { position: pos, delta });
+                    actions.push(GameAction::ContinueDrag {
+                        position: pos,
+                        delta,
+                    });
 
                     // Context-specific drag actions
                     match self.current_context {
-                        InputContext::EntityManipulation => {
-                            match self.drag_state.source {
-                                Some(DragSource::MouseLeft) => {
-                                    actions.push(GameAction::MoveEntity { delta });
-                                }
-                                Some(DragSource::MouseRight) => {
-                                    let adjusted_delta = if self.accessibility.invert_y {
-                                        Vec2::new(delta.x, -delta.y)
-                                    } else {
-                                        delta
-                                    };
-                                    actions.push(GameAction::RotateEntity { delta: adjusted_delta });
-                                }
-                                _ => {}
-                            }
-                        }
-                        InputContext::CameraControl => {
+                        | InputContext::EntityManipulation => match self.drag_state.source {
+                            | Some(DragSource::MouseLeft) => {
+                                actions.push(GameAction::MoveEntity { delta });
+                            },
+                            | Some(DragSource::MouseRight) => {
+                                let adjusted_delta = if self.accessibility.invert_y {
+                                    Vec2::new(delta.x, -delta.y)
+                                } else {
+                                    delta
+                                };
+                                actions.push(GameAction::RotateEntity {
+                                    delta: adjusted_delta,
+                                });
+                            },
+                            | _ => {},
+                        },
+                        | InputContext::CameraControl => {
                             actions.push(GameAction::MoveCamera { delta });
-                        }
-                        _ => {}
+                        },
+                        | _ => {},
                     }
                 }
-            }
+            },
 
-            TouchPhase::Ended | TouchPhase::Cancelled => {
+            | TouchPhase::Ended | TouchPhase::Cancelled => {
                 if self.drag_state.active {
                     actions.push(GameAction::EndDrag { position: pos });
                     self.drag_state.active = false;
                     self.drag_state.source = None;
                 }
-            }
+            },
         }
     }
 
     /// Process keyboard input
     fn process_key(&mut self, key: KeyCode, actions: &mut Vec<GameAction>) {
         match key {
-            KeyCode::KeyR => actions.push(GameAction::ResetEntity),
-            KeyCode::Delete | KeyCode::Backspace => actions.push(GameAction::DeleteEntity),
-            KeyCode::KeyZ if self.accessibility.one_handed_mode => {
+            | KeyCode::KeyR => actions.push(GameAction::ResetEntity),
+            | KeyCode::Delete | KeyCode::Backspace => actions.push(GameAction::DeleteEntity),
+            | KeyCode::KeyZ if self.accessibility.one_handed_mode => {
                 // In one-handed mode, Z key can trigger actions
                 actions.push(GameAction::Undo);
-            }
-            KeyCode::Escape => actions.push(GameAction::Cancel),
-            KeyCode::Enter => actions.push(GameAction::Confirm),
-            KeyCode::Tab => actions.push(GameAction::ToggleUI),
-            _ => {}
+            },
+            | KeyCode::Escape => actions.push(GameAction::Cancel),
+            | KeyCode::Enter => actions.push(GameAction::Confirm),
+            | KeyCode::Tab => actions.push(GameAction::ToggleUI),
+            | _ => {},
         }
     }
 
     /// Process stylus input (Apple Pencil, etc.)
     fn process_stylus(&mut self, pos: Vec2, phase: TouchPhase, actions: &mut Vec<GameAction>) {
         match phase {
-            TouchPhase::Started => {
+            | TouchPhase::Started => {
                 actions.push(GameAction::SelectEntity { position: pos });
                 actions.push(GameAction::BeginDrag { position: pos });
                 self.drag_state.active = true;
                 self.drag_state.source = Some(DragSource::Stylus);
                 self.drag_state.start_pos = pos;
                 self.drag_state.last_pos = pos;
-            }
+            },
 
-            TouchPhase::Moved => {
+            | TouchPhase::Moved => {
                 if self.drag_state.active {
-                    let delta = (pos - self.drag_state.last_pos) * self.accessibility.stylus_sensitivity;
+                    let delta =
+                        (pos - self.drag_state.last_pos) * self.accessibility.stylus_sensitivity;
                     self.drag_state.last_pos = pos;
 
-                    actions.push(GameAction::ContinueDrag { position: pos, delta });
+                    actions.push(GameAction::ContinueDrag {
+                        position: pos,
+                        delta,
+                    });
                     actions.push(GameAction::MoveEntity { delta });
                 }
-            }
+            },
 
-            TouchPhase::Ended | TouchPhase::Cancelled => {
+            | TouchPhase::Ended | TouchPhase::Cancelled => {
                 if self.drag_state.active {
                     actions.push(GameAction::EndDrag { position: pos });
                     self.drag_state.active = false;
                     self.drag_state.source = None;
                 }
-            }
+            },
         }
     }
 

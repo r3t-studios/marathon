@@ -11,15 +11,18 @@ use serde::{
 
 use crate::networking::vector_clock::NodeId;
 
-/// Marker component to skip delta generation for one frame after receiving remote updates
+/// Marker component to skip delta generation for one frame after receiving
+/// remote updates
 ///
-/// When we apply remote operations via `apply_entity_delta()`, the `insert_fn()` call
-/// triggers Bevy's change detection. This would normally cause `generate_delta_system`
-/// to create and broadcast a new delta, creating an infinite feedback loop.
+/// When we apply remote operations via `apply_entity_delta()`, the
+/// `insert_fn()` call triggers Bevy's change detection. This would normally
+/// cause `generate_delta_system` to create and broadcast a new delta, creating
+/// an infinite feedback loop.
 ///
-/// By adding this marker when we apply remote updates, we tell `generate_delta_system`
-/// to skip this entity for one frame. A cleanup system removes the marker after
-/// delta generation runs, allowing future local changes to be broadcast normally.
+/// By adding this marker when we apply remote updates, we tell
+/// `generate_delta_system` to skip this entity for one frame. A cleanup system
+/// removes the marker after delta generation runs, allowing future local
+/// changes to be broadcast normally.
 ///
 /// This is an implementation detail of the feedback loop prevention mechanism.
 /// User code should never need to interact with this component.
@@ -173,11 +176,12 @@ pub struct NetworkedTransform;
 
 /// Local selection tracking resource
 ///
-/// This global resource tracks which entities are currently selected by THIS node.
-/// It's used in conjunction with the entity lock system to coordinate concurrent editing.
+/// This global resource tracks which entities are currently selected by THIS
+/// node. It's used in conjunction with the entity lock system to coordinate
+/// concurrent editing.
 ///
-/// **Selections are local-only UI state** and are NOT synchronized across the network.
-/// Each node maintains its own independent selection.
+/// **Selections are local-only UI state** and are NOT synchronized across the
+/// network. Each node maintains its own independent selection.
 ///
 /// # Example
 ///

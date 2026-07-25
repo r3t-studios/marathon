@@ -346,7 +346,8 @@ mod tests {
     fn test_registry_initialization() {
         let registry = ComponentTypeRegistry::init();
         // Should have at least the components defined in the codebase
-        assert!(registry.len() > 0 || registry.is_empty()); // May be empty in unit tests
+        assert!(registry.len() > 0 || registry.is_empty()); // May be empty in
+        // unit tests
     }
 
     #[test]

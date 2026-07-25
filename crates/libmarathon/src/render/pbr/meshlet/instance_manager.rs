@@ -1,31 +1,68 @@
-use super::{meshlet_mesh_manager::MeshletMeshManager, MeshletMesh, MeshletMesh3d};
-use crate::render::pbr::DUMMY_MESH_MATERIAL;
-use crate::render::pbr::{
-    meshlet::asset::MeshletAabb, MaterialBindingId, MeshFlags, MeshTransforms, MeshUniform,
-    PreviousGlobalTransform, RenderMaterialBindings, RenderMaterialInstances,
+use core::ops::DerefMut;
+
+use bevy_asset::{
+    AssetEvent,
+    AssetServer,
+    Assets,
+    UntypedAssetId,
 };
-use bevy_asset::{AssetEvent, AssetServer, Assets, UntypedAssetId};
 use bevy_camera::visibility::RenderLayers;
 use bevy_ecs::{
-    entity::{Entities, Entity, EntityHashMap},
+    entity::{
+        Entities,
+        Entity,
+        EntityHashMap,
+    },
     message::MessageReader,
     query::Has,
     resource::Resource,
-    system::{Local, Query, Res, ResMut, SystemState},
+    system::{
+        Local,
+        Query,
+        Res,
+        ResMut,
+        SystemState,
+    },
 };
-use bevy_light::{NotShadowCaster, NotShadowReceiver};
-use bevy_platform::collections::{HashMap, HashSet};
-use crate::render::{render_resource::StorageBuffer, sync_world::MainEntity, MainWorld};
+use bevy_light::{
+    NotShadowCaster,
+    NotShadowReceiver,
+};
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+};
 use bevy_transform::components::GlobalTransform;
-use core::ops::DerefMut;
+
+use super::{
+    MeshletMesh,
+    MeshletMesh3d,
+    meshlet_mesh_manager::MeshletMeshManager,
+};
+use crate::render::{
+    MainWorld,
+    pbr::{
+        DUMMY_MESH_MATERIAL,
+        MaterialBindingId,
+        MeshFlags,
+        MeshTransforms,
+        MeshUniform,
+        PreviousGlobalTransform,
+        RenderMaterialBindings,
+        RenderMaterialInstances,
+        meshlet::asset::MeshletAabb,
+    },
+    render_resource::StorageBuffer,
+    sync_world::MainEntity,
+};
 
 /// Manages data for each entity with a [`MeshletMesh`].
 #[derive(Resource)]
 pub struct InstanceManager {
     /// Amount of instances in the scene.
     pub scene_instance_count: u32,
-    /// The max BVH depth of any instance in the scene. This is used to control the number of
-    /// dependent dispatches emitted for BVH traversal.
+    /// The max BVH depth of any instance in the scene. This is used to control
+    /// the number of dependent dispatches emitted for BVH traversal.
     pub max_bvh_depth: u32,
 
     /// Per-instance [`MainEntity`], [`RenderLayers`], and [`NotShadowCaster`].
@@ -38,7 +75,8 @@ pub struct InstanceManager {
     pub instance_material_ids: StorageBuffer<Vec<u32>>,
     /// Per-instance index to the root node of the instance's BVH.
     pub instance_bvh_root_nodes: StorageBuffer<Vec<u32>>,
-    /// Per-view per-instance visibility bit. Used for [`RenderLayers`] and [`NotShadowCaster`] support.
+    /// Per-view per-instance visibility bit. Used for [`RenderLayers`] and
+    /// [`NotShadowCaster`] support.
     pub view_instance_visibility: EntityHashMap<StorageBuffer<Vec<u32>>>,
 
     /// Next material ID available.
@@ -189,7 +227,8 @@ impl InstanceManager {
 pub fn extract_meshlet_mesh_entities(
     mut meshlet_mesh_manager: ResMut<MeshletMeshManager>,
     mut instance_manager: ResMut<InstanceManager>,
-    // TODO: Replace main_world and system_state when Extract<ResMut<Assets<MeshletMesh>>> is possible
+    // TODO: Replace main_world and system_state when Extract<ResMut<Assets<MeshletMesh>>> is
+    // possible
     mut main_world: ResMut<MainWorld>,
     mesh_material_ids: Res<RenderMaterialInstances>,
     render_material_bindings: Res<RenderMaterialBindings>,
@@ -245,8 +284,8 @@ pub fn extract_meshlet_mesh_entities(
     {
         // Skip instances with an unloaded MeshletMesh asset
         // TODO: This is a semi-expensive check
-        if asset_server.is_managed(meshlet_mesh.id())
-            && !asset_server.is_loaded_with_dependencies(meshlet_mesh.id())
+        if asset_server.is_managed(meshlet_mesh.id()) &&
+            !asset_server.is_loaded_with_dependencies(meshlet_mesh.id())
         {
             continue;
         }
@@ -272,8 +311,9 @@ pub fn extract_meshlet_mesh_entities(
     }
 }
 
-/// For each entity in the scene, record what material ID its material was assigned in the `prepare_material_meshlet_meshes` systems,
-/// and note that the material is used by at least one entity in the scene.
+/// For each entity in the scene, record what material ID its material was
+/// assigned in the `prepare_material_meshlet_meshes` systems, and note that the
+/// material is used by at least one entity in the scene.
 pub fn queue_material_meshlet_meshes(
     mut instance_manager: ResMut<InstanceManager>,
     render_material_instances: Res<RenderMaterialInstances>,
@@ -281,8 +321,8 @@ pub fn queue_material_meshlet_meshes(
     let instance_manager = instance_manager.deref_mut();
 
     for (i, (instance, _, _)) in instance_manager.instances.iter().enumerate() {
-        if let Some(material_instance) = render_material_instances.instances.get(instance)
-            && let Some(material_id) = instance_manager
+        if let Some(material_instance) = render_material_instances.instances.get(instance) &&
+            let Some(material_id) = instance_manager
                 .material_id_lookup
                 .get(&material_instance.asset_id)
         {

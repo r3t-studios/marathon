@@ -1,8 +1,24 @@
-use crate::render::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue};
-use tracy_client::{Client, GpuContext, GpuContextType};
+use tracy_client::{
+    Client,
+    GpuContext,
+    GpuContextType,
+};
 use wgpu::{
-    Backend, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, MapMode, PollType,
-    QuerySetDescriptor, QueryType, QUERY_SIZE,
+    Backend,
+    BufferDescriptor,
+    BufferUsages,
+    CommandEncoderDescriptor,
+    MapMode,
+    PollType,
+    QUERY_SIZE,
+    QuerySetDescriptor,
+    QueryType,
+};
+
+use crate::render::renderer::{
+    RenderAdapterInfo,
+    RenderDevice,
+    RenderQueue,
 };
 
 pub fn new_tracy_gpu_context(
@@ -11,10 +27,10 @@ pub fn new_tracy_gpu_context(
     queue: &RenderQueue,
 ) -> GpuContext {
     let tracy_gpu_backend = match adapter_info.backend {
-        Backend::Vulkan => GpuContextType::Vulkan,
-        Backend::Dx12 => GpuContextType::Direct3D12,
-        Backend::Gl => GpuContextType::OpenGL,
-        Backend::Metal | Backend::BrowserWebGpu | Backend::Noop => GpuContextType::Invalid,
+        | Backend::Vulkan => GpuContextType::Vulkan,
+        | Backend::Dx12 => GpuContextType::Direct3D12,
+        | Backend::Gl => GpuContextType::OpenGL,
+        | Backend::Metal | Backend::BrowserWebGpu | Backend::Noop => GpuContextType::Invalid,
     };
 
     let tracy_client = Client::running().unwrap();

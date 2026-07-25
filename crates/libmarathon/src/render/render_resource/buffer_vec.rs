@@ -1,31 +1,47 @@
-use core::{iter, marker::PhantomData};
-
-use crate::render::{
-    render_resource::Buffer,
-    renderer::{RenderDevice, RenderQueue},
+use core::{
+    iter,
+    marker::PhantomData,
 };
-use bytemuck::{must_cast_slice, NoUninit};
+
+use bytemuck::{
+    NoUninit,
+    must_cast_slice,
+};
 use encase::{
-    internal::{WriteInto, Writer},
     ShaderType,
+    internal::{
+        WriteInto,
+        Writer,
+    },
 };
 use thiserror::Error;
-use wgpu::{BindingResource, BufferAddress, BufferUsages};
+use wgpu::{
+    BindingResource,
+    BufferAddress,
+    BufferUsages,
+};
 
 use super::GpuArrayBufferable;
+use crate::render::{
+    render_resource::Buffer,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 /// A structure for storing raw bytes that have already been properly formatted
 /// for use by the GPU.
 ///
-/// "Properly formatted" means that item data already meets the alignment and padding
-/// requirements for how it will be used on the GPU. The item type must implement [`NoUninit`]
-/// for its data representation to be directly copyable.
+/// "Properly formatted" means that item data already meets the alignment and
+/// padding requirements for how it will be used on the GPU. The item type must
+/// implement [`NoUninit`] for its data representation to be directly copyable.
 ///
-/// Index, vertex, and instance-rate vertex buffers have no alignment nor padding requirements and
-/// so this helper type is a good choice for them.
+/// Index, vertex, and instance-rate vertex buffers have no alignment nor
+/// padding requirements and so this helper type is a good choice for them.
 ///
-/// The contained data is stored in system RAM. Calling [`reserve`](RawBufferVec::reserve)
-/// allocates VRAM from the [`RenderDevice`].
+/// The contained data is stored in system RAM. Calling
+/// [`reserve`](RawBufferVec::reserve) allocates VRAM from the [`RenderDevice`].
 /// [`write_buffer`](RawBufferVec::write_buffer) queues copying of the data
 /// from system RAM to VRAM.
 ///
@@ -118,15 +134,16 @@ impl<T: NoUninit> RawBufferVec<T> {
 
     /// Preallocates space for `count` elements in the internal CPU-side buffer.
     ///
-    /// Unlike [`RawBufferVec::reserve`], this doesn't have any effect on the GPU buffer.
+    /// Unlike [`RawBufferVec::reserve`], this doesn't have any effect on the
+    /// GPU buffer.
     pub fn reserve_internal(&mut self, count: usize) {
         self.values.reserve(count);
     }
 
     /// Changes the debugging label of the buffer.
     ///
-    /// The next time the buffer is updated (via [`reserve`](Self::reserve)), Bevy will inform
-    /// the driver of the new label.
+    /// The next time the buffer is updated (via [`reserve`](Self::reserve)),
+    /// Bevy will inform the driver of the new label.
     pub fn set_label(&mut self, label: Option<&str>) {
         let label = label.map(str::to_string);
 
@@ -143,12 +160,14 @@ impl<T: NoUninit> RawBufferVec<T> {
     }
 
     /// Creates a [`Buffer`] on the [`RenderDevice`] with size
-    /// at least `size_of::<T>() * capacity`, unless a such a buffer already exists.
+    /// at least `size_of::<T>() * capacity`, unless a such a buffer already
+    /// exists.
     ///
-    /// If a [`Buffer`] exists, but is too small, references to it will be discarded,
-    /// and a new [`Buffer`] will be created. Any previously created [`Buffer`]s
-    /// that are no longer referenced will be deleted by the [`RenderDevice`]
-    /// once it is done using them (typically 1-2 frames).
+    /// If a [`Buffer`] exists, but is too small, references to it will be
+    /// discarded, and a new [`Buffer`] will be created. Any previously
+    /// created [`Buffer`]s that are no longer referenced will be deleted by
+    /// the [`RenderDevice`] once it is done using them (typically 1-2
+    /// frames).
     ///
     /// In addition to any [`BufferUsages`] provided when
     /// the `RawBufferVec` was created, the buffer on the [`RenderDevice`]
@@ -167,8 +186,8 @@ impl<T: NoUninit> RawBufferVec<T> {
         }
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`].
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`].
     ///
     /// Before queuing the write, a [`reserve`](RawBufferVec::reserve) operation
     /// is executed.
@@ -184,15 +203,16 @@ impl<T: NoUninit> RawBufferVec<T> {
         }
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`].
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`].
     ///
-    /// If the buffer is not initialized on the GPU or the range is bigger than the capacity it will
-    /// return an error. You'll need to either reserve a new buffer which will lose data on the GPU
-    /// or create a new buffer and copy the old data to it.
+    /// If the buffer is not initialized on the GPU or the range is bigger than
+    /// the capacity it will return an error. You'll need to either reserve
+    /// a new buffer which will lose data on the GPU or create a new buffer
+    /// and copy the old data to it.
     ///
-    /// This will only write the data contained in the given range. It is useful if you only want
-    /// to update a part of the buffer.
+    /// This will only write the data contained in the given range. It is useful
+    /// if you only want to update a part of the buffer.
     pub fn write_buffer_range(
         &mut self,
         render_queue: &RenderQueue,
@@ -280,8 +300,7 @@ impl<T: NoUninit> Extend<T> for RawBufferVec<T> {
 /// * [`UniformBuffer`](crate::render_resource::UniformBuffer)
 pub struct BufferVec<T>
 where
-    T: ShaderType + WriteInto,
-{
+    T: ShaderType + WriteInto, {
     data: Vec<u8>,
     buffer: Option<Buffer>,
     capacity: usize,
@@ -360,8 +379,8 @@ where
 
     /// Changes the debugging label of the buffer.
     ///
-    /// The next time the buffer is updated (via [`Self::reserve`]), Bevy will inform
-    /// the driver of the new label.
+    /// The next time the buffer is updated (via [`Self::reserve`]), Bevy will
+    /// inform the driver of the new label.
     pub fn set_label(&mut self, label: Option<&str>) {
         let label = label.map(str::to_string);
 
@@ -378,12 +397,14 @@ where
     }
 
     /// Creates a [`Buffer`] on the [`RenderDevice`] with size
-    /// at least `size_of::<T>() * capacity`, unless such a buffer already exists.
+    /// at least `size_of::<T>() * capacity`, unless such a buffer already
+    /// exists.
     ///
-    /// If a [`Buffer`] exists, but is too small, references to it will be discarded,
-    /// and a new [`Buffer`] will be created. Any previously created [`Buffer`]s
-    /// that are no longer referenced will be deleted by the [`RenderDevice`]
-    /// once it is done using them (typically 1-2 frames).
+    /// If a [`Buffer`] exists, but is too small, references to it will be
+    /// discarded, and a new [`Buffer`] will be created. Any previously
+    /// created [`Buffer`]s that are no longer referenced will be deleted by
+    /// the [`RenderDevice`] once it is done using them (typically 1-2
+    /// frames).
     ///
     /// In addition to any [`BufferUsages`] provided when
     /// the `BufferVec` was created, the buffer on the [`RenderDevice`]
@@ -404,8 +425,8 @@ where
         self.label_changed = false;
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`].
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`].
     ///
     /// Before queuing the write, a [`reserve`](BufferVec::reserve) operation is
     /// executed.
@@ -420,15 +441,16 @@ where
         queue.write_buffer(buffer, 0, &self.data);
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`].
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`].
     ///
-    /// If the buffer is not initialized on the GPU or the range is bigger than the capacity it will
-    /// return an error. You'll need to either reserve a new buffer which will lose data on the GPU
-    /// or create a new buffer and copy the old data to it.
+    /// If the buffer is not initialized on the GPU or the range is bigger than
+    /// the capacity it will return an error. You'll need to either reserve
+    /// a new buffer which will lose data on the GPU or create a new buffer
+    /// and copy the old data to it.
     ///
-    /// This will only write the data contained in the given range. It is useful if you only want
-    /// to update a part of the buffer.
+    /// This will only write the data contained in the given range. It is useful
+    /// if you only want to update a part of the buffer.
     pub fn write_buffer_range(
         &mut self,
         render_queue: &RenderQueue,
@@ -467,12 +489,11 @@ where
 /// This type is useful when you're accumulating "output slots" for a GPU
 /// compute shader to write into.
 ///
-/// The type `T` need not be [`NoUninit`], unlike [`RawBufferVec`]; it only has to
-/// be [`GpuArrayBufferable`].
+/// The type `T` need not be [`NoUninit`], unlike [`RawBufferVec`]; it only has
+/// to be [`GpuArrayBufferable`].
 pub struct UninitBufferVec<T>
 where
-    T: GpuArrayBufferable,
-{
+    T: GpuArrayBufferable, {
     buffer: Option<Buffer>,
     len: usize,
     capacity: usize,

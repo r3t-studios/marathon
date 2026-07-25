@@ -158,8 +158,7 @@ impl AppHandler {
 
         // Create the winit window BEFORE finishing the app
         // Let winit choose the default size for iOS
-        let window_attributes = WindowAttributes::default()
-            .with_title("Marathon");
+        let window_attributes = WindowAttributes::default().with_title("Marathon");
 
         let winit_window = event_loop
             .create_window(window_attributes)
@@ -172,7 +171,10 @@ impl AppHandler {
 
         // Log everything for debugging
         info!("iOS window diagnostics:");
-        info!("  Physical size (pixels): {}×{}", physical_size.width, physical_size.height);
+        info!(
+            "  Physical size (pixels): {}×{}",
+            physical_size.width, physical_size.height
+        );
         info!("  Scale factor: {}", scale_factor);
 
         // WindowResolution::new() expects PHYSICAL size
@@ -189,10 +191,16 @@ impl AppHandler {
         window.resolution.set_scale_factor(scale_factor as f32);
 
         // Log final window state
-        info!("  Final window resolution: {:.1}×{:.1} (logical)",
-              window.resolution.width(), window.resolution.height());
-        info!("  Final physical resolution: {}×{}",
-              window.resolution.physical_width(), window.resolution.physical_height());
+        info!(
+            "  Final window resolution: {:.1}×{:.1} (logical)",
+            window.resolution.width(),
+            window.resolution.height()
+        );
+        info!(
+            "  Final physical resolution: {}×{}",
+            window.resolution.physical_width(),
+            window.resolution.physical_height()
+        );
         info!("  Final scale factor: {}", window.resolution.scale_factor());
         info!("  Window mode: BorderlessFullscreen");
 
@@ -308,15 +316,21 @@ impl ApplicationHandler for AppHandler {
                 };
 
                 if should_log {
-                    if let Some(window_component) = bevy_app.world().get::<Window>(*bevy_window_entity) {
+                    if let Some(window_component) =
+                        bevy_app.world().get::<Window>(*bevy_window_entity)
+                    {
                         let frame_num = unsafe { FRAME_COUNT };
                         info!("Frame {} - Window state:", frame_num);
-                        info!("  Logical: {:.1}×{:.1}",
-                              window_component.resolution.width(),
-                              window_component.resolution.height());
-                        info!("  Physical: {}×{}",
-                              window_component.resolution.physical_width(),
-                              window_component.resolution.physical_height());
+                        info!(
+                            "  Logical: {:.1}×{:.1}",
+                            window_component.resolution.width(),
+                            window_component.resolution.height()
+                        );
+                        info!(
+                            "  Physical: {}×{}",
+                            window_component.resolution.physical_width(),
+                            window_component.resolution.physical_height()
+                        );
                         info!("  Scale: {}", window_component.resolution.scale_factor());
                     }
                 }
@@ -411,22 +425,21 @@ impl ApplicationHandler for AppHandler {
                 };
 
                 let mut buffer = bevy_app.world_mut().resource_mut::<InputEventBuffer>();
-                // Use last known cursor position - extract position first to avoid borrow issues
-                let last_pos = buffer
-                    .events
-                    .iter()
-                    .rev()
-                    .find_map(|e| match e {
-                        crate::platform::input::InputEvent::MouseMove { pos } => Some(*pos),
-                        _ => None,
-                    });
+                // Use last known cursor position - extract position first to avoid borrow
+                // issues
+                let last_pos = buffer.events.iter().rev().find_map(|e| match e {
+                    | crate::platform::input::InputEvent::MouseMove { pos } => Some(*pos),
+                    | _ => None,
+                });
 
                 if let Some(pos) = last_pos {
-                    buffer.events.push(crate::platform::input::InputEvent::Mouse {
-                        pos,
-                        button: engine_button,
-                        phase,
-                    });
+                    buffer
+                        .events
+                        .push(crate::platform::input::InputEvent::Mouse {
+                            pos,
+                            button: engine_button,
+                            phase,
+                        });
                 }
             },
 

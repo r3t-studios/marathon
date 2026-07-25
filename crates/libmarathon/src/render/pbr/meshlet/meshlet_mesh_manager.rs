@@ -1,19 +1,38 @@
-use crate::render::pbr::meshlet::asset::{BvhNode, MeshletAabb, MeshletCullData};
-
-use super::{asset::Meshlet, persistent_buffer::PersistentGpuBuffer, MeshletMesh};
+use core::ops::Range;
 use std::sync::Arc;
-use bevy_asset::{AssetId, Assets};
+
+use bevy_asset::{
+    AssetId,
+    Assets,
+};
 use bevy_ecs::{
     resource::Resource,
-    system::{Commands, Res, ResMut},
+    system::{
+        Commands,
+        Res,
+        ResMut,
+    },
 };
 use bevy_math::Vec2;
 use bevy_platform::collections::HashMap;
-use crate::render::{
-    render_resource::BufferAddress,
-    renderer::{RenderDevice, RenderQueue},
+
+use super::{
+    MeshletMesh,
+    asset::Meshlet,
+    persistent_buffer::PersistentGpuBuffer,
 };
-use core::ops::Range;
+use crate::render::{
+    pbr::meshlet::asset::{
+        BvhNode,
+        MeshletAabb,
+        MeshletCullData,
+    },
+    render_resource::BufferAddress,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 /// Manages uploading [`MeshletMesh`] asset data to the GPU.
 #[derive(Resource)]
@@ -97,7 +116,8 @@ impl MeshletMeshManager {
             )
         };
 
-        // If the MeshletMesh asset has not been uploaded to the GPU yet, queue it for uploading
+        // If the MeshletMesh asset has not been uploaded to the GPU yet, queue it for
+        // uploading
         let ([_, _, _, _, bvh_node_slice, _, _], aabb, bvh_depth) = self
             .meshlet_mesh_slices
             .entry(asset_id)
@@ -113,7 +133,15 @@ impl MeshletMeshManager {
 
     pub fn remove(&mut self, asset_id: &AssetId<MeshletMesh>) {
         if let Some((
-            [vertex_positions_slice, vertex_normals_slice, vertex_uvs_slice, indices_slice, bvh_node_slice, meshlets_slice, meshlet_cull_data_slice],
+            [
+                vertex_positions_slice,
+                vertex_normals_slice,
+                vertex_uvs_slice,
+                indices_slice,
+                bvh_node_slice,
+                meshlets_slice,
+                meshlet_cull_data_slice,
+            ],
             _,
             _,
         )) = self.meshlet_mesh_slices.remove(asset_id)

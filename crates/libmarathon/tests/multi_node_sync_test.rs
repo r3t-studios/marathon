@@ -5,19 +5,32 @@
 
 mod test_utils;
 
-use anyhow::Result;
-use test_utils::{TestContext, create_test_app, wait_for_sync, count_entities_with_id, setup_gossip_pair, setup_gossip_trio};
-use bevy::prelude::*;
-use iroh::{Endpoint, protocol::Router};
-use libmarathon::networking::{
-    CurrentSession,
-    NetworkEntityMap,
-    NetworkedEntity,
-    SessionState,
-    Synced,
-};
-use libmarathon::persistence::Persisted;
 use std::time::Duration;
+
+use anyhow::Result;
+use bevy::prelude::*;
+use iroh::{
+    Endpoint,
+    protocol::Router,
+};
+use libmarathon::{
+    networking::{
+        CurrentSession,
+        NetworkEntityMap,
+        NetworkedEntity,
+        SessionState,
+        Synced,
+    },
+    persistence::Persisted,
+};
+use test_utils::{
+    TestContext,
+    count_entities_with_id,
+    create_test_app,
+    setup_gossip_pair,
+    setup_gossip_trio,
+    wait_for_sync,
+};
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -195,9 +208,18 @@ async fn test_three_nodes_consistency() -> Result<()> {
         let map2 = app2.world().resource::<NetworkEntityMap>();
         let map3 = app3.world().resource::<NetworkEntityMap>();
 
-        let count1 = [cube1_id, cube2_id, cube3_id].iter().filter(|id| map1.get_entity(**id).is_some()).count();
-        let count2 = [cube1_id, cube2_id, cube3_id].iter().filter(|id| map2.get_entity(**id).is_some()).count();
-        let count3 = [cube1_id, cube2_id, cube3_id].iter().filter(|id| map3.get_entity(**id).is_some()).count();
+        let count1 = [cube1_id, cube2_id, cube3_id]
+            .iter()
+            .filter(|id| map1.get_entity(**id).is_some())
+            .count();
+        let count2 = [cube1_id, cube2_id, cube3_id]
+            .iter()
+            .filter(|id| map2.get_entity(**id).is_some())
+            .count();
+        let count3 = [cube1_id, cube2_id, cube3_id]
+            .iter()
+            .filter(|id| map3.get_entity(**id).is_some())
+            .count();
 
         if count1 == 3 && count2 == 3 && count3 == 3 {
             println!("✓ All nodes converged to 3 cubes");
@@ -291,14 +313,17 @@ async fn test_fullstate_no_duplicate_entities() -> Result<()> {
         ));
     }
 
-    println!("Node1: Spawned 3 cubes: {}, {}, {}", cube1_id, cube2_id, cube3_id);
+    println!(
+        "Node1: Spawned 3 cubes: {}, {}, {}",
+        cube1_id, cube2_id, cube3_id
+    );
 
     // Wait for sync - Node2 should receive all 3 cubes via FullState
     wait_for_sync(&mut app1, &mut app2, Duration::from_secs(5), |_w1, w2| {
         let entity_map = w2.resource::<NetworkEntityMap>();
-        entity_map.get_entity(cube1_id).is_some()
-            && entity_map.get_entity(cube2_id).is_some()
-            && entity_map.get_entity(cube3_id).is_some()
+        entity_map.get_entity(cube1_id).is_some() &&
+            entity_map.get_entity(cube2_id).is_some() &&
+            entity_map.get_entity(cube3_id).is_some()
     })
     .await?;
 
@@ -446,15 +471,22 @@ async fn test_remote_delta_no_feedback_loop() -> Result<()> {
 
     // Get initial clock sequences
     let node1_initial_seq = {
-        let clock1 = app1.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let clock1 = app1
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
         clock1.sequence()
     };
     let node2_initial_seq = {
-        let clock2 = app2.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let clock2 = app2
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
         clock2.sequence()
     };
 
-    println!("Initial clocks: Node1={}, Node2={}", node1_initial_seq, node2_initial_seq);
+    println!(
+        "Initial clocks: Node1={}, Node2={}",
+        node1_initial_seq, node2_initial_seq
+    );
 
     // Run both apps for a few seconds to see if clocks stabilize
     // If there's a feedback loop, clocks will keep incrementing rapidly
@@ -467,21 +499,31 @@ async fn test_remote_delta_no_feedback_loop() -> Result<()> {
 
     // Check final clock sequences
     let node1_final_seq = {
-        let clock1 = app1.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let clock1 = app1
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
         clock1.sequence()
     };
     let node2_final_seq = {
-        let clock2 = app2.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let clock2 = app2
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
         clock2.sequence()
     };
 
-    println!("Final clocks: Node1={}, Node2={}", node1_final_seq, node2_final_seq);
+    println!(
+        "Final clocks: Node1={}, Node2={}",
+        node1_final_seq, node2_final_seq
+    );
 
     // Calculate clock growth
     let node1_growth = node1_final_seq - node1_initial_seq;
     let node2_growth = node2_final_seq - node2_initial_seq;
 
-    println!("Clock growth: Node1=+{}, Node2=+{}", node1_growth, node2_growth);
+    println!(
+        "Clock growth: Node1=+{}, Node2=+{}",
+        node1_growth, node2_growth
+    );
 
     // With feedback loop: clocks would grow by 100s (every frame generates delta)
     // Without feedback loop: clocks should grow by 0-5 (only periodic sync)
@@ -574,7 +616,9 @@ async fn test_local_change_after_remote_delta() -> Result<()> {
     // Node 2: Make a local change (move cube to 10, 20, 30)
     {
         let entity_map = app2.world().resource::<NetworkEntityMap>();
-        let entity = entity_map.get_entity(cube_id).expect("Cube should exist on Node2");
+        let entity = entity_map
+            .get_entity(cube_id)
+            .expect("Cube should exist on Node2");
 
         if let Ok(mut entity_mut) = app2.world_mut().get_entity_mut(entity) {
             if let Some(mut transform) = entity_mut.get_mut::<Transform>() {
@@ -593,8 +637,8 @@ async fn test_local_change_after_remote_delta() -> Result<()> {
                     // Check if position is close to (10, 20, 30)
                     let pos = transform.translation;
                     (pos.x - 10.0).abs() < 0.1 &&
-                    (pos.y - 20.0).abs() < 0.1 &&
-                    (pos.z - 30.0).abs() < 0.1
+                        (pos.y - 20.0).abs() < 0.1 &&
+                        (pos.z - 30.0).abs() < 0.1
                 } else {
                     false
                 }
@@ -612,7 +656,9 @@ async fn test_local_change_after_remote_delta() -> Result<()> {
     // Verify final position on Node1
     {
         let entity_map = app1.world().resource::<NetworkEntityMap>();
-        let entity = entity_map.get_entity(cube_id).expect("Cube should exist on Node1");
+        let entity = entity_map
+            .get_entity(cube_id)
+            .expect("Cube should exist on Node1");
 
         if let Ok(entity_ref) = app1.world().get_entity(entity) {
             if let Some(transform) = entity_ref.get::<Transform>() {

@@ -1,24 +1,49 @@
 //! Batching functionality when GPU preprocessing isn't in use.
 
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::entity::Entity;
-use bevy_ecs::resource::Resource;
-use bevy_ecs::system::{Res, ResMut, StaticSystemParam};
-use smallvec::{smallvec, SmallVec};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_ecs::{
+    entity::Entity,
+    resource::Resource,
+    system::{
+        Res,
+        ResMut,
+        StaticSystemParam,
+    },
+};
+use smallvec::{
+    SmallVec,
+    smallvec,
+};
 use tracing::error;
 use wgpu::BindingResource;
 
+use super::{
+    GetBatchData,
+    GetFullBatchData,
+};
 use crate::render::{
     render_phase::{
-        BinnedPhaseItem, BinnedRenderPhaseBatch, BinnedRenderPhaseBatchSets,
-        CachedRenderPipelinePhaseItem, PhaseItemExtraIndex, SortedPhaseItem,
-        ViewBinnedRenderPhases, ViewSortedRenderPhases,
+        BinnedPhaseItem,
+        BinnedRenderPhaseBatch,
+        BinnedRenderPhaseBatchSets,
+        CachedRenderPipelinePhaseItem,
+        PhaseItemExtraIndex,
+        SortedPhaseItem,
+        ViewBinnedRenderPhases,
+        ViewSortedRenderPhases,
     },
-    render_resource::{GpuArrayBuffer, GpuArrayBufferable},
-    renderer::{RenderDevice, RenderQueue},
+    render_resource::{
+        GpuArrayBuffer,
+        GpuArrayBufferable,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
 };
-
-use super::{GetBatchData, GetFullBatchData};
 
 /// The GPU buffers holding the data needed to render batches.
 ///
@@ -53,8 +78,7 @@ where
 pub fn clear_batched_cpu_instance_buffers<GBD>(
     cpu_batched_instance_buffer: Option<ResMut<BatchedInstanceBuffer<GBD::BufferData>>>,
 ) where
-    GBD: GetBatchData,
-{
+    GBD: GetBatchData, {
     if let Some(mut cpu_batched_instance_buffer) = cpu_batched_instance_buffer {
         cpu_batched_instance_buffer.clear();
     }
@@ -69,8 +93,7 @@ pub fn batch_and_prepare_sorted_render_phase<I, GBD>(
     param: StaticSystemParam<GBD::Param>,
 ) where
     I: CachedRenderPipelinePhaseItem + SortedPhaseItem,
-    GBD: GetBatchData,
-{
+    GBD: GetBatchData, {
     let system_param_item = param.into_inner();
 
     // We only process CPU-built batch data in this function.
@@ -100,8 +123,7 @@ pub fn batch_and_prepare_binned_render_phase<BPI, GFBD>(
     param: StaticSystemParam<GFBD::Param>,
 ) where
     BPI: BinnedPhaseItem,
-    GFBD: GetFullBatchData,
-{
+    GFBD: GetFullBatchData, {
     let gpu_array_buffer = gpu_array_buffer.into_inner();
     let system_param_item = param.into_inner();
 
@@ -124,9 +146,9 @@ pub fn batch_and_prepare_binned_render_phase<BPI, GFBD>(
                 // bin. Note that dynamic offsets are only used on platforms
                 // with no storage buffers.
                 if !batch_set.last().is_some_and(|batch| {
-                    batch.instance_range.end == instance.index
-                        && batch.extra_index
-                            == PhaseItemExtraIndex::maybe_dynamic_offset(instance.dynamic_offset)
+                    batch.instance_range.end == instance.index &&
+                        batch.extra_index ==
+                            PhaseItemExtraIndex::maybe_dynamic_offset(instance.dynamic_offset)
                 }) {
                     batch_set.push(BinnedRenderPhaseBatch {
                         representative_entity: (Entity::PLACEHOLDER, *main_entity),
@@ -143,15 +165,15 @@ pub fn batch_and_prepare_binned_render_phase<BPI, GFBD>(
             }
 
             match phase.batch_sets {
-                BinnedRenderPhaseBatchSets::DynamicUniforms(ref mut batch_sets) => {
+                | BinnedRenderPhaseBatchSets::DynamicUniforms(ref mut batch_sets) => {
                     batch_sets.push(batch_set);
-                }
-                BinnedRenderPhaseBatchSets::Direct(_)
-                | BinnedRenderPhaseBatchSets::MultidrawIndirect { .. } => {
+                },
+                | BinnedRenderPhaseBatchSets::Direct(_) |
+                BinnedRenderPhaseBatchSets::MultidrawIndirect { .. } => {
                     error!(
                         "Dynamic uniform batch sets should be used when GPU preprocessing is off"
                     );
-                }
+                },
             }
         }
 
@@ -176,7 +198,6 @@ pub fn write_batched_instance_buffer<GBD>(
     render_queue: Res<RenderQueue>,
     mut cpu_batched_instance_buffer: ResMut<BatchedInstanceBuffer<GBD::BufferData>>,
 ) where
-    GBD: GetBatchData,
-{
+    GBD: GetBatchData, {
     cpu_batched_instance_buffer.write_buffer(&render_device, &render_queue);
 }

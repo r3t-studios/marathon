@@ -93,11 +93,15 @@ impl Plugin for PersistencePlugin {
 
         // Add startup systems
         // First initialize the database, then rehydrate entities and tombstones
-        app.add_systems(Startup, (
-            persistence_startup_system,
-            rehydrate_entities_system,
-            load_tombstones_system,
-        ).chain());
+        app.add_systems(
+            Startup,
+            (
+                persistence_startup_system,
+                rehydrate_entities_system,
+                load_tombstones_system,
+            )
+                .chain(),
+        );
 
         // Add systems in the appropriate schedule
         app.add_systems(
@@ -178,7 +182,7 @@ fn rehydrate_entities_system(world: &mut World) {
     let should_rehydrate = {
         let current_session = world.get_resource::<crate::networking::CurrentSession>();
         match current_session {
-            Some(session) => {
+            | Some(session) => {
                 // Only rehydrate if we have a last_known_clock (indicates we're rejoining)
                 let is_rejoin = session.last_known_clock.node_count() > 0;
                 if is_rejoin {
@@ -193,11 +197,11 @@ fn rehydrate_entities_system(world: &mut World) {
                     );
                 }
                 is_rejoin
-            }
-            None => {
+            },
+            | None => {
                 warn!("No CurrentSession found - skipping entity rehydration");
                 false
-            }
+            },
         }
     };
 
@@ -274,7 +278,8 @@ fn collect_dirty_entities_bevy_system(world: &mut World) {
 
         // Serialize all components on this entity (generic tracking)
         let components = {
-            let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+            let type_registry_res =
+                world.resource::<crate::persistence::ComponentTypeRegistryResource>();
             let type_registry = type_registry_res.0;
             type_registry.serialize_entity_components(world, entity)
         };

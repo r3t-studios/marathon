@@ -3,15 +3,25 @@ pub mod node;
 
 use core::ops::Range;
 
-use crate::render::prepass::{OpaqueNoLightmap3dBatchSetKey, OpaqueNoLightmap3dBinKey};
 use bevy_ecs::prelude::*;
-use crate::render::sync_world::MainEntity;
+
 use crate::render::{
+    prepass::{
+        OpaqueNoLightmap3dBatchSetKey,
+        OpaqueNoLightmap3dBinKey,
+    },
     render_phase::{
-        BinnedPhaseItem, CachedRenderPipelinePhaseItem, DrawFunctionId, PhaseItem,
+        BinnedPhaseItem,
+        CachedRenderPipelinePhaseItem,
+        DrawFunctionId,
+        PhaseItem,
         PhaseItemExtraIndex,
     },
-    render_resource::{CachedRenderPipelineId, TextureFormat},
+    render_resource::{
+        CachedRenderPipelineId,
+        TextureFormat,
+    },
+    sync_world::MainEntity,
 };
 
 pub const DEFERRED_PREPASS_FORMAT: TextureFormat = TextureFormat::Rgba32Uint;

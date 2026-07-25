@@ -49,8 +49,7 @@ use crate::{
 /// use bevy::prelude::*;
 /// use libmarathon::networking::initialize_session_system;
 ///
-/// App::new()
-///     .add_systems(Startup, initialize_session_system);
+/// App::new().add_systems(Startup, initialize_session_system);
 /// ```
 pub fn initialize_session_system(world: &mut World) {
     info!("Initializing session...");
@@ -77,45 +76,48 @@ pub fn initialize_session_system(world: &mut World) {
 
         // Try to load last active session
         match get_last_active_session(&conn) {
-        | Ok(Some(mut session)) => {
-            // Check if we should auto-rejoin
-            match session.state {
-                | SessionState::Active | SessionState::Disconnected => {
-                    info!(
-                        "Found previous session {} in state {:?} - attempting auto-rejoin",
-                        session.id, session.state
-                    );
+            | Ok(Some(mut session)) => {
+                // Check if we should auto-rejoin
+                match session.state {
+                    | SessionState::Active | SessionState::Disconnected => {
+                        info!(
+                            "Found previous session {} in state {:?} - attempting auto-rejoin",
+                            session.id, session.state
+                        );
 
-                    // Load last known vector clock
-                    let last_known_clock = match load_session_vector_clock(&conn, session.id.clone()) {
-                        | Ok(clock) => clock,
-                        | Err(e) => {
-                            warn!(
-                                "Failed to load vector clock for session {}: {} - using empty clock",
-                                session.id, e
-                            );
-                            VectorClock::new()
-                        },
-                    };
+                        // Load last known vector clock
+                        let last_known_clock = match load_session_vector_clock(
+                            &conn,
+                            session.id.clone(),
+                        ) {
+                            | Ok(clock) => clock,
+                            | Err(e) => {
+                                warn!(
+                                    "Failed to load vector clock for session {}: {} - using empty clock",
+                                    session.id, e
+                                );
+                                VectorClock::new()
+                            },
+                        };
 
-                    // Transition to Joining state
-                    session.transition_to(SessionState::Joining);
+                        // Transition to Joining state
+                        session.transition_to(SessionState::Joining);
 
-                    Some((session, last_known_clock))
-                },
+                        Some((session, last_known_clock))
+                    },
 
-                | _ => {
-                    // For Created, Left, or Joining states, create new session
-                    None
-                },
-            }
-        },
+                    | _ => {
+                        // For Created, Left, or Joining states, create new session
+                        None
+                    },
+                }
+            },
 
-        | Ok(None) => None,
-        | Err(e) => {
-            error!("Failed to load last active session: {}", e);
-            None
-        },
+            | Ok(None) => None,
+            | Err(e) => {
+                error!("Failed to load last active session: {}", e);
+                None
+            },
         }
     }; // conn and db are dropped here, releasing the lock
 
@@ -143,14 +145,18 @@ pub fn initialize_session_system(world: &mut World) {
 ///
 /// Add to your app using the Last schedule with a timer:
 /// ```no_run
-/// use bevy::prelude::*;
-/// use bevy::time::common_conditions::on_timer;
-/// use libmarathon::networking::save_session_on_shutdown_system;
 /// use std::time::Duration;
 ///
-/// App::new()
-///     .add_systems(Last, save_session_on_shutdown_system
-///         .run_if(on_timer(Duration::from_secs(5))));
+/// use bevy::{
+///     prelude::*,
+///     time::common_conditions::on_timer,
+/// };
+/// use libmarathon::networking::save_session_on_shutdown_system;
+///
+/// App::new().add_systems(
+///     Last,
+///     save_session_on_shutdown_system.run_if(on_timer(Duration::from_secs(5))),
+/// );
 /// ```
 pub fn save_session_on_shutdown_system(world: &mut World) {
     debug!("Auto-saving session state...");
@@ -221,7 +227,10 @@ pub fn save_session_on_shutdown_system(world: &mut World) {
                     info!("Vector clock saved for session {}", session.id);
                 },
                 | Err(e) => {
-                    error!("Failed to save vector clock for session {}: {}", session.id, e);
+                    error!(
+                        "Failed to save vector clock for session {}: {}",
+                        session.id, e
+                    );
                 },
             }
         }

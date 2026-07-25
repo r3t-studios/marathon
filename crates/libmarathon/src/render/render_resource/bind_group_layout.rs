@@ -1,18 +1,30 @@
-use crate::render::{define_atomic_id, renderer::RenderDevice, renderer::WgpuWrapper};
+use core::ops::Deref;
+
 use bevy_ecs::system::Res;
 use bevy_platform::sync::OnceLock;
-use core::ops::Deref;
+
+use crate::render::{
+    define_atomic_id,
+    renderer::{
+        RenderDevice,
+        WgpuWrapper,
+    },
+};
 
 define_atomic_id!(BindGroupLayoutId);
 
-/// Bind group layouts define the interface of resources (e.g. buffers, textures, samplers)
-/// for a shader. The actual resource binding is done via a [`BindGroup`](super::BindGroup).
+/// Bind group layouts define the interface of resources (e.g. buffers,
+/// textures, samplers) for a shader. The actual resource binding is done via a
+/// [`BindGroup`](super::BindGroup).
 ///
-/// This is a lightweight thread-safe wrapper around wgpu's own [`BindGroupLayout`](wgpu::BindGroupLayout),
-/// which can be cloned as needed to workaround lifetime management issues. It may be converted
+/// This is a lightweight thread-safe wrapper around wgpu's own
+/// [`BindGroupLayout`](wgpu::BindGroupLayout), which can be cloned as needed to
+/// workaround lifetime management issues. It may be converted
 /// from and dereferences to wgpu's [`BindGroupLayout`](wgpu::BindGroupLayout).
 ///
-/// Can be created via [`RenderDevice::create_bind_group_layout`](crate::renderer::RenderDevice::create_bind_group_layout).
+/// Can be created via
+/// [`RenderDevice::create_bind_group_layout`](crate::renderer::RenderDevice::create_bind_group_layout).
+///
 #[derive(Clone, Debug)]
 pub struct BindGroupLayout {
     id: BindGroupLayoutId,
@@ -34,7 +46,8 @@ impl core::hash::Hash for BindGroupLayout {
 }
 
 impl BindGroupLayout {
-    /// Returns the [`BindGroupLayoutId`] representing the unique ID of the bind group layout.
+    /// Returns the [`BindGroupLayoutId`] representing the unique ID of the bind
+    /// group layout.
     #[inline]
     pub fn id(&self) -> BindGroupLayoutId {
         self.id

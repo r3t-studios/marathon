@@ -1,15 +1,36 @@
-use crate::render::{
-    render_resource::{GpuArrayBuffer, GpuArrayBufferable},
-    renderer::{RenderDevice, RenderQueue},
-    Render, RenderApp, RenderSystems,
-};
-use bevy_app::{App, Plugin};
-use bevy_ecs::{
-    prelude::{Component, Entity},
-    schedule::IntoScheduleConfigs,
-    system::{Commands, Query, Res, ResMut},
-};
 use core::marker::PhantomData;
+
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_ecs::{
+    prelude::{
+        Component,
+        Entity,
+    },
+    schedule::IntoScheduleConfigs,
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+    },
+};
+
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderSystems,
+    render_resource::{
+        GpuArrayBuffer,
+        GpuArrayBufferable,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 /// This plugin prepares the components of the corresponding type for the GPU
 /// by storing them in a [`GpuArrayBuffer`].

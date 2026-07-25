@@ -1,16 +1,33 @@
-use super::RenderQueue;
-use crate::render::render_resource::{
-    BindGroup, BindGroupLayout, Buffer, ComputePipeline, RawRenderPipelineDescriptor,
-    RenderPipeline, Sampler, Texture,
-};
-use crate::render::renderer::WgpuWrapper;
 use bevy_ecs::resource::Resource;
 use wgpu::{
-    util::DeviceExt, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BufferAsyncError, BufferBindingType, PollError, PollStatus,
+    BindGroupDescriptor,
+    BindGroupEntry,
+    BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry,
+    BufferAsyncError,
+    BufferBindingType,
+    PollError,
+    PollStatus,
+    util::DeviceExt,
 };
 
-/// This GPU device is responsible for the creation of most rendering and compute resources.
+use super::RenderQueue;
+use crate::render::{
+    render_resource::{
+        BindGroup,
+        BindGroupLayout,
+        Buffer,
+        ComputePipeline,
+        RawRenderPipelineDescriptor,
+        RenderPipeline,
+        Sampler,
+        Texture,
+    },
+    renderer::WgpuWrapper,
+};
+
+/// This GPU device is responsible for the creation of most rendering and
+/// compute resources.
 #[derive(Resource, Clone)]
 pub struct RenderDevice {
     device: WgpuWrapper<wgpu::Device>,
@@ -43,14 +60,16 @@ impl RenderDevice {
         self.device.limits()
     }
 
-    /// Creates a [`ShaderModule`](wgpu::ShaderModule) from either SPIR-V or WGSL source code.
+    /// Creates a [`ShaderModule`](wgpu::ShaderModule) from either SPIR-V or
+    /// WGSL source code.
     ///
     /// # Safety
     ///
-    /// Creates a shader module with user-customizable runtime checks which allows shaders to
-    /// perform operations which can lead to undefined behavior like indexing out of bounds,
-    /// To avoid UB, ensure any unchecked shaders are sound!
-    /// This method should never be called for user-supplied shaders.
+    /// Creates a shader module with user-customizable runtime checks which
+    /// allows shaders to perform operations which can lead to undefined
+    /// behavior like indexing out of bounds, To avoid UB, ensure any
+    /// unchecked shaders are sound! This method should never be called for
+    /// user-supplied shaders.
     #[inline]
     pub unsafe fn create_shader_module(
         &self,
@@ -58,14 +77,15 @@ impl RenderDevice {
     ) -> wgpu::ShaderModule {
         #[cfg(feature = "spirv_shader_passthrough")]
         match &desc.source {
-            wgpu::ShaderSource::SpirV(source)
+            | wgpu::ShaderSource::SpirV(source)
                 if self
                     .features()
                     .contains(wgpu::Features::SPIRV_SHADER_PASSTHROUGH) =>
             {
                 // SAFETY:
-                // This call passes binary data to the backend as-is and can potentially result in a driver crash or bogus behavior.
-                // No attempt is made to ensure that data is valid SPIR-V.
+                // This call passes binary data to the backend as-is and can potentially result
+                // in a driver crash or bogus behavior. No attempt is made to
+                // ensure that data is valid SPIR-V.
                 unsafe {
                     self.device.create_shader_module_passthrough(
                         wgpu::ShaderModuleDescriptorPassthrough::SpirV(
@@ -76,12 +96,13 @@ impl RenderDevice {
                         ),
                     )
                 }
-            }
+            },
             // SAFETY:
             //
-            // This call passes binary data to the backend as-is and can potentially result in a driver crash or bogus behavior.
-            // No attempt is made to ensure that data is valid SPIR-V.
-            _ => unsafe {
+            // This call passes binary data to the backend as-is and can potentially result in a
+            // driver crash or bogus behavior. No attempt is made to ensure that data is
+            // valid SPIR-V.
+            | _ => unsafe {
                 self.device
                     .create_shader_module_trusted(desc, wgpu::ShaderRuntimeChecks::unchecked())
             },
@@ -94,9 +115,11 @@ impl RenderDevice {
         }
     }
 
-    /// Creates and validates a [`ShaderModule`](wgpu::ShaderModule) from either SPIR-V or WGSL source code.
+    /// Creates and validates a [`ShaderModule`](wgpu::ShaderModule) from either
+    /// SPIR-V or WGSL source code.
     ///
-    /// See [`ValidateShader`](bevy_shader::ValidateShader) for more information on the tradeoffs involved with shader validation.
+    /// See [`ValidateShader`](bevy_shader::ValidateShader) for more information
+    /// on the tradeoffs involved with shader validation.
     #[inline]
     pub fn create_and_validate_shader_module(
         &self,
@@ -104,8 +127,10 @@ impl RenderDevice {
     ) -> wgpu::ShaderModule {
         #[cfg(feature = "spirv_shader_passthrough")]
         match &desc.source {
-            wgpu::ShaderSource::SpirV(_source) => panic!("no safety checks are performed for spirv shaders. use `create_shader_module` instead"),
-            _ => self.device.create_shader_module(desc),
+            | wgpu::ShaderSource::SpirV(_source) => panic!(
+                "no safety checks are performed for spirv shaders. use `create_shader_module` instead"
+            ),
+            | _ => self.device.create_shader_module(desc),
         }
         #[cfg(not(feature = "spirv_shader_passthrough"))]
         self.device.create_shader_module(desc)
@@ -114,10 +139,11 @@ impl RenderDevice {
     /// Check for resource cleanups and mapping callbacks.
     ///
     /// Return `true` if the queue is empty, or `false` if there are more queue
-    /// submissions still in flight. (Note that, unless access to the [`wgpu::Queue`] is
-    /// coordinated somehow, this information could be out of date by the time
-    /// the caller receives it. `Queue`s can be shared between threads, so
-    /// other threads could submit new work at any time.)
+    /// submissions still in flight. (Note that, unless access to the
+    /// [`wgpu::Queue`] is coordinated somehow, this information could be
+    /// out of date by the time the caller receives it. `Queue`s can be
+    /// shared between threads, so other threads could submit new work at
+    /// any time.)
     ///
     /// no-op on the web, device is automatically polled.
     #[inline]
@@ -250,7 +276,8 @@ impl RenderDevice {
     ///
     /// # Panics
     ///
-    /// - A old [`SurfaceTexture`](wgpu::SurfaceTexture) is still alive referencing an old surface.
+    /// - A old [`SurfaceTexture`](wgpu::SurfaceTexture) is still alive
+    ///   referencing an old surface.
     /// - Texture format requested is unsupported on the surface.
     pub fn configure_surface(&self, surface: &wgpu::Surface, config: &wgpu::SurfaceConfiguration) {
         surface.configure(&self.device, config);
@@ -270,7 +297,8 @@ impl RenderDevice {
         buffer.map_async(map_mode, callback);
     }
 
-    // Rounds up `row_bytes` to be a multiple of [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
+    // Rounds up `row_bytes` to be a multiple of
+    // [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
     pub const fn align_copy_bytes_per_row(row_bytes: usize) -> usize {
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
 

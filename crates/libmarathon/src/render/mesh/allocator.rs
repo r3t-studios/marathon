@@ -1,37 +1,77 @@
 //! Manages mesh vertex and index buffers.
 
-use std::vec::Vec;
-use bevy_mesh::Indices;
 use core::{
-    fmt::{self, Display, Formatter},
+    fmt::{
+        self,
+        Display,
+        Formatter,
+    },
     ops::Range,
 };
-use nonmax::NonMaxU32;
+use std::vec::Vec;
 
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_asset::AssetId;
-use bevy_derive::{Deref, DerefMut};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     resource::Resource,
     schedule::IntoScheduleConfigs as _,
-    system::{Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Res,
+        ResMut,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
-use bevy_platform::collections::{hash_map::Entry, HashMap, HashSet};
+use bevy_mesh::Indices;
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+    hash_map::Entry,
+};
 use bevy_utils::default;
-use offset_allocator::{Allocation, Allocator};
+use nonmax::NonMaxU32;
+use offset_allocator::{
+    Allocation,
+    Allocator,
+};
 use tracing::error;
 use wgpu::{
-    BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor, DownlevelFlags,
+    BufferDescriptor,
+    BufferSize,
+    BufferUsages,
     COPY_BUFFER_ALIGNMENT,
+    CommandEncoderDescriptor,
+    DownlevelFlags,
 };
 
 use crate::render::{
-    mesh::{Mesh, MeshVertexBufferLayouts, RenderMesh},
-    render_asset::{prepare_assets, ExtractedAssets},
+    Render,
+    RenderApp,
+    RenderSystems,
+    mesh::{
+        Mesh,
+        MeshVertexBufferLayouts,
+        RenderMesh,
+    },
+    render_asset::{
+        ExtractedAssets,
+        prepare_assets,
+    },
     render_resource::Buffer,
-    renderer::{RenderAdapter, RenderDevice, RenderQueue},
-    Render, RenderApp, RenderSystems,
+    renderer::{
+        RenderAdapter,
+        RenderDevice,
+        RenderQueue,
+    },
 };
 
 /// A plugin that manages GPU memory for mesh data.
@@ -418,24 +458,24 @@ impl MeshAllocator {
         slab_id: SlabId,
     ) -> Option<MeshBufferSlice<'_>> {
         match self.slabs.get(&slab_id)? {
-            Slab::General(general_slab) => {
+            | Slab::General(general_slab) => {
                 let slab_allocation = general_slab.resident_allocations.get(mesh_id)?;
                 Some(MeshBufferSlice {
                     buffer: general_slab.buffer.as_ref()?,
-                    range: (slab_allocation.allocation.offset
-                        * general_slab.element_layout.elements_per_slot)
-                        ..((slab_allocation.allocation.offset + slab_allocation.slot_count)
-                            * general_slab.element_layout.elements_per_slot),
+                    range: (slab_allocation.allocation.offset *
+                        general_slab.element_layout.elements_per_slot)..
+                        ((slab_allocation.allocation.offset + slab_allocation.slot_count) *
+                            general_slab.element_layout.elements_per_slot),
                 })
-            }
+            },
 
-            Slab::LargeObject(large_object_slab) => {
+            | Slab::LargeObject(large_object_slab) => {
                 let buffer = large_object_slab.buffer.as_ref()?;
                 Some(MeshBufferSlice {
                     buffer,
                     range: 0..((buffer.size() / large_object_slab.element_layout.size) as u32),
                 })
-            }
+            },
         }
     }
 
@@ -567,7 +607,7 @@ impl MeshAllocator {
         };
 
         match *slab {
-            Slab::General(ref mut general_slab) => {
+            | Slab::General(ref mut general_slab) => {
                 let (Some(buffer), Some(allocated_range)) = (
                     &general_slab.buffer,
                     general_slab.pending_allocations.remove(mesh_id),
@@ -577,7 +617,8 @@ impl MeshAllocator {
 
                 let slot_size = general_slab.element_layout.slot_size();
 
-                // round up size to a multiple of the slot size to satisfy wgpu alignment requirements
+                // round up size to a multiple of the slot size to satisfy wgpu alignment
+                // requirements
                 if let Some(size) = BufferSize::new((len as u64).next_multiple_of(slot_size)) {
                     // Write the data in.
                     if let Some(mut buffer) = render_queue.write_buffer_with(
@@ -594,9 +635,9 @@ impl MeshAllocator {
                 general_slab
                     .resident_allocations
                     .insert(*mesh_id, allocated_range);
-            }
+            },
 
-            Slab::LargeObject(ref mut large_object_slab) => {
+            | Slab::LargeObject(ref mut large_object_slab) => {
                 debug_assert!(large_object_slab.buffer.is_none());
 
                 // Create the buffer and its data in one go.
@@ -616,7 +657,7 @@ impl MeshAllocator {
                 }
                 buffer.unmap();
                 large_object_slab.buffer = Some(buffer);
-            }
+            },
         }
     }
 
@@ -624,7 +665,8 @@ impl MeshAllocator {
     fn free_meshes(&mut self, extracted_meshes: &ExtractedAssets<RenderMesh>) {
         let mut empty_slabs = <HashSet<_>>::default();
 
-        // TODO: Consider explicitly reusing allocations for changed meshes of the same size
+        // TODO: Consider explicitly reusing allocations for changed meshes of the same
+        // size
         let meshes_to_free = extracted_meshes
             .removed
             .iter()
@@ -666,7 +708,7 @@ impl MeshAllocator {
         };
 
         match *slab {
-            Slab::General(ref mut general_slab) => {
+            | Slab::General(ref mut general_slab) => {
                 let Some(slab_allocation) = general_slab
                     .resident_allocations
                     .remove(mesh_id)
@@ -680,10 +722,10 @@ impl MeshAllocator {
                 if general_slab.is_empty() {
                     empty_slabs.insert(slab_id);
                 }
-            }
-            Slab::LargeObject(_) => {
+            },
+            | Slab::LargeObject(_) => {
                 empty_slabs.insert(slab_id);
-            }
+            },
         }
     }
 
@@ -701,8 +743,8 @@ impl MeshAllocator {
         let data_slot_count = data_element_count.div_ceil(layout.elements_per_slot);
 
         // If the mesh data is too large for a slab, give it a slab of its own.
-        if data_slot_count as u64 * layout.slot_size()
-            >= settings.large_threshold.min(settings.max_slab_size)
+        if data_slot_count as u64 * layout.slot_size() >=
+            settings.large_threshold.min(settings.max_slab_size)
         {
             self.allocate_large(mesh_id, layout);
         } else {
@@ -737,8 +779,8 @@ impl MeshAllocator {
 
             // Try to fit the object in the slab, growing if necessary.
             match slab.grow_if_necessary(allocation.offset + data_slot_count, settings) {
-                SlabGrowthResult::NoGrowthNeeded => {}
-                SlabGrowthResult::NeededGrowth(slab_to_reallocate) => {
+                | SlabGrowthResult::NoGrowthNeeded => {},
+                | SlabGrowthResult::NeededGrowth(slab_to_reallocate) => {
                     // If we already grew the slab this frame, don't replace the
                     // `SlabToReallocate` entry. We want to keep the entry
                     // corresponding to the size that the slab had at the start
@@ -747,8 +789,8 @@ impl MeshAllocator {
                     if let Entry::Vacant(vacant_entry) = slabs_to_grow.entry(slab_id) {
                         vacant_entry.insert(slab_to_reallocate);
                     }
-                }
-                SlabGrowthResult::CantGrow => continue,
+                },
+                | SlabGrowthResult::CantGrow => continue,
             }
 
             mesh_allocation = Some(MeshAllocation {
@@ -832,8 +874,8 @@ impl MeshAllocator {
 
         let mut buffer_usages = BufferUsages::COPY_SRC | BufferUsages::COPY_DST;
         match slab.element_layout.class {
-            ElementClass::Vertex => buffer_usages |= BufferUsages::VERTEX,
-            ElementClass::Index => buffer_usages |= BufferUsages::INDEX,
+            | ElementClass::Vertex => buffer_usages |= BufferUsages::VERTEX,
+            | ElementClass::Index => buffer_usages |= BufferUsages::INDEX,
         };
 
         // Create the buffer.
@@ -880,12 +922,12 @@ impl MeshAllocator {
         element_class: ElementClass,
     ) {
         match element_class {
-            ElementClass::Vertex => {
+            | ElementClass::Vertex => {
                 self.mesh_id_to_vertex_slab.insert(*mesh_id, slab_id);
-            }
-            ElementClass::Index => {
+            },
+            | ElementClass::Index => {
                 self.mesh_id_to_index_slab.insert(*mesh_id, slab_id);
-            }
+            },
         }
     }
 }
@@ -1007,8 +1049,8 @@ impl ElementLayout {
     /// data.
     fn index(mesh: &Mesh) -> Option<ElementLayout> {
         let size = match mesh.indices()? {
-            Indices::U16(_) => 2,
-            Indices::U32(_) => 4,
+            | Indices::U16(_) => 2,
+            | Indices::U32(_) => 4,
         };
         Some(ElementLayout::new(ElementClass::Index, size))
     }

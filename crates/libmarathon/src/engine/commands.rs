@@ -1,15 +1,20 @@
 //! Commands sent from Bevy to the Core Engine
 
-use crate::networking::SessionId;
 use bevy::prelude::*;
 use uuid::Uuid;
+
+use crate::networking::SessionId;
 
 #[derive(Debug, Clone)]
 pub enum EngineCommand {
     // Networking lifecycle
-    StartNetworking { session_id: SessionId },
+    StartNetworking {
+        session_id: SessionId,
+    },
     StopNetworking,
-    JoinSession { session_id: SessionId },
+    JoinSession {
+        session_id: SessionId,
+    },
     LeaveSession,
 
     // CRDT operations

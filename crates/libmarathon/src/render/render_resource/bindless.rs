@@ -1,21 +1,36 @@
 //! Types and functions relating to bindless resources.
 
-use std::borrow::Cow;
 use core::{
-    num::{NonZeroU32, NonZeroU64},
+    num::{
+        NonZeroU32,
+        NonZeroU64,
+    },
     ops::Range,
 };
+use std::borrow::Cow;
 
-use bevy_derive::{Deref, DerefMut};
-use wgpu::{
-    BindGroupLayoutEntry, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension,
+use bevy_derive::{
+    Deref,
+    DerefMut,
 };
-
-use crate::render::render_resource::binding_types::storage_buffer_read_only_sized;
+use wgpu::{
+    BindGroupLayoutEntry,
+    SamplerBindingType,
+    ShaderStages,
+    TextureSampleType,
+    TextureViewDimension,
+};
 
 use super::binding_types::{
-    sampler, texture_1d, texture_2d, texture_2d_array, texture_3d, texture_cube, texture_cube_array,
+    sampler,
+    texture_1d,
+    texture_2d,
+    texture_2d_array,
+    texture_3d,
+    texture_cube,
+    texture_cube_array,
 };
+use crate::render::render_resource::binding_types::storage_buffer_read_only_sized;
 
 /// The default value for the number of resources that can be stored in a slab
 /// on this platform.
@@ -309,8 +324,8 @@ impl BindlessSlabResourceLimit {
     /// Determines the actual bindless slab resource limit on this platform.
     pub fn resolve(&self) -> u32 {
         match *self {
-            BindlessSlabResourceLimit::Auto => AUTO_BINDLESS_SLAB_RESOURCE_LIMIT,
-            BindlessSlabResourceLimit::Custom(limit) => limit,
+            | BindlessSlabResourceLimit::Auto => AUTO_BINDLESS_SLAB_RESOURCE_LIMIT,
+            | BindlessSlabResourceLimit::Custom(limit) => limit,
         }
     }
 }
@@ -332,8 +347,8 @@ impl BindlessResourceType {
     /// *reference*, not by `u32` value.
     pub fn binding_number(&self) -> Option<&'static BindingNumber> {
         match BINDING_NUMBERS.binary_search_by_key(self, |(key, _)| *key) {
-            Ok(binding_number) => Some(&BINDING_NUMBERS[binding_number].1),
-            Err(_) => None,
+            | Ok(binding_number) => Some(&BINDING_NUMBERS[binding_number].1),
+            | Err(_) => None,
         }
     }
 }
@@ -341,12 +356,12 @@ impl BindlessResourceType {
 impl From<TextureViewDimension> for BindlessResourceType {
     fn from(texture_view_dimension: TextureViewDimension) -> Self {
         match texture_view_dimension {
-            TextureViewDimension::D1 => BindlessResourceType::Texture1d,
-            TextureViewDimension::D2 => BindlessResourceType::Texture2d,
-            TextureViewDimension::D2Array => BindlessResourceType::Texture2dArray,
-            TextureViewDimension::Cube => BindlessResourceType::TextureCube,
-            TextureViewDimension::CubeArray => BindlessResourceType::TextureCubeArray,
-            TextureViewDimension::D3 => BindlessResourceType::Texture3d,
+            | TextureViewDimension::D1 => BindlessResourceType::Texture1d,
+            | TextureViewDimension::D2 => BindlessResourceType::Texture2d,
+            | TextureViewDimension::D2Array => BindlessResourceType::Texture2dArray,
+            | TextureViewDimension::Cube => BindlessResourceType::TextureCube,
+            | TextureViewDimension::CubeArray => BindlessResourceType::TextureCubeArray,
+            | TextureViewDimension::D3 => BindlessResourceType::Texture3d,
         }
     }
 }
@@ -354,9 +369,9 @@ impl From<TextureViewDimension> for BindlessResourceType {
 impl From<SamplerBindingType> for BindlessResourceType {
     fn from(sampler_binding_type: SamplerBindingType) -> Self {
         match sampler_binding_type {
-            SamplerBindingType::Filtering => BindlessResourceType::SamplerFiltering,
-            SamplerBindingType::NonFiltering => BindlessResourceType::SamplerNonFiltering,
-            SamplerBindingType::Comparison => BindlessResourceType::SamplerComparison,
+            | SamplerBindingType::Filtering => BindlessResourceType::SamplerFiltering,
+            | SamplerBindingType::NonFiltering => BindlessResourceType::SamplerNonFiltering,
+            | SamplerBindingType::Comparison => BindlessResourceType::SamplerComparison,
         }
     }
 }

@@ -1,7 +1,14 @@
-use bevy_asset::{load_embedded_asset, Handle};
-use bevy_ecs::{resource::Resource, world::FromWorld};
-use crate::render::render_resource::VertexState;
+use bevy_asset::{
+    Handle,
+    load_embedded_asset,
+};
+use bevy_ecs::{
+    resource::Resource,
+    world::FromWorld,
+};
 use bevy_shader::Shader;
+
+use crate::render::render_resource::VertexState;
 
 /// A shader that renders to the whole screen. Useful for post-processing.
 #[derive(Resource, Clone)]
@@ -29,7 +36,8 @@ impl FullscreenShader {
     /// };
     /// ```
     /// from the vertex shader.
-    /// The draw call should render one triangle: `render_pass.draw(0..3, 0..1);`
+    /// The draw call should render one triangle: `render_pass.draw(0..3,
+    /// 0..1);`
     pub fn to_vertex_state(&self) -> VertexState {
         VertexState {
             shader: self.0.clone(),

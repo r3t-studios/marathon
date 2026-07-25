@@ -6,45 +6,60 @@ pub(crate) mod internal;
 #[cfg(feature = "tracing-tracy")]
 mod tracy_gpu;
 
-use std::{borrow::Cow, sync::Arc};
 use core::marker::PhantomData;
-
-use bevy_app::{App, Plugin, PreUpdate};
-
-use crate::render::{renderer::RenderAdapterInfo, RenderApp};
-
-use self::internal::{
-    sync_diagnostics, DiagnosticsRecorder, Pass, RenderDiagnosticsMutex, WriteTimestamp,
+use std::{
+    borrow::Cow,
+    sync::Arc,
 };
 
-use crate::render::renderer::{RenderDevice, RenderQueue};
+use bevy_app::{
+    App,
+    Plugin,
+    PreUpdate,
+};
 
-/// Enables collecting render diagnostics, such as CPU/GPU elapsed time per render pass,
-/// as well as pipeline statistics (number of primitives, number of shader invocations, etc).
+use self::internal::{
+    DiagnosticsRecorder,
+    Pass,
+    RenderDiagnosticsMutex,
+    WriteTimestamp,
+    sync_diagnostics,
+};
+use crate::render::{
+    RenderApp,
+    renderer::{
+        RenderAdapterInfo,
+        RenderDevice,
+        RenderQueue,
+    },
+};
+
+/// Enables collecting render diagnostics, such as CPU/GPU elapsed time per
+/// render pass, as well as pipeline statistics (number of primitives, number of
+/// shader invocations, etc).
 ///
-/// To access the diagnostics, you can use the [`DiagnosticsStore`](bevy_diagnostic::DiagnosticsStore) resource,
-/// add [`LogDiagnosticsPlugin`](bevy_diagnostic::LogDiagnosticsPlugin), or use [Tracy](https://github.com/bevyengine/bevy/blob/main/docs/profiling.md#tracy-renderqueue).
+/// To access the diagnostics, you can use the
+/// [`DiagnosticsStore`](bevy_diagnostic::DiagnosticsStore) resource, add [`LogDiagnosticsPlugin`](bevy_diagnostic::LogDiagnosticsPlugin), or use [Tracy](https://github.com/bevyengine/bevy/blob/main/docs/profiling.md#tracy-renderqueue).
 ///
 /// To record diagnostics in your own passes:
-///  1. First, obtain the diagnostic recorder using [`RenderContext::diagnostic_recorder`](crate::renderer::RenderContext::diagnostic_recorder).
+///  1. First, obtain the diagnostic recorder using
+///     [`RenderContext::diagnostic_recorder`](crate::renderer::RenderContext::diagnostic_recorder).
 ///
 ///     It won't do anything unless [`RenderDiagnosticsPlugin`] is present,
 ///     so you're free to omit `#[cfg]` clauses.
 ///     ```ignore
 ///     let diagnostics = render_context.diagnostic_recorder();
 ///     ```
-///  2. Begin the span inside a command encoder, or a render/compute pass encoder.
-///     ```ignore
-///     let time_span = diagnostics.time_span(render_context.command_encoder(), "shadows");
-///     ```
-///  3. End the span, providing the same encoder.
-///     ```ignore
-///     time_span.end(render_context.command_encoder());
-///     ```
+///  2. Begin the span inside a command encoder, or a render/compute pass
+///     encoder. ```ignore let time_span =
+///     diagnostics.time_span(render_context.command_encoder(), "shadows"); ```
+///  3. End the span, providing the same encoder. ```ignore
+///     time_span.end(render_context.command_encoder()); ```
 ///
 /// # Supported platforms
-/// Timestamp queries and pipeline statistics are currently supported only on Vulkan and DX12.
-/// On other platforms (Metal, WebGPU, WebGL2) only CPU time will be recorded.
+/// Timestamp queries and pipeline statistics are currently supported only on
+/// Vulkan and DX12. On other platforms (Metal, WebGPU, WebGL2) only CPU time
+/// will be recorded.
 #[derive(Default)]
 pub struct RenderDiagnosticsPlugin;
 
@@ -79,8 +94,7 @@ pub trait RecordDiagnostics: Send + Sync {
     fn time_span<E, N>(&self, encoder: &mut E, name: N) -> TimeSpanGuard<'_, Self, E>
     where
         E: WriteTimestamp,
-        N: Into<Cow<'static, str>>,
-    {
+        N: Into<Cow<'static, str>>, {
         self.begin_time_span(encoder, name.into());
         TimeSpanGuard {
             recorder: self,
@@ -95,8 +109,7 @@ pub trait RecordDiagnostics: Send + Sync {
     fn pass_span<P, N>(&self, pass: &mut P, name: N) -> PassSpanGuard<'_, Self, P>
     where
         P: Pass,
-        N: Into<Cow<'static, str>>,
-    {
+        N: Into<Cow<'static, str>>, {
         self.begin_pass_span(pass, name.into());
         PassSpanGuard {
             recorder: self,
@@ -126,7 +139,8 @@ pub struct TimeSpanGuard<'a, R: ?Sized, E> {
 }
 
 impl<R: RecordDiagnostics + ?Sized, E: WriteTimestamp> TimeSpanGuard<'_, R, E> {
-    /// End the span. You have to provide the same encoder which was used to begin the span.
+    /// End the span. You have to provide the same encoder which was used to
+    /// begin the span.
     pub fn end(self, encoder: &mut E) {
         self.recorder.end_time_span(encoder);
         core::mem::forget(self);
@@ -148,7 +162,8 @@ pub struct PassSpanGuard<'a, R: ?Sized, P> {
 }
 
 impl<R: RecordDiagnostics + ?Sized, P: Pass> PassSpanGuard<'_, R, P> {
-    /// End the span. You have to provide the same pass which was used to begin the span.
+    /// End the span. You have to provide the same pass which was used to begin
+    /// the span.
     pub fn end(self, pass: &mut P) {
         self.recorder.end_pass_span(pass);
         core::mem::forget(self);

@@ -1,7 +1,7 @@
 //! Application executor - owns winit and drives Bevy ECS
 //!
-//! The executor is the bridge between the platform (winit) and the engine (Bevy ECS),
-//! giving us full control over the event loop for maximum performance.
+//! The executor is the bridge between the platform (winit) and the engine (Bevy
+//! ECS), giving us full control over the event loop for maximum performance.
 //!
 //! # Architecture
 //!
@@ -25,15 +25,20 @@
 //!
 //! ## Responsibilities
 //!
-//! - **Event Loop Ownership**: Runs winit's event loop in unbounded mode (`ControlFlow::Poll`)
-//! - **Window Management**: Creates window entity with RawHandleWrapper for Bevy renderer
-//! - **Event Forwarding**: Routes winit events to platform bridge for conversion
+//! - **Event Loop Ownership**: Runs winit's event loop in unbounded mode
+//!   (`ControlFlow::Poll`)
+//! - **Window Management**: Creates window entity with RawHandleWrapper for
+//!   Bevy renderer
+//! - **Event Forwarding**: Routes winit events to platform bridge for
+//!   conversion
 //! - **ECS Updates**: Drives Bevy's `app.update()` every frame
-//! - **Lifecycle**: Handles initialization (resumed), suspension (mobile), and shutdown
+//! - **Lifecycle**: Handles initialization (resumed), suspension (mobile), and
+//!   shutdown
 //!
 //! ## Feature Parity with Bevy's WinitPlugin
 //!
-//! This executor provides complete feature parity with bevy_winit's ApplicationHandler:
+//! This executor provides complete feature parity with bevy_winit's
+//! ApplicationHandler:
 //! - ✅ Window creation before app.finish() for renderer initialization
 //! - ✅ Window/device event handling (20+ event types)
 //! - ✅ Application lifecycle (resumed, suspended, exiting)
@@ -50,30 +55,62 @@
 //!
 //! Note: Battery-aware adaptive frame limiting is planned for production use.
 
-use bevy::prelude::*;
-use bevy::input::{
-    ButtonInput,
-    mouse::MouseButton as BevyMouseButton,
-    keyboard::KeyCode as BevyKeyCode,
-    touch::{Touches, TouchInput},
-};
-use bevy::window::{
-    PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged, WindowClosing,
-    WindowResolution, WindowMode, WindowPosition, WindowEvent as BevyWindowEvent,
-    RawHandleWrapper, WindowWrapper,
-};
-use bevy::ecs::message::Messages;
-use crate::platform::input::InputEventBuffer;
-use super::{push_window_event, push_device_event, drain_as_input_events, set_scale_factor};
 use std::sync::Arc;
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent as WinitWindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window as WinitWindow, WindowId, WindowAttributes};
+
+use bevy::{
+    ecs::message::Messages,
+    input::{
+        ButtonInput,
+        keyboard::KeyCode as BevyKeyCode,
+        mouse::MouseButton as BevyMouseButton,
+        touch::{
+            TouchInput,
+            Touches,
+        },
+    },
+    prelude::*,
+    window::{
+        PrimaryWindow,
+        RawHandleWrapper,
+        WindowClosing,
+        WindowCreated,
+        WindowEvent as BevyWindowEvent,
+        WindowMode,
+        WindowPosition,
+        WindowResized,
+        WindowResolution,
+        WindowScaleFactorChanged,
+        WindowWrapper,
+    },
+};
+use winit::{
+    application::ApplicationHandler,
+    event::WindowEvent as WinitWindowEvent,
+    event_loop::{
+        ActiveEventLoop,
+        ControlFlow,
+        EventLoop,
+    },
+    window::{
+        Window as WinitWindow,
+        WindowAttributes,
+        WindowId,
+    },
+};
+
+use super::{
+    drain_as_input_events,
+    push_device_event,
+    push_window_event,
+    set_scale_factor,
+};
+use crate::platform::input::InputEventBuffer;
 
 /// Application handler state machine
 enum AppHandler {
-    Initializing { app: Option<App> },
+    Initializing {
+        app: Option<App>,
+    },
     Running {
         window: Arc<WinitWindow>,
         bevy_window_entity: Entity,
@@ -128,7 +165,8 @@ impl AppHandler {
     /// Initialize the window and transition to Running state.
     ///
     /// This is called on the first `resumed()` event from winit.
-    /// Subsequent `resumed()` calls are ignored to prevent double initialization.
+    /// Subsequent `resumed()` calls are ignored to prevent double
+    /// initialization.
     ///
     /// # Errors
     /// Returns an error if window creation or RawHandleWrapper creation fails.
@@ -165,7 +203,8 @@ impl AppHandler {
             .with_title("Marathon")
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
-        let winit_window = event_loop.create_window(window_attributes)
+        let winit_window = event_loop
+            .create_window(window_attributes)
             .map_err(|e| format!("Failed to create window: {}", e))?;
         let winit_window = Arc::new(winit_window);
         info!("Created window before app.finish()");
@@ -173,11 +212,13 @@ impl AppHandler {
         let physical_size = winit_window.inner_size();
         let scale_factor = winit_window.scale_factor();
 
-        // Set the scale factor in the input bridge so mouse coords are converted correctly
+        // Set the scale factor in the input bridge so mouse coords are converted
+        // correctly
         set_scale_factor(scale_factor);
 
         // Create window entity with all required components (use logical size)
-        // Convert physical pixels to logical pixels using proper floating-point division
+        // Convert physical pixels to logical pixels using proper floating-point
+        // division
         let logical_width = (physical_size.width as f64 / scale_factor) as u32;
         let logical_height = (physical_size.height as f64 / scale_factor) as u32;
 
@@ -200,15 +241,15 @@ impl AppHandler {
         let raw_handle_wrapper = RawHandleWrapper::new(&window_wrapper)
             .map_err(|e| format!("Failed to create RawHandleWrapper: {}", e))?;
 
-        let window_entity = bevy_app.world_mut().spawn((
-            window,
-            PrimaryWindow,
-            raw_handle_wrapper,
-        )).id();
+        let window_entity = bevy_app
+            .world_mut()
+            .spawn((window, PrimaryWindow, raw_handle_wrapper))
+            .id();
         info!("Created window entity {}", window_entity);
 
         // Send initialization event (only WindowCreated, like Bevy does)
-        // WindowResized and WindowScaleFactorChanged should only fire in response to actual winit events
+        // WindowResized and WindowScaleFactorChanged should only fire in response to
+        // actual winit events
         send_window_created(&mut bevy_app, window_entity);
 
         // Now finish the app - the renderer will initialize with the window
@@ -285,13 +326,15 @@ impl ApplicationHandler for AppHandler {
         push_window_event(&event);
 
         match event {
-            WinitWindowEvent::CloseRequested => {
+            | WinitWindowEvent::CloseRequested => {
                 self.shutdown(event_loop);
-            }
+            },
 
-            WinitWindowEvent::Resized(physical_size) => {
+            | WinitWindowEvent::Resized(physical_size) => {
                 // Update the Bevy Window component's physical resolution
-                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                if let Some(mut window_component) =
+                    bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity)
+                {
                     window_component
                         .resolution
                         .set_physical_resolution(physical_size.width, physical_size.height);
@@ -300,9 +343,9 @@ impl ApplicationHandler for AppHandler {
                 // Notify Bevy systems of window resize
                 let scale_factor = window.scale_factor();
                 send_window_resized(bevy_app, *bevy_window_entity, physical_size, scale_factor);
-            }
+            },
 
-            WinitWindowEvent::RedrawRequested => {
+            | WinitWindowEvent::RedrawRequested => {
                 // Collect input events from platform bridge
                 let input_events = drain_as_input_events();
 
@@ -324,11 +367,13 @@ impl ApplicationHandler for AppHandler {
 
                 // Request next frame immediately (unbounded loop)
                 window.request_redraw();
-            }
+            },
 
-            WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            | WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 // Update the Bevy Window component's scale factor
-                if let Some(mut window_component) = bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity) {
+                if let Some(mut window_component) =
+                    bevy_app.world_mut().get_mut::<Window>(*bevy_window_entity)
+                {
                     let prior_factor = window_component.resolution.scale_factor();
 
                     // Use the proper API that applies to physical size
@@ -344,9 +389,9 @@ impl ApplicationHandler for AppHandler {
                         prior_factor, scale_factor, bevy_window_entity
                     );
                 }
-            }
+            },
 
-            _ => {}
+            | _ => {},
         }
     }
 
@@ -363,18 +408,19 @@ impl ApplicationHandler for AppHandler {
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
         // On iOS/Android, the app is being backgrounded
-        // RedrawRequested events won't fire while suspended, so the unbounded loop naturally pauses
+        // RedrawRequested events won't fire while suspended, so the unbounded loop
+        // naturally pauses
         info!("App suspended (backgrounded on mobile)");
 
-        // TODO(@siennathesane): Implement AppLifecycle resource to track app state
-        // Similar to Bevy's WinitPlugin, we should:
+        // TODO(@siennathesane): Implement AppLifecycle resource to track app
+        // state Similar to Bevy's WinitPlugin, we should:
         // 1. Set AppLifecycle::WillSuspend before suspending
         // 2. Let the schedule run one last frame to react to suspension
         // 3. Potentially release GPU resources to save memory
         // 4. Stop requesting redraws to save battery
         //
-        // For now, the unbounded loop will naturally pause since RedrawRequested
-        // events won't fire while suspended anyway.
+        // For now, the unbounded loop will naturally pause since
+        // RedrawRequested events won't fire while suspended anyway.
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
@@ -389,12 +435,14 @@ impl ApplicationHandler for AppHandler {
 
 /// Run the application executor with a custom event loop.
 ///
-/// This executor owns the winit event loop directly (instead of using Bevy's WinitPlugin)
-/// and drives both the window and Bevy's ECS in unbounded mode for maximum performance.
+/// This executor owns the winit event loop directly (instead of using Bevy's
+/// WinitPlugin) and drives both the window and Bevy's ECS in unbounded mode for
+/// maximum performance.
 ///
 /// # Unbounded Execution
 ///
-/// The executor runs as fast as possible using `ControlFlow::Poll`, which means:
+/// The executor runs as fast as possible using `ControlFlow::Poll`, which
+/// means:
 /// - The window event loop runs continuously without waiting for events
 /// - Bevy's ECS `app.update()` is called on every frame
 /// - Both rendering and game logic run unbounded (no frame rate cap)
@@ -406,7 +454,8 @@ impl ApplicationHandler for AppHandler {
 ///
 /// 1. Event loop starts and calls `resumed()` (winit requirement)
 /// 2. Window and window entity are created BEFORE `app.finish()`
-/// 3. Bevy's renderer initializes during `app.finish()` with the window available
+/// 3. Bevy's renderer initializes during `app.finish()` with the window
+///    available
 /// 4. App transitions to Running state and begins the render loop
 ///
 /// # Errors
@@ -428,11 +477,12 @@ impl ApplicationHandler for AppHandler {
 /// desktop::run_executor(app).expect("Failed to run executor");
 /// ```
 pub fn run_executor(app: App) -> Result<(), Box<dyn std::error::Error>> {
-    // Create event loop (using default type for now, WakeUp will be added when implementing battery mode)
+    // Create event loop (using default type for now, WakeUp will be added when
+    // implementing battery mode)
     let event_loop = EventLoop::new()?;
 
-    // TODO(@siennathesane): Add battery power detection and adaptive frame/tick rate limiting
-    // When on battery: reduce to 60fps cap, lower ECS tick rate
+    // TODO(@siennathesane): Add battery power detection and adaptive frame/tick
+    // rate limiting When on battery: reduce to 60fps cap, lower ECS tick rate
     // When plugged in: run unbounded for maximum performance
     // See GitHub issue #TBD for implementation details
 

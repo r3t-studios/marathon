@@ -1,8 +1,16 @@
 //! Integration tests for EngineBridge command/event routing
 
-use libmarathon::engine::{EngineBridge, EngineCommand, EngineCore, EngineEvent};
-use libmarathon::networking::SessionId;
 use std::time::Duration;
+
+use libmarathon::{
+    engine::{
+        EngineBridge,
+        EngineCommand,
+        EngineCore,
+        EngineEvent,
+    },
+    networking::SessionId,
+};
 use tokio::time::timeout;
 
 /// Get appropriate timeout for engine operations
@@ -41,9 +49,7 @@ async fn test_command_routing() {
     let engine_handle = tokio::spawn(async move {
         // Run engine for a short time
         let core = EngineCore::new(handle, ":memory:");
-        timeout(engine_timeout(), core.run())
-            .await
-            .ok();
+        timeout(engine_timeout(), core.run()).await.ok();
     });
 
     // Give engine time to start
@@ -92,9 +98,7 @@ async fn test_event_routing() {
     // Spawn engine
     let engine_handle = tokio::spawn(async move {
         let core = EngineCore::new(handle, ":memory:");
-        timeout(engine_timeout(), core.run())
-            .await
-            .ok();
+        timeout(engine_timeout(), core.run()).await.ok();
     });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -129,9 +133,7 @@ async fn test_networking_lifecycle() {
 
     let engine_handle = tokio::spawn(async move {
         let core = EngineCore::new(handle, ":memory:");
-        timeout(engine_timeout(), core.run())
-            .await
-            .ok();
+        timeout(engine_timeout(), core.run()).await.ok();
     });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -177,9 +179,7 @@ async fn test_join_session_routing() {
 
     let engine_handle = tokio::spawn(async move {
         let core = EngineCore::new(handle, ":memory:");
-        timeout(engine_timeout(), core.run())
-            .await
-            .ok();
+        timeout(engine_timeout(), core.run()).await.ok();
     });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -218,9 +218,7 @@ async fn test_command_ordering() {
 
     let engine_handle = tokio::spawn(async move {
         let core = EngineCore::new(handle, ":memory:");
-        timeout(engine_timeout(), core.run())
-            .await
-            .ok();
+        timeout(engine_timeout(), core.run()).await.ok();
     });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -236,7 +234,9 @@ async fn test_command_ordering() {
 
     let events1 = bridge.poll_events();
     assert!(
-        events1.iter().any(|e| matches!(e, EngineEvent::NetworkingStarted { .. })),
+        events1
+            .iter()
+            .any(|e| matches!(e, EngineEvent::NetworkingStarted { .. })),
         "Should receive first NetworkingStarted"
     );
 
@@ -263,8 +263,16 @@ async fn test_command_ordering() {
         .filter(|e| matches!(e, EngineEvent::NetworkingStopped))
         .collect();
 
-    assert_eq!(started_events.len(), 1, "Should have 1 NetworkingStarted event in second batch");
-    assert_eq!(stopped_events.len(), 1, "Should have 1 NetworkingStopped event");
+    assert_eq!(
+        started_events.len(),
+        1,
+        "Should have 1 NetworkingStarted event in second batch"
+    );
+    assert_eq!(
+        stopped_events.len(),
+        1,
+        "Should have 1 NetworkingStopped event"
+    );
 
     // Cleanup
     drop(bridge);
@@ -286,7 +294,8 @@ async fn test_shutdown_command() {
     // Send Shutdown command
     bridge.send_command(EngineCommand::Shutdown);
 
-    // Wait for engine to exit (should be quick since it's just processing the command)
+    // Wait for engine to exit (should be quick since it's just processing the
+    // command)
     let result = timeout(Duration::from_millis(100), engine_handle).await;
 
     assert!(

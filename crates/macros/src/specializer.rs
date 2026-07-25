@@ -1,17 +1,38 @@
 use bevy_macro_utils::{
-    fq_std::{FQDefault, FQResult},
+    fq_std::{
+        FQDefault,
+        FQResult,
+    },
     get_struct_fields,
 };
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{format_ident, quote};
+use quote::{
+    format_ident,
+    quote,
+};
 use syn::{
-    parse::{Parse, ParseStream},
-    parse_macro_input, parse_quote,
+    DeriveInput,
+    Expr,
+    Field,
+    Ident,
+    Index,
+    Member,
+    Meta,
+    MetaList,
+    Pat,
+    Path,
+    Token,
+    Type,
+    WherePredicate,
+    parse::{
+        Parse,
+        ParseStream,
+    },
+    parse_macro_input,
+    parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
-    DeriveInput, Expr, Field, Ident, Index, Member, Meta, MetaList, Pat, Path, Token, Type,
-    WherePredicate,
 };
 
 const SPECIALIZE_ATTR_IDENT: &str = "specialize";
@@ -50,13 +71,13 @@ enum Key {
 impl Key {
     fn expr(&self) -> Expr {
         match self {
-            Key::Whole => parse_quote!(key),
-            Key::Default => parse_quote!(#FQDefault::default()),
-            Key::Index(index) => {
+            | Key::Whole => parse_quote!(key),
+            | Key::Default => parse_quote!(#FQDefault::default()),
+            | Key::Index(index) => {
                 let member = Member::Unnamed(index.clone());
                 parse_quote!(key.#member)
-            }
-            Key::Custom(expr) => expr.clone(),
+            },
+            | Key::Custom(expr) => expr.clone(),
         }
     }
 }
@@ -141,7 +162,7 @@ fn get_field_info(
         let mut key = Key::Index(key_index);
         for attr in &field.attrs {
             match &attr.meta {
-                Meta::List(MetaList { path, tokens, .. }) if path.is_ident(&KEY_ATTR_IDENT) => {
+                | Meta::List(MetaList { path, tokens, .. }) if path.is_ident(&KEY_ATTR_IDENT) => {
                     let owned_tokens = tokens.clone().into();
                     let Ok(parsed_key) = syn::parse::<Key>(owned_tokens) else {
                         return Err(syn::Error::new(
@@ -160,8 +181,8 @@ fn get_field_info(
                         ));
                     }
                     use_key_field = false;
-                }
-                _ => {}
+                },
+                | _ => {},
             }
         }
 
@@ -189,8 +210,8 @@ fn get_specialize_targets(
     derive_name: &str,
 ) -> syn::Result<SpecializeImplTargets> {
     let specialize_attr = ast.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident(SPECIALIZE_ATTR_IDENT)
-            && let Meta::List(meta_list) = &attr.meta
+        if attr.path().is_ident(SPECIALIZE_ATTR_IDENT) &&
+            let Meta::List(meta_list) = &attr.meta
         {
             return Some(meta_list);
         }
@@ -199,17 +220,19 @@ fn get_specialize_targets(
     let Some(specialize_meta_list) = specialize_attr else {
         return Err(syn::Error::new(
             Span::call_site(),
-            format!("#[derive({derive_name})] must be accompanied by #[specialize(..targets)].\n Example usages: #[specialize(RenderPipeline)], #[specialize(all)]")
+            format!(
+                "#[derive({derive_name})] must be accompanied by #[specialize(..targets)].\n Example usages: #[specialize(RenderPipeline)], #[specialize(all)]"
+            ),
         ));
     };
     syn::parse::<SpecializeImplTargets>(specialize_meta_list.tokens.clone().into())
 }
 
 macro_rules! guard {
-    ($expr: expr) => {
+    ($expr:expr) => {
         match $expr {
-            Ok(__val) => __val,
-            Err(err) => return err.to_compile_error().into(),
+            | Ok(__val) => __val,
+            | Err(err) => return err.to_compile_error().into(),
         }
     };
 }
@@ -239,13 +262,13 @@ pub fn impl_specializer(input: TokenStream) -> TokenStream {
     let key_patterns: Vec<Pat> = key_idents
         .iter()
         .map(|key_ident| match key_ident {
-            Some(key_ident) => parse_quote!(#key_ident),
-            None => ignore_pat.clone(),
+            | Some(key_ident) => parse_quote!(#key_ident),
+            | None => ignore_pat.clone(),
         })
         .collect();
 
     match targets {
-        SpecializeImplTargets::All => impl_specialize_all(
+        | SpecializeImplTargets::All => impl_specialize_all(
             &specialize_path,
             &ecs_path,
             &ast,
@@ -253,7 +276,7 @@ pub fn impl_specializer(input: TokenStream) -> TokenStream {
             &key_patterns,
             &key_tuple_idents,
         ),
-        SpecializeImplTargets::Specific(targets) => targets
+        | SpecializeImplTargets::Specific(targets) => targets
             .iter()
             .map(|target| {
                 impl_specialize_specific(

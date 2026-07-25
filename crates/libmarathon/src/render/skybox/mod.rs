@@ -1,31 +1,44 @@
-use bevy_app::{App, Plugin};
-use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer, Handle};
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_asset::{
+    AssetServer,
+    Handle,
+    embedded_asset,
+    load_embedded_asset,
+};
 use bevy_camera::Exposure;
 use bevy_ecs::{
-    prelude::{Component, Entity},
-    query::{QueryItem, With},
+    prelude::{
+        Component,
+        Entity,
+    },
+    query::{
+        QueryItem,
+        With,
+    },
     reflect::ReflectComponent,
     resource::Resource,
     schedule::IntoScheduleConfigs,
-    system::{Commands, Query, Res, ResMut},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+    },
 };
-use bevy_image::{BevyDefault, Image};
-use bevy_math::{Mat4, Quat};
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use crate::render::{
-    extract_component::{
-        ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
-        UniformComponentPlugin,
-    },
-    render_asset::RenderAssets,
-    render_resource::{
-        binding_types::{sampler, texture_cube, uniform_buffer},
-        *,
-    },
-    renderer::RenderDevice,
-    texture::GpuImage,
-    view::{ExtractedView, Msaa, ViewTarget, ViewUniform, ViewUniforms},
-    Render, RenderApp, RenderStartup, RenderSystems,
+use bevy_image::{
+    BevyDefault,
+    Image,
+};
+use bevy_math::{
+    Mat4,
+    Quat,
+};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
 };
 use bevy_shader::Shader;
 use bevy_transform::components::Transform;
@@ -33,8 +46,38 @@ use bevy_utils::default;
 use prepass::SkyboxPrepassPipeline;
 
 use crate::render::{
-    core_3d::CORE_3D_DEPTH_FORMAT, prepass::PreviousViewUniforms,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::CORE_3D_DEPTH_FORMAT,
+    extract_component::{
+        ComponentUniforms,
+        DynamicUniformIndex,
+        ExtractComponent,
+        ExtractComponentPlugin,
+        UniformComponentPlugin,
+    },
+    prepass::PreviousViewUniforms,
+    render_asset::RenderAssets,
+    render_resource::{
+        binding_types::{
+            sampler,
+            texture_cube,
+            uniform_buffer,
+        },
+        *,
+    },
+    renderer::RenderDevice,
     skybox::prepass::init_skybox_prepass_pipeline,
+    texture::GpuImage,
+    view::{
+        ExtractedView,
+        Msaa,
+        ViewTarget,
+        ViewUniform,
+        ViewUniforms,
+    },
 };
 
 pub mod prepass;
@@ -86,13 +129,13 @@ impl Plugin for SkyboxPlugin {
 pub struct Skybox {
     pub image: Handle<Image>,
     /// Scale factor applied to the skybox image.
-    /// After applying this multiplier to the image samples, the resulting values should
-    /// be in units of [cd/m^2](https://en.wikipedia.org/wiki/Candela_per_square_metre).
+    /// After applying this multiplier to the image samples, the resulting
+    /// values should be in units of [cd/m^2](https://en.wikipedia.org/wiki/Candela_per_square_metre).
     pub brightness: f32,
 
     /// View space rotation applied to the skybox cubemap.
-    /// This is useful for users who require a different axis, such as the Z-axis, to serve
-    /// as the vertical axis.
+    /// This is useful for users who require a different axis, such as the
+    /// Z-axis, to serve as the vertical axis.
     pub rotation: Quat,
 }
 
@@ -107,9 +150,9 @@ impl Default for Skybox {
 }
 
 impl ExtractComponent for Skybox {
+    type Out = (Self, SkyboxUniforms);
     type QueryData = (&'static Self, Option<&'static Exposure>);
     type QueryFilter = ();
-    type Out = (Self, SkyboxUniforms);
 
     fn extract_component(
         (skybox, exposure): QueryItem<'_, '_, Self::QueryData>,
@@ -230,7 +273,8 @@ impl SpecializedRenderPipeline for SkyboxPipeline {
                     } else {
                         TextureFormat::bevy_default()
                     },
-                    // BlendState::REPLACE is not needed here, and None will be potentially much faster in some cases.
+                    // BlendState::REPLACE is not needed here, and None will be potentially much
+                    // faster in some cases.
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],

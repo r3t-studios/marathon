@@ -1,24 +1,47 @@
-use core::mem::{self, size_of};
+use core::mem::{
+    self,
+    size_of,
+};
 use std::sync::OnceLock;
 
-use bevy_asset::{prelude::AssetChanged, Assets};
+use bevy_asset::{
+    Assets,
+    prelude::AssetChanged,
+};
 use bevy_camera::visibility::ViewVisibility;
 use bevy_ecs::prelude::*;
 use bevy_math::Mat4;
-use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
-use bevy_platform::collections::hash_map::Entry;
-use crate::render::render_resource::{Buffer, BufferDescriptor};
-use crate::render::sync_world::{MainEntity, MainEntityHashMap, MainEntityHashSet};
-use crate::render::{
-    batching::NoAutomaticBatching,
-    render_resource::BufferUsages,
-    renderer::{RenderDevice, RenderQueue},
-    Extract,
+use bevy_mesh::skinning::{
+    SkinnedMesh,
+    SkinnedMeshInverseBindposes,
 };
+use bevy_platform::collections::hash_map::Entry;
 use bevy_transform::prelude::GlobalTransform;
-use offset_allocator::{Allocation, Allocator};
+use offset_allocator::{
+    Allocation,
+    Allocator,
+};
 use smallvec::SmallVec;
 use tracing::error;
+
+use crate::render::{
+    Extract,
+    batching::NoAutomaticBatching,
+    render_resource::{
+        Buffer,
+        BufferDescriptor,
+        BufferUsages,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_world::{
+        MainEntity,
+        MainEntityHashMap,
+        MainEntityHashSet,
+    },
+};
 
 /// Maximum number of joints supported for skinned meshes.
 ///
@@ -175,14 +198,16 @@ impl SkinUniforms {
 
 /// Allocation information about each skin.
 struct SkinUniformInfo {
-    /// The allocation of the joints within the [`SkinUniforms::current_buffer`].
+    /// The allocation of the joints within the
+    /// [`SkinUniforms::current_buffer`].
     allocation: Allocation,
     /// The entities that comprise the joints.
     joints: Vec<MainEntity>,
 }
 
 impl SkinUniformInfo {
-    /// The offset in joints within the [`SkinUniforms::current_staging_buffer`].
+    /// The offset in joints within the
+    /// [`SkinUniforms::current_staging_buffer`].
     fn offset(&self) -> u32 {
         self.allocation.offset * JOINTS_PER_ALLOCATION_UNIT
     }
@@ -214,8 +239,8 @@ pub fn prepare_skins(
     // Resize the buffers if necessary. Include extra space equal to `MAX_JOINTS`
     // because we need to be able to bind a full uniform buffer's worth of data
     // if skins use uniform buffers on this platform.
-    let needed_size = (uniform.current_staging_buffer.len() as u64 + MAX_JOINTS as u64)
-        * size_of::<Mat4>() as u64;
+    let needed_size = (uniform.current_staging_buffer.len() as u64 + MAX_JOINTS as u64) *
+        size_of::<Mat4>() as u64;
     if uniform.current_buffer.size() < needed_size {
         let mut new_size = uniform.current_buffer.size();
         while new_size < needed_size {
@@ -547,10 +572,10 @@ fn add_skin(
                 skinned_mesh_inverse_bindposes.get(joint_index)
             });
         let joint_matrix = match (skinned_mesh_inverse_bindpose, joints.get(joint)) {
-            (Some(skinned_mesh_inverse_bindpose), Ok(transform)) => {
+            | (Some(skinned_mesh_inverse_bindpose), Ok(transform)) => {
                 transform.affine() * *skinned_mesh_inverse_bindpose
-            }
-            _ => Mat4::IDENTITY,
+            },
+            | _ => Mat4::IDENTITY,
         };
 
         // Write in the new joint matrix, growing the staging buffer if
@@ -606,8 +631,8 @@ fn remove_skin(skin_uniforms: &mut SkinUniforms, skinned_mesh_entity: MainEntity
     skin_uniforms.total_joints -= old_skin_uniform_info.joints.len();
 }
 
-// NOTE: The skinned joints uniform buffer has to be bound at a dynamic offset per
-// entity and so cannot currently be batched on WebGL 2.
+// NOTE: The skinned joints uniform buffer has to be bound at a dynamic offset
+// per entity and so cannot currently be batched on WebGL 2.
 pub fn no_automatic_skin_batching(
     mut commands: Commands,
     query: Query<Entity, (With<SkinnedMesh>, Without<NoAutomaticBatching>)>,

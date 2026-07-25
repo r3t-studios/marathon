@@ -5,8 +5,6 @@
 
 use std::collections::HashMap;
 
-
-
 use crate::networking::error::{
     NetworkingError,
     Result,
@@ -51,7 +49,9 @@ pub type NodeId = uuid::Uuid;
 /// clock1.merge(&clock2); // node1: 1, node2: 1
 /// assert!(clock1.happened_before(&clock2) == false);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Default)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Default,
+)]
 pub struct VectorClock {
     /// Map from node ID to logical timestamp
     pub timestamps: HashMap<NodeId, u64>,
@@ -452,7 +452,8 @@ mod tests {
         clock.increment(node);
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&clock).map(|b| b.to_vec())?;
-        let deserialized: VectorClock = rkyv::from_bytes::<VectorClock, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: VectorClock =
+            rkyv::from_bytes::<VectorClock, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(clock, deserialized);
 

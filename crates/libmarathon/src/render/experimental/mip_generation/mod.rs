@@ -7,48 +7,127 @@
 
 use core::array;
 
-use crate::render::core_3d::{
-    graph::{Core3d, Node3d},
-    prepare_core_3d_depth_textures,
+use bevy_app::{
+    App,
+    Plugin,
 };
-use bevy_app::{App, Plugin};
-use bevy_asset::{embedded_asset, load_embedded_asset, Handle};
-use bevy_derive::{Deref, DerefMut};
+use bevy_asset::{
+    Handle,
+    embedded_asset,
+    load_embedded_asset,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    prelude::{resource_exists, Without},
-    query::{Or, QueryState, With},
+    prelude::{
+        Without,
+        resource_exists,
+    },
+    query::{
+        Or,
+        QueryState,
+        With,
+    },
     resource::Resource,
     schedule::IntoScheduleConfigs as _,
-    system::{lifetimeless::Read, Commands, Local, Query, Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Commands,
+        Local,
+        Query,
+        Res,
+        ResMut,
+        lifetimeless::Read,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
-use bevy_math::{uvec2, UVec2, Vec4Swizzles as _};
-use crate::render::{batching::gpu_preprocessing::GpuPreprocessingSupport, RenderStartup};
-use crate::render::{
-    experimental::occlusion_culling::{
-        OcclusionCulling, OcclusionCullingSubview, OcclusionCullingSubviewEntities,
-    },
-    render_graph::{Node, NodeRunError, RenderGraphContext, RenderGraphExt},
-    render_resource::{
-        binding_types::{sampler, texture_2d, texture_2d_multisampled, texture_storage_2d},
-        BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
-        CachedComputePipelineId, ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor,
-        Extent3d, IntoBinding, PipelineCache, PushConstantRange, Sampler, SamplerBindingType,
-        SamplerDescriptor, ShaderStages, SpecializedComputePipeline, SpecializedComputePipelines,
-        StorageTextureAccess, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat,
-        TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
-    },
-    renderer::{RenderContext, RenderDevice},
-    texture::TextureCache,
-    view::{ExtractedView, NoIndirectDrawing, ViewDepthTexture},
-    Render, RenderApp, RenderSystems,
+use bevy_math::{
+    UVec2,
+    Vec4Swizzles as _,
+    uvec2,
 };
 use bevy_shader::Shader;
 use bevy_utils::default;
 use bitflags::bitflags;
 use tracing::debug;
+
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    batching::gpu_preprocessing::GpuPreprocessingSupport,
+    core_3d::{
+        graph::{
+            Core3d,
+            Node3d,
+        },
+        prepare_core_3d_depth_textures,
+    },
+    experimental::occlusion_culling::{
+        OcclusionCulling,
+        OcclusionCullingSubview,
+        OcclusionCullingSubviewEntities,
+    },
+    render_graph::{
+        Node,
+        NodeRunError,
+        RenderGraphContext,
+        RenderGraphExt,
+    },
+    render_resource::{
+        BindGroup,
+        BindGroupEntries,
+        BindGroupLayout,
+        BindGroupLayoutEntries,
+        CachedComputePipelineId,
+        ComputePassDescriptor,
+        ComputePipeline,
+        ComputePipelineDescriptor,
+        Extent3d,
+        IntoBinding,
+        PipelineCache,
+        PushConstantRange,
+        Sampler,
+        SamplerBindingType,
+        SamplerDescriptor,
+        ShaderStages,
+        SpecializedComputePipeline,
+        SpecializedComputePipelines,
+        StorageTextureAccess,
+        TextureAspect,
+        TextureDescriptor,
+        TextureDimension,
+        TextureFormat,
+        TextureSampleType,
+        TextureUsages,
+        TextureView,
+        TextureViewDescriptor,
+        TextureViewDimension,
+        binding_types::{
+            sampler,
+            texture_2d,
+            texture_2d_multisampled,
+            texture_storage_2d,
+        },
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+    },
+    texture::TextureCache,
+    view::{
+        ExtractedView,
+        NoIndirectDrawing,
+        ViewDepthTexture,
+    },
+};
 
 /// Identifies the `downsample_depth.wgsl` shader.
 #[derive(Resource, Deref)]
@@ -291,8 +370,8 @@ pub struct DownsampleDepthPipeline {
 }
 
 impl DownsampleDepthPipeline {
-    /// Creates a new [`DownsampleDepthPipeline`] from a bind group layout and the downsample
-    /// shader.
+    /// Creates a new [`DownsampleDepthPipeline`] from a bind group layout and
+    /// the downsample shader.
     ///
     /// This doesn't actually specialize the pipeline; that must be done
     /// afterward.
@@ -650,8 +729,7 @@ impl ViewDepthPyramid {
         sampler: &'a Sampler,
     ) -> BindGroup
     where
-        R: IntoBinding<'a>,
-    {
+        R: IntoBinding<'a>, {
         render_device.create_bind_group(
             label,
             bind_group_layout,
@@ -770,11 +848,11 @@ fn prepare_downsample_depth_view_bind_groups(
                         &downsample_depth_pipelines.first.bind_group_layout
                     },
                     match (view_depth_texture, shadow_occlusion_culling) {
-                        (Some(view_depth_texture), _) => view_depth_texture.view(),
-                        (None, Some(shadow_occlusion_culling)) => {
+                        | (Some(view_depth_texture), _) => view_depth_texture.view(),
+                        | (None, Some(shadow_occlusion_culling)) => {
                             &shadow_occlusion_culling.depth_texture_view
-                        }
-                        (None, None) => panic!("Should never happen"),
+                        },
+                        | (None, None) => panic!("Should never happen"),
                     },
                     &downsample_depth_pipelines.sampler,
                 ),

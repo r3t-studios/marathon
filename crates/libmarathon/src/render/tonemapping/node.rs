@@ -1,22 +1,50 @@
 use std::sync::Mutex;
 
-use crate::render::tonemapping::{TonemappingLuts, TonemappingPipeline, ViewTonemappingPipeline};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
+};
 
-use bevy_ecs::{prelude::*, query::QueryItem};
+use super::{
+    Tonemapping,
+    get_lut_bindings,
+};
 use crate::render::{
     diagnostic::RecordDiagnostics,
     render_asset::RenderAssets,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
     render_resource::{
-        BindGroup, BindGroupEntries, BufferId, LoadOp, Operations, PipelineCache,
-        RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TextureViewId,
+        BindGroup,
+        BindGroupEntries,
+        BufferId,
+        LoadOp,
+        Operations,
+        PipelineCache,
+        RenderPassColorAttachment,
+        RenderPassDescriptor,
+        StoreOp,
+        TextureViewId,
     },
     renderer::RenderContext,
-    texture::{FallbackImage, GpuImage},
-    view::{ViewTarget, ViewUniformOffset, ViewUniforms},
+    texture::{
+        FallbackImage,
+        GpuImage,
+    },
+    tonemapping::{
+        TonemappingLuts,
+        TonemappingPipeline,
+        ViewTonemappingPipeline,
+    },
+    view::{
+        ViewTarget,
+        ViewUniformOffset,
+        ViewUniforms,
+    },
 };
-
-use super::{get_lut_bindings, Tonemapping};
 
 #[derive(Default)]
 pub struct TonemappingNode {
@@ -80,15 +108,15 @@ impl ViewNode for TonemappingNode {
 
         let mut cached_bind_group = self.cached_bind_group.lock().unwrap();
         let bind_group = match &mut *cached_bind_group {
-            Some((buffer_id, texture_id, lut_id, bind_group))
-                if view_uniforms_id == *buffer_id
-                    && source.id() == *texture_id
-                    && *lut_id != fallback_image.d3.texture_view.id()
-                    && !tonemapping_changed =>
+            | Some((buffer_id, texture_id, lut_id, bind_group))
+                if view_uniforms_id == *buffer_id &&
+                    source.id() == *texture_id &&
+                    *lut_id != fallback_image.d3.texture_view.id() &&
+                    !tonemapping_changed =>
             {
                 bind_group
-            }
-            cached_bind_group => {
+            },
+            | cached_bind_group => {
                 let tonemapping_luts = world.resource::<TonemappingLuts>();
 
                 let lut_bindings =
@@ -113,7 +141,7 @@ impl ViewNode for TonemappingNode {
                     bind_group,
                 ));
                 bind_group
-            }
+            },
         };
 
         let pass_descriptor = RenderPassDescriptor {

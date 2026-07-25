@@ -97,10 +97,11 @@ pub trait SyncComponent: Component + Reflect + Sized {
     fn merge(&mut self, remote: Self, clock_cmp: ClockComparison) -> ComponentMergeDecision;
 }
 
-/// Marker component indicating that an entity should be synchronized across the network.
+/// Marker component indicating that an entity should be synchronized across the
+/// network.
 ///
-/// When this component is added to an entity, the `auto_insert_sync_components` system
-/// will automatically add the required infrastructure components:
+/// When this component is added to an entity, the `auto_insert_sync_components`
+/// system will automatically add the required infrastructure components:
 /// - `NetworkedEntity` - for network synchronization
 /// - `Persisted` - for persistence
 /// - `NetworkedTransform` - if the entity has a `Transform` component

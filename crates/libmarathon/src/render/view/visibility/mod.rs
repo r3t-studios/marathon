@@ -1,7 +1,14 @@
 use core::any::TypeId;
 
-use bevy_ecs::{component::Component, entity::Entity, prelude::ReflectComponent};
-use bevy_reflect::{prelude::ReflectDefault, Reflect};
+use bevy_ecs::{
+    component::Component,
+    entity::Entity,
+    prelude::ReflectComponent,
+};
+use bevy_reflect::{
+    Reflect,
+    prelude::ReflectDefault,
+};
 use bevy_utils::TypeIdMap;
 
 use crate::render::sync_world::MainEntity;
@@ -23,32 +30,28 @@ pub struct RenderVisibleEntities {
 impl RenderVisibleEntities {
     pub fn get<QF>(&self) -> &[(Entity, MainEntity)]
     where
-        QF: 'static,
-    {
+        QF: 'static, {
         match self.entities.get(&TypeId::of::<QF>()) {
-            Some(entities) => &entities[..],
-            None => &[],
+            | Some(entities) => &entities[..],
+            | None => &[],
         }
     }
 
     pub fn iter<QF>(&self) -> impl DoubleEndedIterator<Item = &(Entity, MainEntity)>
     where
-        QF: 'static,
-    {
+        QF: 'static, {
         self.get::<QF>().iter()
     }
 
     pub fn len<QF>(&self) -> usize
     where
-        QF: 'static,
-    {
+        QF: 'static, {
         self.get::<QF>().len()
     }
 
     pub fn is_empty<QF>(&self) -> bool
     where
-        QF: 'static,
-    {
+        QF: 'static, {
         self.get::<QF>().is_empty()
     }
 }

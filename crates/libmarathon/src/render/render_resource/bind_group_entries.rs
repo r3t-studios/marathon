@@ -1,7 +1,13 @@
 use variadics_please::all_tuples_with_size;
-use wgpu::{BindGroupEntry, BindingResource};
+use wgpu::{
+    BindGroupEntry,
+    BindingResource,
+};
 
-use super::{Sampler, TextureView};
+use super::{
+    Sampler,
+    TextureView,
+};
 
 /// Helper for constructing bindgroups.
 ///

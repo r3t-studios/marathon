@@ -6,21 +6,28 @@
 //! - Session persistence and recovery
 //!
 //! NOTE: These tests use manual GossipBridge creation for testing session
-//! lifecycle behaviors. For actual multi-node sync tests, see multi_node_sync_test.rs
-//! which uses real iroh-gossip networking.
+//! lifecycle behaviors. For actual multi-node sync tests, see
+//! multi_node_sync_test.rs which uses real iroh-gossip networking.
 
 mod test_utils;
 
 use std::time::Duration;
 
 use anyhow::Result;
-use bevy::prelude::{App, FixedUpdate, Transform};
+use bevy::prelude::{
+    App,
+    FixedUpdate,
+    Transform,
+};
 use libmarathon::networking::{
     CurrentSession,
     GossipBridge,
     SessionState,
 };
-use test_utils::{TestContext, create_test_app_maybe_offline};
+use test_utils::{
+    TestContext,
+    create_test_app_maybe_offline,
+};
 use uuid::Uuid;
 
 /// Helper to ensure FixedUpdate runs (since it's on a fixed timestep)
@@ -88,7 +95,8 @@ async fn test_session_transitions_to_joining() -> Result<()> {
     let bridge = GossipBridge::new(node_id);
     app.insert_resource(bridge);
 
-    // Transition to Joining manually (in real app, this happens when StartNetworking command is sent)
+    // Transition to Joining manually (in real app, this happens when
+    // StartNetworking command is sent)
     {
         let mut current_session = app.world_mut().resource_mut::<CurrentSession>();
         current_session.transition_to(SessionState::Joining);
@@ -140,10 +148,10 @@ async fn test_join_request_sent() -> Result<()> {
 
     // Simulate 1-second timeout (first node case - no peers)
     {
-        let mut join_sent = app.world_mut().resource_mut::<libmarathon::networking::JoinRequestSent>();
-        join_sent.wait_started = Some(
-            std::time::Instant::now() - Duration::from_millis(1100)
-        );
+        let mut join_sent = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::JoinRequestSent>();
+        join_sent.wait_started = Some(std::time::Instant::now() - Duration::from_millis(1100));
     }
 
     // Update again - should send JoinRequest due to timeout
@@ -151,7 +159,9 @@ async fn test_join_request_sent() -> Result<()> {
 
     // Verify JoinRequest was sent by checking JoinRequestSent resource
     {
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
         assert!(
             join_sent.sent,
             "JoinRequest should have been sent after 1-second timeout"
@@ -192,12 +202,17 @@ async fn test_session_transitions_to_active() -> Result<()> {
     // 2. Spawning entities to simulate the entities from FullState
     {
         let other_node = Uuid::new_v4();
-        let mut node_clock = app.world_mut().resource_mut::<libmarathon::networking::NodeVectorClock>();
+        let mut node_clock = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::NodeVectorClock>();
         // Add current node to clock (if not already there)
         node_clock.clock.timestamps.entry(node_id).or_insert(0);
         // Add peer node
         node_clock.clock.timestamps.insert(other_node, 1);
-        println!("✓ Simulated receiving state from peer (clock has {} nodes)", node_clock.clock.node_count());
+        println!(
+            "✓ Simulated receiving state from peer (clock has {} nodes)",
+            node_clock.clock.node_count()
+        );
     }
 
     // Spawn some entities to simulate receiving FullState with entities
@@ -206,18 +221,26 @@ async fn test_session_transitions_to_active() -> Result<()> {
         let entity2_id = Uuid::new_v4();
         let owner_node = Uuid::new_v4();
 
-        let entity1 = app.world_mut().spawn((
-            libmarathon::networking::NetworkedEntity::with_id(entity1_id, owner_node),
-            libmarathon::persistence::Persisted::with_id(entity1_id),
-        )).id();
+        let entity1 = app
+            .world_mut()
+            .spawn((
+                libmarathon::networking::NetworkedEntity::with_id(entity1_id, owner_node),
+                libmarathon::persistence::Persisted::with_id(entity1_id),
+            ))
+            .id();
 
-        let entity2 = app.world_mut().spawn((
-            libmarathon::networking::NetworkedEntity::with_id(entity2_id, owner_node),
-            libmarathon::persistence::Persisted::with_id(entity2_id),
-        )).id();
+        let entity2 = app
+            .world_mut()
+            .spawn((
+                libmarathon::networking::NetworkedEntity::with_id(entity2_id, owner_node),
+                libmarathon::persistence::Persisted::with_id(entity2_id),
+            ))
+            .id();
 
         // Register in entity map
-        let mut entity_map = app.world_mut().resource_mut::<libmarathon::networking::NetworkEntityMap>();
+        let mut entity_map = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::NetworkEntityMap>();
         entity_map.insert(entity1_id, entity1);
         entity_map.insert(entity2_id, entity2);
 
@@ -226,7 +249,9 @@ async fn test_session_transitions_to_active() -> Result<()> {
 
     // Mark JoinRequest as sent to trigger the timer
     {
-        let mut join_sent = app.world_mut().resource_mut::<libmarathon::networking::JoinRequestSent>();
+        let mut join_sent = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::JoinRequestSent>();
         join_sent.sent = true;
     }
 
@@ -294,7 +319,10 @@ async fn test_join_type_detection() -> Result<()> {
         // Simulate previous session by setting last_known_clock
         {
             let mut current_session = app.world_mut().resource_mut::<CurrentSession>();
-            current_session.last_known_clock.timestamps.insert(node_id, 5);
+            current_session
+                .last_known_clock
+                .timestamps
+                .insert(node_id, 5);
             current_session.session.entity_count = 10;
         }
 
@@ -306,12 +334,13 @@ async fn test_join_type_detection() -> Result<()> {
                 "Rejoin should have non-empty last_known_clock"
             );
             assert_eq!(
-                current_session.session.entity_count,
-                10,
+                current_session.session.entity_count, 10,
                 "Rejoin should preserve entity count"
             );
-            println!("✓ Detected rejoin (has previous clock with {} nodes)",
-                current_session.last_known_clock.node_count());
+            println!(
+                "✓ Detected rejoin (has previous clock with {} nodes)",
+                current_session.last_known_clock.node_count()
+            );
         }
     }
 
@@ -369,8 +398,7 @@ async fn test_session_persistence_recovery() -> Result<()> {
         {
             let current_session = app.world().resource::<CurrentSession>();
             assert_eq!(
-                current_session.session.id,
-                session_id,
+                current_session.session.id, session_id,
                 "Session ID should match after recovery"
             );
             println!("✓ Session recovered from database");
@@ -411,8 +439,13 @@ async fn test_join_request_waits_for_peers() -> Result<()> {
 
     // Check initial clock state
     {
-        let node_clock = app.world().resource::<libmarathon::networking::NodeVectorClock>();
-        println!("Initial clock node_count: {}", node_clock.clock.node_count());
+        let node_clock = app
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
+        println!(
+            "Initial clock node_count: {}",
+            node_clock.clock.node_count()
+        );
         println!("Clock timestamps: {:?}", node_clock.clock.timestamps);
     }
 
@@ -423,16 +456,26 @@ async fn test_join_request_waits_for_peers() -> Result<()> {
         update_with_fixed(&mut app);
         tokio::time::sleep(Duration::from_millis(16)).await;
 
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
-        let node_clock = app.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
+        let node_clock = app
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
 
-        println!("Frame {}: sent={}, wait_started={:?}, node_count={}",
-                 i, join_sent.sent, join_sent.wait_started.is_some(), node_clock.clock.node_count());
+        println!(
+            "Frame {}: sent={}, wait_started={:?}, node_count={}",
+            i,
+            join_sent.sent,
+            join_sent.wait_started.is_some(),
+            node_clock.clock.node_count()
+        );
 
         assert!(
             !join_sent.sent,
             "Frame {}: JoinRequest should NOT be sent yet (waiting for peers). node_count={}",
-            i, node_clock.clock.node_count()
+            i,
+            node_clock.clock.node_count()
         );
         assert!(
             join_sent.wait_started.is_some(),
@@ -444,18 +487,26 @@ async fn test_join_request_waits_for_peers() -> Result<()> {
     // Verify no JoinRequest was queued (check the bridge from the app's resources)
     // Note: SyncRequest may be queued by trigger_sync_on_connect system (expected)
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         // Check all queued messages
         let mut found_join_request = false;
         loop {
             let queued_msg = app_bridge.try_recv_outgoing();
             if let Some(msg) = queued_msg {
-                println!("Found queued message: {:?} (nonce: {})",
-                         std::mem::discriminant(&msg.message), msg.nonce);
+                println!(
+                    "Found queued message: {:?} (nonce: {})",
+                    std::mem::discriminant(&msg.message),
+                    msg.nonce
+                );
 
                 // Check if it's a JoinRequest (discriminant 1)
-                if matches!(msg.message, libmarathon::networking::SyncMessage::JoinRequest { .. }) {
+                if matches!(
+                    msg.message,
+                    libmarathon::networking::SyncMessage::JoinRequest { .. }
+                ) {
                     found_join_request = true;
                     break;
                 }
@@ -504,15 +555,22 @@ async fn test_join_request_sends_when_peer_connects() -> Result<()> {
     }
 
     {
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
-        assert!(!join_sent.sent, "JoinRequest should NOT be sent yet (no peers)");
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
+        assert!(
+            !join_sent.sent,
+            "JoinRequest should NOT be sent yet (no peers)"
+        );
     }
 
     println!("After 5 frames: JoinRequest NOT sent (waiting for peers)");
 
     // Simulate peer connection by adding to vector clock
     {
-        let mut node_clock = app.world_mut().resource_mut::<libmarathon::networking::NodeVectorClock>();
+        let mut node_clock = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::NodeVectorClock>();
         // Add self to clock (normally happens on first tick)
         node_clock.clock.timestamps.insert(node_id, 0);
         // Add peer to simulate connected peer
@@ -525,7 +583,9 @@ async fn test_join_request_sends_when_peer_connects() -> Result<()> {
     app.update();
 
     {
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
         assert!(
             join_sent.sent,
             "JoinRequest SHOULD be sent immediately after peer connects"
@@ -534,21 +594,30 @@ async fn test_join_request_sends_when_peer_connects() -> Result<()> {
 
     // Verify JoinRequest was queued in GossipBridge (check app's resource)
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         // Drain all messages and find the JoinRequest
         let mut found_join_request = false;
         while let Some(msg) = app_bridge.try_recv_outgoing() {
-            if let libmarathon::networking::SyncMessage::JoinRequest { node_id: req_node, .. } = msg.message {
+            if let libmarathon::networking::SyncMessage::JoinRequest {
+                node_id: req_node, ..
+            } = msg.message
+            {
                 found_join_request = true;
                 assert_eq!(req_node, node_id, "JoinRequest should have correct node ID");
                 println!("✓ JoinRequest sent with correct node ID");
                 break;
             }
-            // Skip other message types (like SyncRequest from trigger_sync_on_connect)
+            // Skip other message types (like SyncRequest from
+            // trigger_sync_on_connect)
         }
 
-        assert!(found_join_request, "JoinRequest should be queued in GossipBridge");
+        assert!(
+            found_join_request,
+            "JoinRequest should be queued in GossipBridge"
+        );
     }
 
     println!("✓ JoinRequest sent immediately when peer connected");
@@ -583,10 +652,10 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
 
     // Manually set wait_started to 1.1 seconds ago to simulate timeout
     {
-        let mut join_sent = app.world_mut().resource_mut::<libmarathon::networking::JoinRequestSent>();
-        join_sent.wait_started = Some(
-            std::time::Instant::now() - Duration::from_millis(1100)
-        );
+        let mut join_sent = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::JoinRequestSent>();
+        join_sent.wait_started = Some(std::time::Instant::now() - Duration::from_millis(1100));
         println!("Simulated wait time: 1.1 seconds");
     }
 
@@ -594,7 +663,9 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
     update_with_fixed(&mut app);
 
     {
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
         assert!(
             join_sent.sent,
             "JoinRequest SHOULD be sent after 1-second timeout (first node case)"
@@ -603,19 +674,28 @@ async fn test_join_request_sends_after_timeout() -> Result<()> {
 
     // Verify JoinRequest was queued (check app's resource)
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         // Drain all messages and find the JoinRequest
         let mut found_join_request = false;
         while let Some(msg) = app_bridge.try_recv_outgoing() {
-            if matches!(msg.message, libmarathon::networking::SyncMessage::JoinRequest { .. }) {
+            if matches!(
+                msg.message,
+                libmarathon::networking::SyncMessage::JoinRequest { .. }
+            ) {
                 found_join_request = true;
                 break;
             }
-            // Skip other message types (like SyncRequest from trigger_sync_on_connect)
+            // Skip other message types (like SyncRequest from
+            // trigger_sync_on_connect)
         }
 
-        assert!(found_join_request, "JoinRequest should be queued in GossipBridge");
+        assert!(
+            found_join_request,
+            "JoinRequest should be queued in GossipBridge"
+        );
     }
 
     println!("✓ JoinRequest sent after timeout (assuming first node in session)");
@@ -642,7 +722,9 @@ async fn test_join_request_only_sent_once() -> Result<()> {
         let mut current_session = app.world_mut().resource_mut::<CurrentSession>();
         current_session.transition_to(SessionState::Joining);
 
-        let mut node_clock = app.world_mut().resource_mut::<libmarathon::networking::NodeVectorClock>();
+        let mut node_clock = app
+            .world_mut()
+            .resource_mut::<libmarathon::networking::NodeVectorClock>();
         // Add self to clock (normally happens on first tick)
         node_clock.clock.timestamps.insert(node_id, 0);
         // Add peer to simulate connected peer
@@ -655,27 +737,42 @@ async fn test_join_request_only_sent_once() -> Result<()> {
     update_with_fixed(&mut app);
 
     {
-        let join_sent = app.world().resource::<libmarathon::networking::JoinRequestSent>();
-        let node_clock = app.world().resource::<libmarathon::networking::NodeVectorClock>();
+        let join_sent = app
+            .world()
+            .resource::<libmarathon::networking::JoinRequestSent>();
+        let node_clock = app
+            .world()
+            .resource::<libmarathon::networking::NodeVectorClock>();
         let peer_count = node_clock.clock.node_count().saturating_sub(1);
 
-        println!("After update: sent={}, wait_started={:?}, node_count={}, peer_count={}",
-                 join_sent.sent,
-                 join_sent.wait_started.is_some(),
-                 node_clock.clock.node_count(),
-                 peer_count);
+        println!(
+            "After update: sent={}, wait_started={:?}, node_count={}, peer_count={}",
+            join_sent.sent,
+            join_sent.wait_started.is_some(),
+            node_clock.clock.node_count(),
+            peer_count
+        );
 
-        assert!(join_sent.sent, "JoinRequest should be sent (peer_count={}, node_count={})",
-                peer_count, node_clock.clock.node_count());
+        assert!(
+            join_sent.sent,
+            "JoinRequest should be sent (peer_count={}, node_count={})",
+            peer_count,
+            node_clock.clock.node_count()
+        );
     }
 
     // Drain messages and find the JoinRequest (check app's resource)
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         let mut found_join_request = false;
         while let Some(msg) = app_bridge.try_recv_outgoing() {
-            if matches!(msg.message, libmarathon::networking::SyncMessage::JoinRequest { .. }) {
+            if matches!(
+                msg.message,
+                libmarathon::networking::SyncMessage::JoinRequest { .. }
+            ) {
                 found_join_request = true;
                 println!("First JoinRequest found and drained");
                 break;
@@ -689,12 +786,17 @@ async fn test_join_request_only_sent_once() -> Result<()> {
         update_with_fixed(&mut app);
         tokio::time::sleep(Duration::from_millis(16)).await;
 
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         // Check all messages, verify no JoinRequest
         let mut found_duplicate_join = false;
         while let Some(msg) = app_bridge.try_recv_outgoing() {
-            if matches!(msg.message, libmarathon::networking::SyncMessage::JoinRequest { .. }) {
+            if matches!(
+                msg.message,
+                libmarathon::networking::SyncMessage::JoinRequest { .. }
+            ) {
                 found_duplicate_join = true;
                 break;
             }
@@ -714,9 +816,10 @@ async fn test_join_request_only_sent_once() -> Result<()> {
 
 /// Test 11: EntityDelta deduplication prevents spam
 ///
-/// CRITICAL: This test validates the fix for EntityDelta spam (60+ sends in 3 seconds).
-/// The bug was that last_versions was updated with the OLD sequence (before tick),
-/// causing duplicate deltas when the system ran multiple times per frame.
+/// CRITICAL: This test validates the fix for EntityDelta spam (60+ sends in 3
+/// seconds). The bug was that last_versions was updated with the OLD sequence
+/// (before tick), causing duplicate deltas when the system ran multiple times
+/// per frame.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_entity_delta_deduplication() -> Result<()> {
     println!("=== Test: EntityDelta deduplication per frame ===");
@@ -738,21 +841,29 @@ async fn test_entity_delta_deduplication() -> Result<()> {
 
     // Spawn a networked entity with Transform
     let entity_id = Uuid::new_v4();
-    let entity = app.world_mut().spawn((
-        libmarathon::networking::NetworkedEntity::with_id(entity_id, node_id),
-        libmarathon::networking::Synced,
-        Transform::from_xyz(1.0, 2.0, 3.0),
-        libmarathon::networking::NetworkedTransform,
-    )).id();
+    let entity = app
+        .world_mut()
+        .spawn((
+            libmarathon::networking::NetworkedEntity::with_id(entity_id, node_id),
+            libmarathon::networking::Synced,
+            Transform::from_xyz(1.0, 2.0, 3.0),
+            libmarathon::networking::NetworkedTransform,
+        ))
+        .id();
 
-    println!("Spawned entity {:?} with NetworkedEntity({})", entity, entity_id);
+    println!(
+        "Spawned entity {:?} with NetworkedEntity({})",
+        entity, entity_id
+    );
 
     // Run one frame to process the spawn
     app.update();
 
     // Drain any messages from spawn
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
         let mut count = 0;
         while app_bridge.try_recv_outgoing().is_some() {
             count += 1;
@@ -767,18 +878,24 @@ async fn test_entity_delta_deduplication() -> Result<()> {
         println!("Modified Transform to trigger change detection");
     }
 
-    // Run multiple updates in the same frame (simulating system running multiple times)
-    // Before the fix, this would send multiple EntityDeltas
+    // Run multiple updates in the same frame (simulating system running multiple
+    // times) Before the fix, this would send multiple EntityDeltas
     for i in 0..5 {
         app.update();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         // Count EntityDeltas for our entity
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
         let mut entity_delta_count = 0;
 
         while let Some(msg) = app_bridge.try_recv_outgoing() {
-            if let libmarathon::networking::SyncMessage::EntityDelta { entity_id: msg_entity_id, .. } = msg.message {
+            if let libmarathon::networking::SyncMessage::EntityDelta {
+                entity_id: msg_entity_id,
+                ..
+            } = msg.message
+            {
                 if msg_entity_id == entity_id {
                     entity_delta_count += 1;
                     println!("Frame {}: Found EntityDelta for entity {}", i, entity_id);
@@ -848,7 +965,9 @@ async fn test_fullstate_sent_on_join_request() -> Result<()> {
 
     // Drain any messages from spawns
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
         let mut count = 0;
         while app_bridge.try_recv_outgoing().is_some() {
             count += 1;
@@ -870,14 +989,19 @@ async fn test_fullstate_sent_on_join_request() -> Result<()> {
             session_secret: None,
             last_known_clock: None,
             join_type: libmarathon::networking::JoinType::Fresh,
-        }
+        },
     );
 
-    println!("Pushing JoinRequest from peer {} to incoming queue", peer_id);
+    println!(
+        "Pushing JoinRequest from peer {} to incoming queue",
+        peer_id
+    );
 
     // Push to incoming queue
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
         app_bridge.push_incoming(join_request).unwrap();
     }
 
@@ -886,7 +1010,9 @@ async fn test_fullstate_sent_on_join_request() -> Result<()> {
 
     // Check that FullState was queued in response
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
 
         let mut found_fullstate = false;
         let mut fullstate_entity_count = 0;
@@ -919,8 +1045,9 @@ async fn test_fullstate_sent_on_join_request() -> Result<()> {
 /// Test 13: NetworkedTransform auto-inserted when FullState contains Transform
 ///
 /// CRITICAL: This test validates the PreUpdate system chain ordering.
-/// Verifies that when message_dispatcher spawns entities with Transform from FullState,
-/// auto_insert_networked_transform correctly detects and adds NetworkedTransform in the same frame.
+/// Verifies that when message_dispatcher spawns entities with Transform from
+/// FullState, auto_insert_networked_transform correctly detects and adds
+/// NetworkedTransform in the same frame.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_networked_transform_auto_inserted_from_fullstate() -> Result<()> {
     println!("=== Test: NetworkedTransform auto-inserted from FullState ===");
@@ -958,8 +1085,13 @@ async fn test_networked_transform_auto_inserted_from_fullstate() -> Result<()> {
     };
 
     let transform_discriminant = {
-        let type_registry = app.world().resource::<libmarathon::persistence::ComponentTypeRegistryResource>();
-        type_registry.0.get_discriminant(std::any::TypeId::of::<Transform>()).unwrap()
+        let type_registry = app
+            .world()
+            .resource::<libmarathon::persistence::ComponentTypeRegistryResource>();
+        type_registry
+            .0
+            .get_discriminant(std::any::TypeId::of::<Transform>())
+            .unwrap()
     };
 
     let entity_state = libmarathon::networking::EntityState {
@@ -977,48 +1109,65 @@ async fn test_networked_transform_auto_inserted_from_fullstate() -> Result<()> {
         libmarathon::networking::SyncMessage::FullState {
             entities: vec![entity_state],
             vector_clock: libmarathon::networking::VectorClock::new(),
-        }
+        },
     );
 
     println!("Pushing FullState with 1 entity (has Transform) to incoming queue");
 
     // Push to incoming queue
     {
-        let app_bridge = app.world().resource::<libmarathon::networking::GossipBridge>();
+        let app_bridge = app
+            .world()
+            .resource::<libmarathon::networking::GossipBridge>();
         app_bridge.push_incoming(fullstate).unwrap();
     }
 
     // Run frame to process FullState
-    // PreUpdate chain: auto_insert_sync_components → register → message_dispatcher → auto_insert_networked_transform
+    // PreUpdate chain: auto_insert_sync_components → register → message_dispatcher
+    // → auto_insert_networked_transform
     app.update();
 
     // Verify entity was spawned with all expected components
     {
-        let entity_map = app.world().resource::<libmarathon::networking::NetworkEntityMap>();
-        let bevy_entity = entity_map.get_entity(entity_id).expect("Entity should be in map");
+        let entity_map = app
+            .world()
+            .resource::<libmarathon::networking::NetworkEntityMap>();
+        let bevy_entity = entity_map
+            .get_entity(entity_id)
+            .expect("Entity should be in map");
 
         // Check NetworkedEntity (added by apply_full_state)
         assert!(
-            app.world().get::<libmarathon::networking::NetworkedEntity>(bevy_entity).is_some(),
+            app.world()
+                .get::<libmarathon::networking::NetworkedEntity>(bevy_entity)
+                .is_some(),
             "Entity should have NetworkedEntity component"
         );
 
         // Check Synced (added by apply_full_state)
         assert!(
-            app.world().get::<libmarathon::networking::Synced>(bevy_entity).is_some(),
+            app.world()
+                .get::<libmarathon::networking::Synced>(bevy_entity)
+                .is_some(),
             "Entity should have Synced component"
         );
 
         // Check Transform (added by apply_full_state from FullState data)
-        let transform = app.world().get::<Transform>(bevy_entity).expect("Entity should have Transform");
+        let transform = app
+            .world()
+            .get::<Transform>(bevy_entity)
+            .expect("Entity should have Transform");
         assert_eq!(transform.translation.x, 10.0);
         assert_eq!(transform.translation.y, 20.0);
         assert_eq!(transform.translation.z, 30.0);
         println!("✓ Transform correctly applied from FullState");
 
-        // Check NetworkedTransform (should be auto-inserted by auto_insert_networked_transform)
+        // Check NetworkedTransform (should be auto-inserted by
+        // auto_insert_networked_transform)
         assert!(
-            app.world().get::<libmarathon::networking::NetworkedTransform>(bevy_entity).is_some(),
+            app.world()
+                .get::<libmarathon::networking::NetworkedTransform>(bevy_entity)
+                .is_some(),
             "NetworkedTransform should be auto-inserted in same frame (PreUpdate chain)"
         );
         println!("✓ NetworkedTransform auto-inserted in same frame");

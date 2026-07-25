@@ -1,28 +1,48 @@
-use crate::render::{
-    prepass::{DeferredPrepass, ViewPrepassTextures},
-    FullscreenShader,
-};
 use bevy_app::prelude::*;
-use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer};
-use bevy_ecs::prelude::*;
-use bevy_image::ToExtents;
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_resource::{binding_types::texture_2d, *},
-    renderer::RenderDevice,
-    texture::{CachedTexture, TextureCache},
-    view::ViewTarget,
-    Render, RenderApp, RenderStartup, RenderSystems,
+use bevy_asset::{
+    AssetServer,
+    embedded_asset,
+    load_embedded_asset,
 };
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
+};
+use bevy_image::ToExtents;
+use bevy_utils::default;
 
 use super::DEFERRED_LIGHTING_PASS_ID_DEPTH_FORMAT;
-use bevy_ecs::query::QueryItem;
 use crate::render::{
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    renderer::RenderContext,
+    FullscreenShader,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    camera::ExtractedCamera,
+    diagnostic::RecordDiagnostics,
+    prepass::{
+        DeferredPrepass,
+        ViewPrepassTextures,
+    },
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_resource::{
+        binding_types::texture_2d,
+        *,
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+    },
+    texture::{
+        CachedTexture,
+        TextureCache,
+    },
+    view::ViewTarget,
 };
-use bevy_utils::default;
 
 pub struct CopyDeferredLightingIdPlugin;
 

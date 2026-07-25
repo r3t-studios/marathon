@@ -1,57 +1,83 @@
-use crate::render::renderer::{
-    RenderAdapter, RenderAdapterInfo, RenderDevice, RenderInstance, RenderQueue,
-};
 use std::borrow::Cow;
 
 pub use wgpu::{
-    Backends, Dx12Compiler, Features as WgpuFeatures, Gles3MinorVersion, InstanceFlags,
-    Limits as WgpuLimits, MemoryHints, PowerPreference,
+    Backends,
+    Dx12Compiler,
+    Features as WgpuFeatures,
+    Gles3MinorVersion,
+    InstanceFlags,
+    Limits as WgpuLimits,
+    MemoryHints,
+    PowerPreference,
 };
-use wgpu::{DxcShaderModel, MemoryBudgetThresholds};
+use wgpu::{
+    DxcShaderModel,
+    MemoryBudgetThresholds,
+};
 
-/// Configures the priority used when automatically configuring the features/limits of `wgpu`.
+use crate::render::renderer::{
+    RenderAdapter,
+    RenderAdapterInfo,
+    RenderDevice,
+    RenderInstance,
+    RenderQueue,
+};
+
+/// Configures the priority used when automatically configuring the
+/// features/limits of `wgpu`.
 #[derive(Clone)]
 pub enum WgpuSettingsPriority {
     /// WebGPU default features and limits
     Compatibility,
     /// The maximum supported features and limits of the adapter and backend
     Functionality,
-    /// WebGPU default limits plus additional constraints in order to be compatible with WebGL2
+    /// WebGPU default limits plus additional constraints in order to be
+    /// compatible with WebGL2
     WebGL2,
 }
 
-/// Provides configuration for renderer initialization. Use [`RenderDevice::features`](RenderDevice::features),
-/// [`RenderDevice::limits`](RenderDevice::limits), and the [`RenderAdapterInfo`]
-/// resource to get runtime information about the actual adapter, backend, features, and limits.
-/// NOTE: [`Backends::DX12`](Backends::DX12), [`Backends::METAL`](Backends::METAL), and
-/// [`Backends::VULKAN`](Backends::VULKAN) are enabled by default for non-web and the best choice
-/// is automatically selected. Web using the `webgl` feature uses [`Backends::GL`](Backends::GL).
-/// NOTE: If you want to use [`Backends::GL`](Backends::GL) in a native app on `Windows` and/or `macOS`, you must
-/// use [`ANGLE`](https://github.com/gfx-rs/wgpu#angle) and enable the `gles` feature. This is
-/// because wgpu requires EGL to create a GL context without a window and only ANGLE supports that.
+/// Provides configuration for renderer initialization. Use
+/// [`RenderDevice::features`](RenderDevice::features),
+/// [`RenderDevice::limits`](RenderDevice::limits), and the
+/// [`RenderAdapterInfo`] resource to get runtime information about the actual
+/// adapter, backend, features, and limits.
+/// NOTE: [`Backends::DX12`](Backends::DX12),
+/// [`Backends::METAL`](Backends::METAL), and
+/// [`Backends::VULKAN`](Backends::VULKAN) are enabled by default for non-web
+/// and the best choice is automatically selected. Web using the `webgl` feature
+/// uses [`Backends::GL`](Backends::GL). NOTE: If you want to use
+/// [`Backends::GL`](Backends::GL) in a native app on `Windows` and/or `macOS`,
+/// you must use [`ANGLE`](https://github.com/gfx-rs/wgpu#angle) and enable the `gles` feature. This is
+/// because wgpu requires EGL to create a GL context without a window and only
+/// ANGLE supports that.
 #[derive(Clone)]
 pub struct WgpuSettings {
     pub device_label: Option<Cow<'static, str>>,
     pub backends: Option<Backends>,
     pub power_preference: PowerPreference,
     pub priority: WgpuSettingsPriority,
-    /// The features to ensure are enabled regardless of what the adapter/backend supports.
-    /// Setting these explicitly may cause renderer initialization to fail.
+    /// The features to ensure are enabled regardless of what the
+    /// adapter/backend supports. Setting these explicitly may cause
+    /// renderer initialization to fail.
     pub features: WgpuFeatures,
-    /// The features to ensure are disabled regardless of what the adapter/backend supports
+    /// The features to ensure are disabled regardless of what the
+    /// adapter/backend supports
     pub disabled_features: Option<WgpuFeatures>,
     /// The imposed limits.
     pub limits: WgpuLimits,
-    /// The constraints on limits allowed regardless of what the adapter/backend supports
+    /// The constraints on limits allowed regardless of what the adapter/backend
+    /// supports
     pub constrained_limits: Option<WgpuLimits>,
     /// The shader compiler to use for the DX12 backend.
     pub dx12_shader_compiler: Dx12Compiler,
-    /// Allows you to choose which minor version of GLES3 to use (3.0, 3.1, 3.2, or automatic)
-    /// This only applies when using ANGLE and the GL backend.
+    /// Allows you to choose which minor version of GLES3 to use (3.0, 3.1, 3.2,
+    /// or automatic) This only applies when using ANGLE and the GL backend.
     pub gles3_minor_version: Gles3MinorVersion,
-    /// These are for controlling WGPU's debug information to eg. enable validation and shader debug info in release builds.
+    /// These are for controlling WGPU's debug information to eg. enable
+    /// validation and shader debug info in release builds.
     pub instance_flags: InstanceFlags,
-    /// This hints to the WGPU device about the preferred memory allocation strategy.
+    /// This hints to the WGPU device about the preferred memory allocation
+    /// strategy.
     pub memory_hints: MemoryHints,
     /// The thresholds for device memory budget.
     pub instance_memory_budget_thresholds: MemoryBudgetThresholds,
@@ -155,13 +181,15 @@ pub struct RenderResources(
     pub  crate::renderer::raw_vulkan_init::AdditionalVulkanFeatures,
 );
 
-/// An enum describing how the renderer will initialize resources. This is used when creating the [`RenderPlugin`](crate::RenderPlugin).
+/// An enum describing how the renderer will initialize resources. This is used
+/// when creating the [`RenderPlugin`](crate::RenderPlugin).
 #[expect(
     clippy::large_enum_variant,
     reason = "See https://github.com/bevyengine/bevy/issues/19220"
 )]
 pub enum RenderCreation {
-    /// Allows renderer resource initialization to happen outside of the rendering plugin.
+    /// Allows renderer resource initialization to happen outside of the
+    /// rendering plugin.
     Manual(RenderResources),
     /// Lets the rendering plugin create resources itself.
     Automatic(WgpuSettings),
@@ -209,7 +237,8 @@ impl From<WgpuSettings> for RenderCreation {
     }
 }
 
-/// Get a features/limits priority from the environment variable `WGPU_SETTINGS_PRIO`
+/// Get a features/limits priority from the environment variable
+/// `WGPU_SETTINGS_PRIO`
 pub fn settings_priority_from_env() -> Option<WgpuSettingsPriority> {
     Some(
         match std::env::var("WGPU_SETTINGS_PRIO")
@@ -217,10 +246,10 @@ pub fn settings_priority_from_env() -> Option<WgpuSettingsPriority> {
             .map(str::to_lowercase)
             .as_deref()
         {
-            Ok("compatibility") => WgpuSettingsPriority::Compatibility,
-            Ok("functionality") => WgpuSettingsPriority::Functionality,
-            Ok("webgl2") => WgpuSettingsPriority::WebGL2,
-            _ => return None,
+            | Ok("compatibility") => WgpuSettingsPriority::Compatibility,
+            | Ok("functionality") => WgpuSettingsPriority::Functionality,
+            | Ok("webgl2") => WgpuSettingsPriority::WebGL2,
+            | _ => return None,
         },
     )
 }

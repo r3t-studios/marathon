@@ -1,6 +1,7 @@
 //! Platform abstraction layer
 //!
-//! This module provides platform-agnostic interfaces for OS/hardware interaction:
+//! This module provides platform-agnostic interfaces for OS/hardware
+//! interaction:
 //! - **input**: Abstract input events (keyboard, mouse, touch, gestures)
 //! - **desktop**: Concrete winit-based implementation for desktop platforms
 //! - **ios**: Concrete UIKit-based implementation for iOS
@@ -19,11 +20,10 @@ pub mod ios;
 pub mod desktop;
 
 // Re-export the appropriate executor based on target platform
-#[cfg(target_os = "ios")]
-pub use ios::run_executor;
-
 #[cfg(not(target_os = "ios"))]
 pub use desktop::run_executor;
+#[cfg(target_os = "ios")]
+pub use ios::run_executor;
 
 /// Sanitize app name for safe filesystem usage
 ///

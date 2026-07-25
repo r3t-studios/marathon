@@ -3,8 +3,6 @@
 //! This module defines the protocol messages used for distributed
 //! synchronization according to RFC 0001.
 
-
-
 use crate::networking::{
     locks::LockMessage,
     operations::ComponentOp,
@@ -31,8 +29,8 @@ pub struct VersionedMessage {
     ///
     /// - For Lock messages: Unique nonce (counter + timestamp hash) to prevent
     ///   iroh-gossip deduplication, allowing repeated heartbeats.
-    /// - For other messages: Constant nonce (0) to enable content-based deduplication
-    ///   by iroh-gossip, preventing feedback loops.
+    /// - For other messages: Constant nonce (0) to enable content-based
+    ///   deduplication by iroh-gossip, preventing feedback loops.
     pub nonce: u32,
 }
 
@@ -42,18 +40,28 @@ impl VersionedMessage {
 
     /// Create a new versioned message with the current protocol version
     ///
-    /// For Lock messages: Generates a unique nonce to prevent deduplication, since
-    /// lock heartbeats need to be sent repeatedly even with identical content.
+    /// For Lock messages: Generates a unique nonce to prevent deduplication,
+    /// since lock heartbeats need to be sent repeatedly even with identical
+    /// content.
     ///
     /// For other messages: Uses a constant nonce (0) to enable iroh-gossip's
     /// content-based deduplication. This prevents feedback loops where the same
     /// EntityDelta gets broadcast repeatedly.
     pub fn new(message: SyncMessage) -> Self {
-        // Only generate unique nonces for Lock messages (heartbeats need to bypass dedup)
+        // Only generate unique nonces for Lock messages (heartbeats need to bypass
+        // dedup)
         let nonce = if matches!(message, SyncMessage::Lock(_)) {
-            use std::hash::Hasher;
-            use std::sync::atomic::{AtomicU32, Ordering};
-            use std::time::{SystemTime, UNIX_EPOCH};
+            use std::{
+                hash::Hasher,
+                sync::atomic::{
+                    AtomicU32,
+                    Ordering,
+                },
+                time::{
+                    SystemTime,
+                    UNIX_EPOCH,
+                },
+            };
 
             // Per-node rolling counter for sequential uniqueness
             static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -114,8 +122,8 @@ pub enum SyncMessage {
     /// Request to join the network and receive full state
     ///
     /// Sent by a new peer when it first connects. For fresh joins, the response
-    /// will be a `FullState` message. For rejoins with small deltas (<1000 ops),
-    /// the response will be `MissingDeltas`.
+    /// will be a `FullState` message. For rejoins with small deltas (<1000
+    /// ops), the response will be `MissingDeltas`.
     JoinRequest {
         /// ID of the node requesting to join
         node_id: NodeId,
@@ -188,7 +196,8 @@ pub enum SyncMessage {
     /// Entity lock protocol messages
     ///
     /// Used for collaborative editing to prevent concurrent modifications.
-    /// Locks are acquired when entities are selected and released when deselected.
+    /// Locks are acquired when entities are selected and released when
+    /// deselected.
     Lock(LockMessage),
 }
 
@@ -394,7 +403,8 @@ mod tests {
 
         let versioned = VersionedMessage::new(message);
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned).map(|b| b.to_vec())?;
-        let deserialized: VersionedMessage = rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: VersionedMessage =
+            rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.version, versioned.version);
 
@@ -420,7 +430,8 @@ mod tests {
         };
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec())?;
-        let _deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
+        let _deserialized: SyncMessage =
+            rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
 
         Ok(())
     }
@@ -430,8 +441,11 @@ mod tests {
         let join_type = JoinType::Fresh;
 
         // Fresh join should serialize correctly
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type).map(|b| b.to_vec()).unwrap();
-        let deserialized: JoinType = rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type)
+            .map(|b| b.to_vec())
+            .unwrap();
+        let deserialized: JoinType =
+            rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
 
         assert!(matches!(deserialized, JoinType::Fresh));
     }
@@ -444,8 +458,11 @@ mod tests {
         };
 
         // Rejoin should serialize correctly
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type).map(|b| b.to_vec()).unwrap();
-        let deserialized: JoinType = rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&join_type)
+            .map(|b| b.to_vec())
+            .unwrap();
+        let deserialized: JoinType =
+            rkyv::from_bytes::<JoinType, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | JoinType::Rejoin {
@@ -472,8 +489,11 @@ mod tests {
             join_type: JoinType::Fresh,
         };
 
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
-        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message)
+            .map(|b| b.to_vec())
+            .unwrap();
+        let deserialized: SyncMessage =
+            rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | SyncMessage::JoinRequest {
@@ -505,8 +525,11 @@ mod tests {
             },
         };
 
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
-        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message)
+            .map(|b| b.to_vec())
+            .unwrap();
+        let deserialized: SyncMessage =
+            rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes).unwrap();
 
         match deserialized {
             | SyncMessage::JoinRequest {
@@ -540,7 +563,8 @@ mod tests {
         };
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec())?;
-        let deserialized: SyncMessage = rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: SyncMessage =
+            rkyv::from_bytes::<SyncMessage, rkyv::rancor::Failure>(&bytes)?;
 
         match deserialized {
             | SyncMessage::MissingDeltas { deltas } => {

@@ -4,8 +4,6 @@
 //! on components in the distributed system. Each operation type corresponds to
 //! a specific CRDT merge strategy.
 
-
-
 use crate::networking::{
     messages::ComponentData,
     vector_clock::VectorClock,
@@ -229,11 +227,7 @@ impl ComponentOpBuilder {
     }
 
     /// Build a SetRemove operation (OR-Set)
-    pub fn set_remove(
-        mut self,
-        discriminant: u16,
-        removed_ids: Vec<uuid::Uuid>,
-    ) -> ComponentOp {
+    pub fn set_remove(mut self, discriminant: u16, removed_ids: Vec<uuid::Uuid>) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SetRemove {
             discriminant,
@@ -260,11 +254,7 @@ impl ComponentOpBuilder {
     }
 
     /// Build a SequenceDelete operation (RGA)
-    pub fn sequence_delete(
-        mut self,
-        discriminant: u16,
-        element_id: uuid::Uuid,
-    ) -> ComponentOp {
+    pub fn sequence_delete(mut self, discriminant: u16, element_id: uuid::Uuid) -> ComponentOp {
         self.vector_clock.increment(self.node_id);
         ComponentOp::SequenceDelete {
             discriminant,
@@ -357,10 +347,7 @@ mod tests {
         let clock = VectorClock::new();
 
         let builder = ComponentOpBuilder::new(node_id, clock);
-        let op = builder.set(
-            1,
-            ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])),
-        );
+        let op = builder.set(1, ComponentData::Inline(bytes::Bytes::from(vec![1, 2, 3])));
 
         assert!(op.is_set());
         assert_eq!(op.vector_clock().get(node_id), 1);
@@ -387,7 +374,8 @@ mod tests {
         };
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&op).map(|b| b.to_vec())?;
-        let deserialized: ComponentOp = rkyv::from_bytes::<ComponentOp, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: ComponentOp =
+            rkyv::from_bytes::<ComponentOp, rkyv::rancor::Failure>(&bytes)?;
 
         assert!(deserialized.is_set());
 

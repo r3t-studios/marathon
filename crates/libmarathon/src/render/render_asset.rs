@@ -1,20 +1,67 @@
-use crate::render::{
-    render_resource::AsBindGroupError, Extract, ExtractSchedule, MainWorld, Render, RenderApp,
-    RenderSystems,
+use core::{
+    marker::PhantomData,
+    sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    },
 };
-use bevy_app::{App, Plugin, SubApp};
-use bevy_asset::{Asset, AssetEvent, AssetId, Assets, RenderAssetUsages};
+
+use bevy_app::{
+    App,
+    Plugin,
+    SubApp,
+};
+use bevy_asset::{
+    Asset,
+    AssetEvent,
+    AssetId,
+    Assets,
+    RenderAssetUsages,
+};
 use bevy_ecs::{
-    prelude::{Commands, IntoScheduleConfigs, MessageReader, Res, ResMut, Resource},
-    schedule::{ScheduleConfigs, SystemSet},
-    system::{ScheduleSystem, StaticSystemParam, SystemParam, SystemParamItem, SystemState},
-    world::{FromWorld, Mut},
+    prelude::{
+        Commands,
+        IntoScheduleConfigs,
+        MessageReader,
+        Res,
+        ResMut,
+        Resource,
+    },
+    schedule::{
+        ScheduleConfigs,
+        SystemSet,
+    },
+    system::{
+        ScheduleSystem,
+        StaticSystemParam,
+        SystemParam,
+        SystemParamItem,
+        SystemState,
+    },
+    world::{
+        FromWorld,
+        Mut,
+    },
 };
-use bevy_platform::collections::{HashMap, HashSet};
-use core::marker::PhantomData;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{
+    debug,
+    error,
+};
+
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    MainWorld,
+    Render,
+    RenderApp,
+    RenderSystems,
+    render_resource::AsBindGroupError,
+};
 
 #[derive(Debug, Error)]
 pub enum PrepareAssetError<E: Send + Sync + 'static> {
@@ -34,8 +81,8 @@ pub type ExtractAssetsSet = AssetExtractionSystems;
 
 /// Describes how an asset gets extracted and prepared for rendering.
 ///
-/// In the [`ExtractSchedule`] step the [`RenderAsset::SourceAsset`] is transferred
-/// from the "main world" into the "render world".
+/// In the [`ExtractSchedule`] step the [`RenderAsset::SourceAsset`] is
+/// transferred from the "main world" into the "render world".
 ///
 /// After that in the [`RenderSystems::PrepareAssets`] step the extracted asset
 /// is transformed into its GPU-representation of type [`RenderAsset`].
@@ -45,17 +92,20 @@ pub trait RenderAsset: Send + Sync + 'static + Sized {
 
     /// Specifies all ECS data required by [`RenderAsset::prepare_asset`].
     ///
-    /// For convenience use the [`lifetimeless`](bevy_ecs::system::lifetimeless) [`SystemParam`].
+    /// For convenience use the [`lifetimeless`](bevy_ecs::system::lifetimeless)
+    /// [`SystemParam`].
     type Param: SystemParam;
 
-    /// Whether or not to unload the asset after extracting it to the render world.
+    /// Whether or not to unload the asset after extracting it to the render
+    /// world.
     #[inline]
     fn asset_usage(_source_asset: &Self::SourceAsset) -> RenderAssetUsages {
         RenderAssetUsages::default()
     }
 
-    /// Size of the data the asset will upload to the gpu. Specifying a return value
-    /// will allow the asset to be throttled via [`RenderAssetBytesPerFrame`].
+    /// Size of the data the asset will upload to the gpu. Specifying a return
+    /// value will allow the asset to be throttled via
+    /// [`RenderAssetBytesPerFrame`].
     #[inline]
     #[expect(
         unused_variables,
@@ -65,7 +115,8 @@ pub trait RenderAsset: Send + Sync + 'static + Sized {
         None
     }
 
-    /// Prepares the [`RenderAsset::SourceAsset`] for the GPU by transforming it into a [`RenderAsset`].
+    /// Prepares the [`RenderAsset::SourceAsset`] for the GPU by transforming it
+    /// into a [`RenderAsset`].
     ///
     /// ECS data may be accessed via `param`.
     fn prepare_asset(
@@ -88,16 +139,19 @@ pub trait RenderAsset: Send + Sync + 'static + Sized {
     }
 }
 
-/// This plugin extracts the changed assets from the "app world" into the "render world"
-/// and prepares them for the GPU. They can then be accessed from the [`RenderAssets`] resource.
+/// This plugin extracts the changed assets from the "app world" into the
+/// "render world" and prepares them for the GPU. They can then be accessed from
+/// the [`RenderAssets`] resource.
 ///
 /// Therefore it sets up the [`ExtractSchedule`] and
 /// [`RenderSystems::PrepareAssets`] steps for the specified [`RenderAsset`].
 ///
-/// The `AFTER` generic parameter can be used to specify that `A::prepare_asset` should not be run until
-/// `prepare_assets::<AFTER>` has completed. This allows the `prepare_asset` function to depend on another
-/// prepared [`RenderAsset`], for example `Mesh::prepare_asset` relies on `RenderAssets::<GpuImage>` for morph
-/// targets, so the plugin is created as `RenderAssetPlugin::<RenderMesh, GpuImage>::default()`.
+/// The `AFTER` generic parameter can be used to specify that `A::prepare_asset`
+/// should not be run until `prepare_assets::<AFTER>` has completed. This allows
+/// the `prepare_asset` function to depend on another prepared [`RenderAsset`],
+/// for example `Mesh::prepare_asset` relies on `RenderAssets::<GpuImage>` for
+/// morph targets, so the plugin is created as `RenderAssetPlugin::<RenderMesh,
+/// GpuImage>::default()`.
 pub struct RenderAssetPlugin<A: RenderAsset, AFTER: RenderAssetDependency + 'static = ()> {
     phantom: PhantomData<fn() -> (A, AFTER)>,
 }
@@ -235,8 +289,8 @@ impl<A: RenderAsset> FromWorld for CachedExtractRenderAssetSystemState<A> {
     }
 }
 
-/// This system extracts all created or modified assets of the corresponding [`RenderAsset::SourceAsset`] type
-/// into the "render world".
+/// This system extracts all created or modified assets of the corresponding
+/// [`RenderAsset::SourceAsset`] type into the "render world".
 pub(crate) fn extract_render_asset<A: RenderAsset>(
     mut commands: Commands,
     mut main_world: ResMut<MainWorld>,
@@ -322,8 +376,9 @@ impl<A: RenderAsset> Default for PrepareNextFrameAssets<A> {
     }
 }
 
-/// This system prepares all assets of the corresponding [`RenderAsset::SourceAsset`] type
-/// which where extracted this frame for the GPU.
+/// This system prepares all assets of the corresponding
+/// [`RenderAsset::SourceAsset`] type which where extracted this frame for the
+/// GPU.
 pub fn prepare_assets<A: RenderAsset>(
     mut extracted_assets: ResMut<ExtractedAssets<A>>,
     mut render_assets: ResMut<RenderAssets<A>>,
@@ -357,20 +412,20 @@ pub fn prepare_assets<A: RenderAsset>(
 
         let previous_asset = render_assets.get(id);
         match A::prepare_asset(extracted_asset, id, &mut param, previous_asset) {
-            Ok(prepared_asset) => {
+            | Ok(prepared_asset) => {
                 render_assets.insert(id, prepared_asset);
                 bpf.write_bytes(write_bytes);
                 wrote_asset_count += 1;
-            }
-            Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
+            },
+            | Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
                 prepare_next_frame.assets.push((id, extracted_asset));
-            }
-            Err(PrepareAssetError::AsBindGroupError(e)) => {
+            },
+            | Err(PrepareAssetError::AsBindGroupError(e)) => {
                 error!(
                     "{} Bind group construction failed: {e}",
                     core::any::type_name::<A>()
                 );
-            }
+            },
         }
     }
 
@@ -396,20 +451,20 @@ pub fn prepare_assets<A: RenderAsset>(
         };
 
         match A::prepare_asset(extracted_asset, id, &mut param, previous_asset.as_ref()) {
-            Ok(prepared_asset) => {
+            | Ok(prepared_asset) => {
                 render_assets.insert(id, prepared_asset);
                 bpf.write_bytes(write_bytes);
                 wrote_asset_count += 1;
-            }
-            Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
+            },
+            | Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
                 prepare_next_frame.assets.push((id, extracted_asset));
-            }
-            Err(PrepareAssetError::AsBindGroupError(e)) => {
+            },
+            | Err(PrepareAssetError::AsBindGroupError(e)) => {
                 error!(
                     "{} Bind group construction failed: {e}",
                     core::any::type_name::<A>()
                 );
-            }
+            },
         }
     }
 
@@ -436,9 +491,9 @@ pub fn extract_render_asset_bytes_per_frame(
     bpf_limiter.max_bytes = bpf.max_bytes;
 }
 
-/// A resource that defines the amount of data allowed to be transferred from CPU to GPU
-/// each frame, preventing choppy frames at the cost of waiting longer for GPU assets
-/// to become available.
+/// A resource that defines the amount of data allowed to be transferred from
+/// CPU to GPU each frame, preventing choppy frames at the cost of waiting
+/// longer for GPU assets to become available.
 #[derive(Resource, Default)]
 pub struct RenderAssetBytesPerFrame {
     pub max_bytes: Option<usize>,
@@ -447,11 +502,12 @@ pub struct RenderAssetBytesPerFrame {
 impl RenderAssetBytesPerFrame {
     /// `max_bytes`: the number of bytes to write per frame.
     ///
-    /// This is a soft limit: only full assets are written currently, uploading stops
-    /// after the first asset that exceeds the limit.
+    /// This is a soft limit: only full assets are written currently, uploading
+    /// stops after the first asset that exceeds the limit.
     ///
-    /// To participate, assets should implement [`RenderAsset::byte_len`]. If the default
-    /// is not overridden, the assets are assumed to be small enough to upload without restriction.
+    /// To participate, assets should implement [`RenderAsset::byte_len`]. If
+    /// the default is not overridden, the assets are assumed to be small
+    /// enough to upload without restriction.
     pub fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes: Some(max_bytes),
@@ -459,9 +515,9 @@ impl RenderAssetBytesPerFrame {
     }
 }
 
-/// A render-world resource that facilitates limiting the data transferred from CPU to GPU
-/// each frame, preventing choppy frames at the cost of waiting longer for GPU assets
-/// to become available.
+/// A render-world resource that facilitates limiting the data transferred from
+/// CPU to GPU each frame, preventing choppy frames at the cost of waiting
+/// longer for GPU assets to become available.
 #[derive(Resource, Default)]
 pub struct RenderAssetBytesPerFrameLimiter {
     /// Populated by [`RenderAssetBytesPerFrame`] during extraction.
@@ -471,7 +527,8 @@ pub struct RenderAssetBytesPerFrameLimiter {
 }
 
 impl RenderAssetBytesPerFrameLimiter {
-    /// Reset the available bytes. Called once per frame during extraction by [`crate::RenderPlugin`].
+    /// Reset the available bytes. Called once per frame during extraction by
+    /// [`crate::RenderPlugin`].
     pub fn reset(&mut self) {
         if self.max_bytes.is_none() {
             return;
@@ -504,7 +561,8 @@ impl RenderAssetBytesPerFrameLimiter {
         }
     }
 
-    /// Returns `true` if there are no remaining bytes available for writing this frame.
+    /// Returns `true` if there are no remaining bytes available for writing
+    /// this frame.
     pub(crate) fn exhausted(&self) -> bool {
         if let Some(max_bytes) = self.max_bytes {
             let bytes_written = self.bytes_written.load(Ordering::Relaxed);

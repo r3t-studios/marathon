@@ -3,11 +3,11 @@
 //! This plugin implements [Hillaire's 2020 paper](https://sebh.github.io/publications/egsr2020.pdf)
 //! on real-time atmospheric scattering. While it *will* work simply as a
 //! procedural skybox, it also does much more. It supports dynamic time-of-
-//! -day, multiple directional lights, and since it's applied as a post-processing
-//! effect *on top* of the existing skybox, a starry skybox would automatically
-//! show based on the time of day. Scattering in front of terrain (similar
-//! to distance fog, but more complex) is handled as well, and takes into
-//! account the directional light color and direction.
+//! -day, multiple directional lights, and since it's applied as a
+//! post-processing effect *on top* of the existing skybox, a starry skybox
+//! would automatically show based on the time of day. Scattering in front of
+//! terrain (similar to distance fog, but more complex) is handled as well, and
+//! takes into account the directional light color and direction.
 //!
 //! Adding the [`Atmosphere`] component to a 3d camera will enable the effect,
 //! which by default is set to look similar to Earth's atmosphere. See the
@@ -25,9 +25,10 @@
 //! at once is untested, and might not be physically accurate. These may be
 //! integrated into a single module in the future.
 //!
-//! On web platforms, atmosphere rendering will look slightly different. Specifically, when calculating how light travels
-//! through the atmosphere, we use a simpler averaging technique instead of the more
-//! complex blending operations. This difference will be resolved for WebGPU in a future release.
+//! On web platforms, atmosphere rendering will look slightly different.
+//! Specifically, when calculating how light travels through the atmosphere, we
+//! use a simpler averaging technique instead of the more complex blending
+//! operations. This difference will be resolved for WebGPU in a future release.
 //!
 //! [Shadertoy]: https://www.shadertoy.com/view/slSXRW
 //!
@@ -37,51 +38,94 @@ mod environment;
 mod node;
 pub mod resources;
 
-use bevy_app::{App, Plugin, Update};
+use bevy_app::{
+    App,
+    Plugin,
+    Update,
+};
 use bevy_asset::embedded_asset;
 use bevy_camera::Camera3d;
-use crate::render::core_3d::graph::Node3d;
 use bevy_ecs::{
     component::Component,
-    query::{Changed, QueryItem, With},
+    query::{
+        Changed,
+        QueryItem,
+        With,
+    },
     schedule::IntoScheduleConfigs,
-    system::{lifetimeless::Read, Query},
+    system::{
+        Query,
+        lifetimeless::Read,
+    },
 };
-use bevy_math::{UVec2, UVec3, Vec3};
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use crate::render::{
-    extract_component::UniformComponentPlugin,
-    render_resource::{DownlevelFlags, ShaderType, SpecializedRenderPipelines},
-    view::Hdr,
-    RenderStartup,
+use bevy_math::{
+    UVec2,
+    UVec3,
+    Vec3,
 };
-use crate::render::{
-    extract_component::{ExtractComponent, ExtractComponentPlugin},
-    render_graph::{RenderGraphExt, ViewNodeRunner},
-    render_resource::{TextureFormat, TextureUsages},
-    renderer::RenderAdapter,
-    Render, RenderApp, RenderSystems,
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
 };
-
-use crate::render::core_3d::graph::Core3d;
 use bevy_shader::load_shader_library;
 use environment::{
-    init_atmosphere_probe_layout, init_atmosphere_probe_pipeline,
-    prepare_atmosphere_probe_bind_groups, prepare_atmosphere_probe_components,
-    prepare_probe_textures, AtmosphereEnvironmentMap, EnvironmentNode,
+    AtmosphereEnvironmentMap,
+    EnvironmentNode,
+    init_atmosphere_probe_layout,
+    init_atmosphere_probe_pipeline,
+    prepare_atmosphere_probe_bind_groups,
+    prepare_atmosphere_probe_components,
+    prepare_probe_textures,
 };
 use resources::{
-    prepare_atmosphere_transforms, queue_render_sky_pipelines, AtmosphereTransforms,
+    AtmosphereTransforms,
     RenderSkyBindGroupLayouts,
+    prepare_atmosphere_transforms,
+    queue_render_sky_pipelines,
 };
 use tracing::warn;
 
 use self::{
-    node::{AtmosphereLutsNode, AtmosphereNode, RenderSkyNode},
-    resources::{
-        prepare_atmosphere_bind_groups, prepare_atmosphere_textures, AtmosphereBindGroupLayouts,
-        AtmosphereLutPipelines, AtmosphereSamplers,
+    node::{
+        AtmosphereLutsNode,
+        AtmosphereNode,
+        RenderSkyNode,
     },
+    resources::{
+        AtmosphereBindGroupLayouts,
+        AtmosphereLutPipelines,
+        AtmosphereSamplers,
+        prepare_atmosphere_bind_groups,
+        prepare_atmosphere_textures,
+    },
+};
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
+    extract_component::{
+        ExtractComponent,
+        ExtractComponentPlugin,
+        UniformComponentPlugin,
+    },
+    render_graph::{
+        RenderGraphExt,
+        ViewNodeRunner,
+    },
+    render_resource::{
+        DownlevelFlags,
+        ShaderType,
+        SpecializedRenderPipelines,
+        TextureFormat,
+        TextureUsages,
+    },
+    renderer::RenderAdapter,
+    view::Hdr,
 };
 
 #[doc(hidden)]
@@ -132,7 +176,9 @@ impl Plugin for AtmospherePlugin {
             .allowed_usages
             .contains(TextureUsages::STORAGE_BINDING)
         {
-            warn!("AtmospherePlugin not loaded. GPU lacks support: TextureFormat::Rgba16Float does not support TextureUsages::STORAGE_BINDING.");
+            warn!(
+                "AtmospherePlugin not loaded. GPU lacks support: TextureFormat::Rgba16Float does not support TextureUsages::STORAGE_BINDING."
+            );
             return;
         }
 
@@ -190,9 +236,9 @@ impl Plugin for AtmospherePlugin {
     }
 }
 
-/// This component describes the atmosphere of a planet, and when added to a camera
-/// will enable atmospheric scattering for that camera. This is only compatible with
-/// HDR cameras.
+/// This component describes the atmosphere of a planet, and when added to a
+/// camera will enable atmospheric scattering for that camera. This is only
+/// compatible with HDR cameras.
 ///
 /// Most atmospheric particles scatter and absorb light in two main ways:
 ///
@@ -200,9 +246,9 @@ impl Plugin for AtmospherePlugin {
 /// molecules. It's wavelength dependent, and causes colors to separate out as
 /// light travels through the atmosphere. These particles *don't* absorb light.
 ///
-/// Mie scattering occurs among slightly larger particles, like dust and sea spray.
-/// These particles *do* absorb light, but Mie scattering and absorption is
-/// *wavelength independent*.
+/// Mie scattering occurs among slightly larger particles, like dust and sea
+/// spray. These particles *do* absorb light, but Mie scattering and absorption
+/// is *wavelength independent*.
 ///
 /// Ozone acts differently from the other two, and is special-cased because
 /// it's very important to the look of Earth's atmosphere. It's wavelength
@@ -270,7 +316,8 @@ pub struct Atmosphere {
     ///
     /// domain: (-1, 1)
     /// units: N/A
-    pub mie_asymmetry: f32, //the "asymmetry" value of the phase function, unitless. Domain: (-1, 1)
+    pub mie_asymmetry: f32, /* the "asymmetry" value of the phase function, unitless. Domain:
+                             * (-1, 1) */
 
     /// The altitude at which the ozone layer is centered.
     ///
@@ -321,11 +368,9 @@ impl Default for Atmosphere {
 }
 
 impl ExtractComponent for Atmosphere {
-    type QueryData = Read<Atmosphere>;
-
-    type QueryFilter = With<Camera3d>;
-
     type Out = Atmosphere;
+    type QueryData = Read<Atmosphere>;
+    type QueryFilter = With<Camera3d>;
 
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some(item.clone())
@@ -341,15 +386,15 @@ impl ExtractComponent for Atmosphere {
 /// of the ray.
 ///
 /// The multiscattering LUT stores the factor representing luminance scattered
-/// towards the camera with scattering order >2, parametrized by the point's radius
-/// and the cosine of the zenith angle of the sun.
+/// towards the camera with scattering order >2, parametrized by the point's
+/// radius and the cosine of the zenith angle of the sun.
 ///
-/// The sky-view lut is essentially the actual skybox, storing the light scattered
-/// towards the camera in every direction with a cubemap.
+/// The sky-view lut is essentially the actual skybox, storing the light
+/// scattered towards the camera in every direction with a cubemap.
 ///
-/// The aerial-view lut is a 3d LUT fit to the view frustum, which stores the luminance
-/// scattered towards the camera at each point (RGB channels), alongside the average
-/// transmittance to that point (A channel).
+/// The aerial-view lut is a 3d LUT fit to the view frustum, which stores the
+/// luminance scattered towards the camera at each point (RGB channels),
+/// alongside the average transmittance to that point (A channel).
 #[derive(Clone, Component, Reflect)]
 #[reflect(Clone, Default)]
 pub struct AtmosphereSettings {
@@ -470,11 +515,9 @@ impl From<AtmosphereSettings> for GpuAtmosphereSettings {
 }
 
 impl ExtractComponent for GpuAtmosphereSettings {
-    type QueryData = Read<AtmosphereSettings>;
-
-    type QueryFilter = (With<Camera3d>, With<Atmosphere>);
-
     type Out = GpuAtmosphereSettings;
+    type QueryData = Read<AtmosphereSettings>;
+    type QueryFilter = (With<Camera3d>, With<Atmosphere>);
 
     fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         Some(item.clone().into())
@@ -494,17 +537,18 @@ fn configure_camera_depth_usages(
 #[repr(u32)]
 #[derive(Clone, Default, Reflect, Copy)]
 pub enum AtmosphereMode {
-    /// High-performance solution tailored to scenes that are mostly inside of the atmosphere.
-    /// Uses a set of lookup textures to approximate scattering integration.
-    /// Slightly less accurate for very long-distance/space views (lighting precision
-    /// tapers as the camera moves far from the scene origin) and for sharp volumetric
+    /// High-performance solution tailored to scenes that are mostly inside of
+    /// the atmosphere. Uses a set of lookup textures to approximate
+    /// scattering integration. Slightly less accurate for very
+    /// long-distance/space views (lighting precision tapers as the camera
+    /// moves far from the scene origin) and for sharp volumetric
     /// (cloud/fog) shadows.
     #[default]
     LookupTexture = 0,
     /// Slower, more accurate rendering method for any type of scene.
-    /// Integrates the scattering numerically with raymarching and produces sharp volumetric
-    /// (cloud/fog) shadows.
+    /// Integrates the scattering numerically with raymarching and produces
+    /// sharp volumetric (cloud/fog) shadows.
     /// Best for cinematic shots, planets seen from orbit, and scenes requiring
     /// accurate long-distance lighting.
-    Raymarched = 1,
+    Raymarched    = 1,
 }

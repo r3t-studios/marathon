@@ -1,32 +1,73 @@
-//! Order Independent Transparency (OIT) for 3d rendering. See [`OrderIndependentTransparencyPlugin`] for more details.
+//! Order Independent Transparency (OIT) for 3d rendering. See
+//! [`OrderIndependentTransparencyPlugin`] for more details.
 
 use bevy_app::prelude::*;
-use bevy_camera::{Camera, Camera3d};
-use bevy_ecs::{component::*, lifecycle::ComponentHook, prelude::*};
+use bevy_camera::{
+    Camera,
+    Camera3d,
+};
+use bevy_ecs::{
+    component::*,
+    lifecycle::ComponentHook,
+    prelude::*,
+};
 use bevy_math::UVec2;
-use bevy_platform::collections::HashSet;
-use bevy_platform::time::Instant;
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use crate::render::{
-    camera::ExtractedCamera,
-    extract_component::{ExtractComponent, ExtractComponentPlugin},
-    render_graph::{RenderGraphExt, ViewNodeRunner},
-    render_resource::{BufferUsages, BufferVec, DynamicUniformBuffer, ShaderType, TextureUsages},
-    renderer::{RenderDevice, RenderQueue},
-    view::Msaa,
-    Render, RenderApp, RenderStartup, RenderSystems,
+use bevy_platform::{
+    collections::HashSet,
+    time::Instant,
+};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
 };
 use bevy_shader::load_shader_library;
 use bevy_window::PrimaryWindow;
 use resolve::{
-    node::{OitResolveNode, OitResolvePass},
     OitResolvePlugin,
+    node::{
+        OitResolveNode,
+        OitResolvePass,
+    },
 };
-use tracing::{trace, warn};
+use tracing::{
+    trace,
+    warn,
+};
 
-use crate::render::core_3d::graph::{Core3d, Node3d};
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    camera::ExtractedCamera,
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
+    extract_component::{
+        ExtractComponent,
+        ExtractComponentPlugin,
+    },
+    render_graph::{
+        RenderGraphExt,
+        ViewNodeRunner,
+    },
+    render_resource::{
+        BufferUsages,
+        BufferVec,
+        DynamicUniformBuffer,
+        ShaderType,
+        TextureUsages,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    view::Msaa,
+};
 
-/// Module that defines the necessary systems to resolve the OIT buffer and render it to the screen.
+/// Module that defines the necessary systems to resolve the OIT buffer and
+/// render it to the screen.
 pub mod resolve;
 
 /// Used to identify which camera will use OIT to render transparent meshes
@@ -39,12 +80,14 @@ pub mod resolve;
 #[reflect(Clone, Default)]
 pub struct OrderIndependentTransparencySettings {
     /// Controls how many layers will be used to compute the blending.
-    /// The more layers you use the more memory it will use but it will also give better results.
-    /// 8 is generally recommended, going above 32 is probably not worth it in the vast majority of cases
+    /// The more layers you use the more memory it will use but it will also
+    /// give better results. 8 is generally recommended, going above 32 is
+    /// probably not worth it in the vast majority of cases
     pub layer_count: i32,
     /// Threshold for which fragments will be added to the blending layers.
-    /// This can be tweaked to optimize quality / layers count. Higher values will
-    /// allow lower number of layers and a better performance, compromising quality.
+    /// This can be tweaked to optimize quality / layers count. Higher values
+    /// will allow lower number of layers and a better performance,
+    /// compromising quality.
     pub alpha_threshold: f32,
 }
 
@@ -57,43 +100,53 @@ impl Default for OrderIndependentTransparencySettings {
     }
 }
 
-// OrderIndependentTransparencySettings is also a Component. We explicitly implement the trait so
-// we can hook on_add to issue a warning in case `layer_count` is seemingly too high.
+// OrderIndependentTransparencySettings is also a Component. We explicitly
+// implement the trait so we can hook on_add to issue a warning in case
+// `layer_count` is seemingly too high.
 impl Component for OrderIndependentTransparencySettings {
-    const STORAGE_TYPE: StorageType = StorageType::SparseSet;
     type Mutability = Mutable;
+
+    const STORAGE_TYPE: StorageType = StorageType::SparseSet;
 
     fn on_add() -> Option<ComponentHook> {
         Some(|world, context| {
-            if let Some(value) = world.get::<OrderIndependentTransparencySettings>(context.entity)
-                && value.layer_count > 32
+            if let Some(value) = world.get::<OrderIndependentTransparencySettings>(context.entity) &&
+                value.layer_count > 32
             {
-                warn!("{}OrderIndependentTransparencySettings layer_count set to {} might be too high.",
-                        context.caller.map(|location|format!("{location}: ")).unwrap_or_default(),
-                        value.layer_count
-                    );
+                warn!(
+                    "{}OrderIndependentTransparencySettings layer_count set to {} might be too high.",
+                    context
+                        .caller
+                        .map(|location| format!("{location}: "))
+                        .unwrap_or_default(),
+                    value.layer_count
+                );
             }
         })
     }
 }
 
 /// A plugin that adds support for Order Independent Transparency (OIT).
-/// This can correctly render some scenes that would otherwise have artifacts due to alpha blending, but uses more memory.
+/// This can correctly render some scenes that would otherwise have artifacts
+/// due to alpha blending, but uses more memory.
 ///
-/// To enable OIT for a camera you need to add the [`OrderIndependentTransparencySettings`] component to it.
+/// To enable OIT for a camera you need to add the
+/// [`OrderIndependentTransparencySettings`] component to it.
 ///
-/// If you want to use OIT for your custom material you need to call `oit_draw(position, color)` in your fragment shader.
-/// You also need to make sure that your fragment shader doesn't output any colors.
+/// If you want to use OIT for your custom material you need to call
+/// `oit_draw(position, color)` in your fragment shader. You also need to make
+/// sure that your fragment shader doesn't output any colors.
 ///
 /// # Implementation details
 /// This implementation uses 2 passes.
 ///
-/// The first pass writes the depth and color of all the fragments to a big buffer.
-/// The buffer contains N layers for each pixel, where N can be set with [`OrderIndependentTransparencySettings::layer_count`].
-/// This pass is essentially a forward pass.
+/// The first pass writes the depth and color of all the fragments to a big
+/// buffer. The buffer contains N layers for each pixel, where N can be set with
+/// [`OrderIndependentTransparencySettings::layer_count`]. This pass is
+/// essentially a forward pass.
 ///
-/// The second pass is a single fullscreen triangle pass that sorts all the fragments then blends them together
-/// and outputs the result to the screen.
+/// The second pass is a single fullscreen triangle pass that sorts all the
+/// fragments then blends them together and outputs the result to the screen.
 pub struct OrderIndependentTransparencyPlugin;
 impl Plugin for OrderIndependentTransparencyPlugin {
     fn build(&self, app: &mut App) {
@@ -130,9 +183,10 @@ impl Plugin for OrderIndependentTransparencyPlugin {
     }
 }
 
-// WARN This should only happen for cameras with the [`OrderIndependentTransparencySettings`] component
-// but when multiple cameras are present on the same window
-// bevy reuses the same depth texture so we need to set this on all cameras with the same render target.
+// WARN This should only happen for cameras with the
+// [`OrderIndependentTransparencySettings`] component but when multiple cameras
+// are present on the same window bevy reuses the same depth texture so we need
+// to set this on all cameras with the same render target.
 fn configure_depth_texture_usages(
     p: Query<Entity, With<PrimaryWindow>>,
     cameras: Query<(&Camera, Has<OrderIndependentTransparencySettings>)>,
@@ -170,15 +224,16 @@ fn check_msaa(cameras: Query<&Msaa, With<OrderIndependentTransparencySettings>>)
 }
 
 /// Holds the buffers that contain the data of all OIT layers.
-/// We use one big buffer for the entire app. Each camera will reuse it so it will
-/// always be the size of the biggest OIT enabled camera.
+/// We use one big buffer for the entire app. Each camera will reuse it so it
+/// will always be the size of the biggest OIT enabled camera.
 #[derive(Resource)]
 pub struct OitBuffers {
     /// The OIT layers containing depth and color for each fragments.
-    /// This is essentially used as a 3d array where xy is the screen coordinate and z is
-    /// the list of fragments rendered with OIT.
+    /// This is essentially used as a 3d array where xy is the screen coordinate
+    /// and z is the list of fragments rendered with OIT.
     pub layers: BufferVec<UVec2>,
-    /// Buffer containing the index of the last layer that was written for each fragment.
+    /// Buffer containing the index of the last layer that was written for each
+    /// fragment.
     pub layer_ids: BufferVec<i32>,
     pub settings: DynamicUniformBuffer<OrderIndependentTransparencySettings>,
 }
@@ -216,8 +271,9 @@ pub struct OrderIndependentTransparencySettingsOffset {
 }
 
 /// This creates or resizes the oit buffers for each camera.
-/// It will always create one big buffer that's as big as the biggest buffer needed.
-/// Cameras with smaller viewports or less layers will simply use the big buffer and ignore the rest.
+/// It will always create one big buffer that's as big as the biggest buffer
+/// needed. Cameras with smaller viewports or less layers will simply use the
+/// big buffer and ignore the rest.
 pub fn prepare_oit_buffers(
     mut commands: Commands,
     render_device: Res<RenderDevice>,

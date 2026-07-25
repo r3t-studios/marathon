@@ -3,15 +3,20 @@
 //! This module captures raw Apple Pencil input via Swift/UIKit and converts
 //! it to engine-agnostic InputEvents.
 
-use crate::platform::input::{InputEvent, TouchPhase};
-use glam::Vec2;
 use std::sync::Mutex;
+
+use glam::Vec2;
+
+use crate::platform::input::{
+    InputEvent,
+    TouchPhase,
+};
 
 /// Raw pencil point data from Swift UITouch
 ///
 /// This matches the C struct defined in PencilBridge.h
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]  // Use C memory layout so Swift can interop
+#[repr(C)] // Use C memory layout so Swift can interop
 pub struct RawPencilPoint {
     /// Screen X coordinate in points (not pixels)
     pub x: f32,
@@ -86,10 +91,10 @@ fn raw_to_input_event(p: RawPencilPoint) -> InputEvent {
         pressure: p.force,
         tilt: Vec2::new(p.altitude, p.azimuth),
         phase: match p.phase {
-            0 => TouchPhase::Started,
-            1 => TouchPhase::Moved,
-            2 => TouchPhase::Ended,
-            _ => TouchPhase::Cancelled,
+            | 0 => TouchPhase::Started,
+            | 1 => TouchPhase::Moved,
+            | 2 => TouchPhase::Ended,
+            | _ => TouchPhase::Cancelled,
         },
         timestamp: p.timestamp,
     }

@@ -14,10 +14,7 @@
 //!     .render();
 //!
 //! // Render a list
-//! ui::list("Connected Peers")
-//!     .item(peer1)
-//!     .item(peer2)
-//!     .render();
+//! ui::list("Connected Peers").item(peer1).item(peer2).render();
 //!
 //! // Render a data grid
 //! ui::grid("Sessions")
@@ -27,9 +24,12 @@
 //!     .render();
 //! ```
 
-use ratatui::prelude::*;
-use ratatui::widgets::*;
-use ratatui::{TerminalOptions, Viewport};
+use ratatui::{
+    TerminalOptions,
+    Viewport,
+    prelude::*,
+    widgets::*,
+};
 
 /// Create a key-value table (like status output)
 pub fn table(title: &str) -> TableBuilder {
@@ -78,22 +78,19 @@ impl TableBuilder {
                 .map(|(k, v)| Row::new(vec![k.clone(), v.clone()]))
                 .collect();
 
-            let table = Table::new(
-                rows,
-                [Constraint::Length(20), Constraint::Min(30)],
-            )
-            .header(
-                Row::new(vec!["Field", "Value"])
-                    .bold()
-                    .style(Style::default().fg(Color::Green)),
-            )
-            .block(
-                Block::default()
-                    .title(format!(" {} ", self.title))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan)),
-            )
-            .column_spacing(2);
+            let table = Table::new(rows, [Constraint::Length(20), Constraint::Min(30)])
+                .header(
+                    Row::new(vec!["Field", "Value"])
+                        .bold()
+                        .style(Style::default().fg(Color::Green)),
+                )
+                .block(
+                    Block::default()
+                        .title(format!(" {} ", self.title))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan)),
+                )
+                .column_spacing(2);
 
             frame.render_widget(table, area);
         });
@@ -132,13 +129,12 @@ impl ListBuilder {
                 .map(|i| ListItem::new(format!("  • {}", i)))
                 .collect();
 
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                        .title(format!(" {} ", self.title))
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Cyan)),
-                );
+            let list = List::new(items).block(
+                Block::default()
+                    .title(format!(" {} ", self.title))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan)),
+            );
 
             frame.render_widget(list, area);
         });
@@ -169,7 +165,8 @@ impl GridBuilder {
 
     /// Add a data row
     pub fn row(mut self, cells: &[impl std::fmt::Display]) -> Self {
-        self.rows.push(cells.iter().map(|c| c.to_string()).collect());
+        self.rows
+            .push(cells.iter().map(|c| c.to_string()).collect());
         self
     }
 
@@ -180,20 +177,17 @@ impl GridBuilder {
             let area = frame.area();
 
             // Create constraints based on number of columns
-            let col_count = self.headers.len().max(
-                self.rows.iter().map(|r| r.len()).max().unwrap_or(0)
-            );
+            let col_count = self
+                .headers
+                .len()
+                .max(self.rows.iter().map(|r| r.len()).max().unwrap_or(0));
             let constraints = vec![Constraint::Ratio(1, col_count as u32); col_count];
 
             let header = Row::new(self.headers.clone())
                 .bold()
                 .style(Style::default().fg(Color::Green));
 
-            let rows: Vec<Row> = self
-                .rows
-                .iter()
-                .map(|r| Row::new(r.clone()))
-                .collect();
+            let rows: Vec<Row> = self.rows.iter().map(|r| Row::new(r.clone())).collect();
 
             let table = Table::new(rows, constraints)
                 .header(header)
@@ -213,8 +207,7 @@ impl GridBuilder {
 /// Internal helper to render a widget using inline viewport
 fn render_widget<F>(height: usize, render_fn: F)
 where
-    F: FnOnce(&mut Frame),
-{
+    F: FnOnce(&mut Frame), {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
         viewport: Viewport::Inline(height as u16),
     });

@@ -1,28 +1,35 @@
 //! Input handling using engine GameActions
 //!
-//! Processes GameActions (from InputController) and applies them to game entities.
+//! Processes GameActions (from InputController) and applies them to game
+//! entities.
 
 use bevy::prelude::*;
 use libmarathon::{
     engine::GameAction,
-    platform::input::InputController,
     networking::{
-        EntityLockRegistry, LocalSelection, NetworkedEntity,
+        EntityLockRegistry,
+        LocalSelection,
+        NetworkedEntity,
         NodeVectorClock,
     },
+    platform::input::InputController,
 };
 
-use crate::cube::CubeMarker;
-
 use super::event_buffer::InputEventBuffer;
+use crate::cube::CubeMarker;
 
 pub struct InputHandlerPlugin;
 
 impl Plugin for InputHandlerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InputControllerResource>()
-            // handle_game_actions updates selection - must run before release_locks_on_deselection_system
-            .add_systems(Update, handle_game_actions.before(libmarathon::networking::release_locks_on_deselection_system))
+            // handle_game_actions updates selection - must run before
+            // release_locks_on_deselection_system
+            .add_systems(
+                Update,
+                handle_game_actions
+                    .before(libmarathon::networking::release_locks_on_deselection_system),
+            )
             .add_systems(PostUpdate, update_lock_visuals);
     }
 }
@@ -72,17 +79,13 @@ fn handle_game_actions(
     // Apply game actions to entities
     for action in all_actions {
         match action {
-            GameAction::SelectEntity { position } => {
+            | GameAction::SelectEntity { position } => {
                 // Do raycasting to find which entity (if any) was clicked
-                let entity_id = raycast_entity(
-                    position,
-                    &cube_query,
-                    &camera_query,
-                    &window_query,
-                );
+                let entity_id = raycast_entity(position, &cube_query, &camera_query, &window_query);
 
                 // Update selection
-                // The release_locks_on_deselection_system will automatically handle lock changes
+                // The release_locks_on_deselection_system will automatically handle lock
+                // changes
                 selection.clear();
                 if let Some(id) = entity_id {
                     selection.insert(id);
@@ -90,34 +93,35 @@ fn handle_game_actions(
                 } else {
                     info!("Deselected all entities");
                 }
-            }
+            },
 
-            GameAction::MoveEntity { delta } => {
+            | GameAction::MoveEntity { delta } => {
                 apply_move_entity(delta, &lock_registry, node_id, &mut cube_query);
-            }
+            },
 
-            GameAction::RotateEntity { delta } => {
+            | GameAction::RotateEntity { delta } => {
                 apply_rotate_entity(delta, &lock_registry, node_id, &mut cube_query);
-            }
+            },
 
-            GameAction::MoveEntityDepth { delta } => {
+            | GameAction::MoveEntityDepth { delta } => {
                 apply_move_depth(delta, &lock_registry, node_id, &mut cube_query);
-            }
+            },
 
-            GameAction::ResetEntity => {
+            | GameAction::ResetEntity => {
                 apply_reset_entity(&lock_registry, node_id, &mut cube_query);
-            }
+            },
 
-            _ => {
+            | _ => {
                 // Other actions not yet implemented
-            }
+            },
         }
     }
 }
 
 /// Raycast to find which entity was clicked
 ///
-/// Returns the network ID of the closest entity hit by the ray, or None if nothing was hit.
+/// Returns the network ID of the closest entity hit by the ray, or None if
+/// nothing was hit.
 fn raycast_entity(
     position: glam::Vec2,
     cube_query: &Query<(&NetworkedEntity, &mut Transform), With<crate::cube::CubeMarker>>,
@@ -241,7 +245,9 @@ fn screen_to_world_ray(
     let viewport_pos = Vec2::new(screen_pos.x, screen_pos.y);
 
     // Use Bevy's viewport_to_world method
-    let ray_bevy = camera.viewport_to_world(camera_transform, viewport_pos).ok()?;
+    let ray_bevy = camera
+        .viewport_to_world(camera_transform, viewport_pos)
+        .ok()?;
 
     Some(Ray {
         origin: ray_bevy.origin,
@@ -251,7 +257,8 @@ fn screen_to_world_ray(
 
 /// Test ray-AABB (axis-aligned bounding box) intersection
 ///
-/// Returns the distance along the ray if there's an intersection, None otherwise.
+/// Returns the distance along the ray if there's an intersection, None
+/// otherwise.
 fn ray_aabb_intersection(
     ray_origin: Vec3,
     ray_direction: Vec3,

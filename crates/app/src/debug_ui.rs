@@ -1,16 +1,27 @@
 //! Debug UI overlay using egui
 
-use bevy::prelude::*;
-use bevy::ecs::message::MessageWriter;
-use libmarathon::debug_ui::{EguiContexts, EguiPrimaryContextPass};
-use libmarathon::networking::{
-    EntityLockRegistry,
-    GossipBridge,
-    NetworkedEntity,
-    NodeVectorClock,
+use bevy::{
+    ecs::message::MessageWriter,
+    prelude::*,
+};
+use libmarathon::{
+    debug_ui::{
+        EguiContexts,
+        EguiPrimaryContextPass,
+    },
+    networking::{
+        EntityLockRegistry,
+        GossipBridge,
+        NetworkedEntity,
+        NodeVectorClock,
+    },
 };
 
-use crate::cube::{CubeMarker, DeleteCubeEvent, SpawnCubeEvent};
+use crate::cube::{
+    CubeMarker,
+    DeleteCubeEvent,
+    SpawnCubeEvent,
+};
 
 pub struct DebugUiPlugin;
 

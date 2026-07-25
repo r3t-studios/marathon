@@ -1,40 +1,54 @@
-use crate::render::MainWorld;
+use core::ops::{
+    Deref,
+    DerefMut,
+};
+
 use bevy_ecs::{
     component::Tick,
     prelude::*,
     query::FilteredAccessSet,
     system::{
-        ReadOnlySystemParam, SystemMeta, SystemParam, SystemParamItem, SystemParamValidationError,
+        ReadOnlySystemParam,
+        SystemMeta,
+        SystemParam,
+        SystemParamItem,
+        SystemParamValidationError,
         SystemState,
     },
     world::unsafe_world_cell::UnsafeWorldCell,
 };
-use core::ops::{Deref, DerefMut};
+
+use crate::render::MainWorld;
 
 /// A helper for accessing [`MainWorld`] content using a system parameter.
 ///
-/// A [`SystemParam`] adapter which applies the contained `SystemParam` to the [`World`]
-/// contained in [`MainWorld`]. This parameter only works for systems run
-/// during the [`ExtractSchedule`](crate::ExtractSchedule).
+/// A [`SystemParam`] adapter which applies the contained `SystemParam` to the
+/// [`World`] contained in [`MainWorld`]. This parameter only works for systems
+/// run during the [`ExtractSchedule`](crate::ExtractSchedule).
 ///
-/// This requires that the contained [`SystemParam`] does not mutate the world, as it
-/// uses a read-only reference to [`MainWorld`] internally.
+/// This requires that the contained [`SystemParam`] does not mutate the world,
+/// as it uses a read-only reference to [`MainWorld`] internally.
 ///
 /// ## Context
 ///
-/// [`ExtractSchedule`] is used to extract (move) data from the simulation world ([`MainWorld`]) to the
-/// render world. The render world drives rendering each frame (generally to a `Window`).
-/// This design is used to allow performing calculations related to rendering a prior frame at the same
-/// time as the next frame is simulated, which increases throughput (FPS).
+/// [`ExtractSchedule`] is used to extract (move) data from the simulation world
+/// ([`MainWorld`]) to the render world. The render world drives rendering each
+/// frame (generally to a `Window`). This design is used to allow performing
+/// calculations related to rendering a prior frame at the same time as the next
+/// frame is simulated, which increases throughput (FPS).
 ///
-/// [`Extract`] is used to get data from the main world during [`ExtractSchedule`].
+/// [`Extract`] is used to get data from the main world during
+/// [`ExtractSchedule`].
 ///
 /// ## Examples
 ///
 /// ```
 /// use bevy_ecs::prelude::*;
-/// use crate::render::Extract;
-/// use crate::render::sync_world::RenderEntity;
+///
+/// use crate::render::{
+///     Extract,
+///     sync_world::RenderEntity,
+/// };
 /// # #[derive(Component)]
 /// // Do make sure to sync the cloud entities before extracting them.
 /// # struct Cloud;
@@ -49,8 +63,7 @@ use core::ops::{Deref, DerefMut};
 /// [Window]: bevy_window::Window
 pub struct Extract<'w, 's, P>
 where
-    P: ReadOnlySystemParam + 'static,
-{
+    P: ReadOnlySystemParam + 'static, {
     item: SystemParamItem<'w, 's, P>,
 }
 
@@ -63,14 +76,15 @@ pub struct ExtractState<P: SystemParam + 'static> {
 // SAFETY: The only `World` access (`Res<MainWorld>`) is read-only.
 unsafe impl<P> ReadOnlySystemParam for Extract<'_, '_, P> where P: ReadOnlySystemParam {}
 
-// SAFETY: The only `World` access is properly registered by `Res<MainWorld>::init_state`.
-// This call will also ensure that there are no conflicts with prior params.
+// SAFETY: The only `World` access is properly registered by
+// `Res<MainWorld>::init_state`. This call will also ensure that there are no
+// conflicts with prior params.
 unsafe impl<P> SystemParam for Extract<'_, '_, P>
 where
     P: ReadOnlySystemParam,
 {
-    type State = ExtractState<P>;
     type Item<'w, 's> = Extract<'w, 's, P>;
+    type State = ExtractState<P>;
 
     fn init_state(world: &mut World) -> Self::State {
         let mut main_world = world.resource_mut::<MainWorld>();
@@ -109,7 +123,8 @@ where
         };
         // SAFETY: Type is guaranteed by `SystemState`.
         let main_world: &World = unsafe { main_world.deref() };
-        // SAFETY: We provide the main world on which this system state was initialized on.
+        // SAFETY: We provide the main world on which this system state was initialized
+        // on.
         unsafe {
             SystemState::<P>::validate_param(
                 &mut state.state,
@@ -126,8 +141,10 @@ where
         change_tick: Tick,
     ) -> Self::Item<'w, 's> {
         // SAFETY:
-        // - The caller ensures that `world` is the same one that `init_state` was called with.
-        // - The caller ensures that no other `SystemParam`s will conflict with the accesses we have registered.
+        // - The caller ensures that `world` is the same one that `init_state` was
+        //   called with.
+        // - The caller ensures that no other `SystemParam`s will conflict with the
+        //   accesses we have registered.
         let main_world = unsafe {
             Res::<MainWorld>::get_param(
                 &mut state.main_world_state,
@@ -168,8 +185,8 @@ where
     P: ReadOnlySystemParam,
     &'a SystemParamItem<'w, 's, P>: IntoIterator,
 {
-    type Item = <&'a SystemParamItem<'w, 's, P> as IntoIterator>::Item;
     type IntoIter = <&'a SystemParamItem<'w, 's, P> as IntoIterator>::IntoIter;
+    type Item = <&'a SystemParamItem<'w, 's, P> as IntoIterator>::Item;
 
     fn into_iter(self) -> Self::IntoIter {
         (&self.item).into_iter()

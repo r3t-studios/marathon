@@ -2,7 +2,10 @@ mod main_opaque_pass_2d_node;
 mod main_transparent_pass_2d_node;
 
 pub mod graph {
-    use crate::render::render_graph::{RenderLabel, RenderSubGraph};
+    use crate::render::render_graph::{
+        RenderLabel,
+        RenderSubGraph,
+    };
 
     #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderSubGraph)]
     pub struct Core2d;
@@ -33,47 +36,83 @@ pub mod graph {
 
 use core::ops::Range;
 
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_asset::UntypedAssetId;
-use bevy_camera::{Camera, Camera2d};
+use bevy_camera::{
+    Camera,
+    Camera2d,
+};
+use bevy_ecs::prelude::*;
 use bevy_image::ToExtents;
-use bevy_platform::collections::{HashMap, HashSet};
-use crate::render::{
-    batching::gpu_preprocessing::GpuPreprocessingMode,
-    camera::CameraRenderGraph,
-    render_phase::PhaseItemBatchSetKey,
-    view::{ExtractedView, RetainedViewEntity},
+use bevy_math::FloatOrd;
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
 };
 pub use main_opaque_pass_2d_node::*;
 pub use main_transparent_pass_2d_node::*;
 
-use crate::render::{
-    tonemapping::{DebandDither, Tonemapping, TonemappingNode},
-    upscaling::UpscalingNode,
+use self::graph::{
+    Core2d,
+    Node2d,
 };
-use bevy_app::{App, Plugin};
-use bevy_ecs::prelude::*;
-use bevy_math::FloatOrd;
 use crate::render::{
-    camera::ExtractedCamera,
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
+    batching::gpu_preprocessing::GpuPreprocessingMode,
+    camera::{
+        CameraRenderGraph,
+        ExtractedCamera,
+    },
     extract_component::ExtractComponentPlugin,
-    render_graph::{EmptyNode, RenderGraphExt, ViewNodeRunner},
+    render_graph::{
+        EmptyNode,
+        RenderGraphExt,
+        ViewNodeRunner,
+    },
     render_phase::{
-        sort_phase_system, BinnedPhaseItem, CachedRenderPipelinePhaseItem, DrawFunctionId,
-        DrawFunctions, PhaseItem, PhaseItemExtraIndex, SortedPhaseItem, ViewBinnedRenderPhases,
+        BinnedPhaseItem,
+        CachedRenderPipelinePhaseItem,
+        DrawFunctionId,
+        DrawFunctions,
+        PhaseItem,
+        PhaseItemBatchSetKey,
+        PhaseItemExtraIndex,
+        SortedPhaseItem,
+        ViewBinnedRenderPhases,
         ViewSortedRenderPhases,
+        sort_phase_system,
     },
     render_resource::{
-        BindGroupId, CachedRenderPipelineId, TextureDescriptor, TextureDimension, TextureFormat,
+        BindGroupId,
+        CachedRenderPipelineId,
+        TextureDescriptor,
+        TextureDimension,
+        TextureFormat,
         TextureUsages,
     },
     renderer::RenderDevice,
     sync_world::MainEntity,
     texture::TextureCache,
-    view::{Msaa, ViewDepthTexture},
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
+    tonemapping::{
+        DebandDither,
+        Tonemapping,
+        TonemappingNode,
+    },
+    upscaling::UpscalingNode,
+    view::{
+        ExtractedView,
+        Msaa,
+        RetainedViewEntity,
+        ViewDepthTexture,
+    },
 };
-
-use self::graph::{Core2d, Node2d};
 
 pub const CORE_2D_DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 
@@ -212,7 +251,6 @@ impl BinnedPhaseItem for Opaque2d {
     // Since 2D meshes presently can't be multidrawn, the batch set key is
     // irrelevant.
     type BatchSetKey = BatchSetKey2d;
-
     type BinKey = Opaque2dBinKey;
 
     fn new(
@@ -327,7 +365,6 @@ impl BinnedPhaseItem for AlphaMask2d {
     // Since 2D meshes presently can't be multidrawn, the batch set key is
     // irrelevant.
     type BatchSetKey = BatchSetKey2d;
-
     type BinKey = AlphaMask2dBinKey;
 
     fn new(
@@ -415,7 +452,8 @@ impl SortedPhaseItem for Transparent2d {
 
     #[inline]
     fn sort(items: &mut [Self]) {
-        // radsort is a stable radix sort that performed better than `slice::sort_by_key` or `slice::sort_unstable_by_key`.
+        // radsort is a stable radix sort that performed better than
+        // `slice::sort_by_key` or `slice::sort_unstable_by_key`.
         radsort::sort_by_key(items, |item| item.sort_key().0);
     }
 
@@ -472,8 +510,8 @@ pub fn prepare_core_2d_depth_textures(
 ) {
     let mut textures = <HashMap<_, _>>::default();
     for (view, camera, extracted_view, msaa) in &views_2d {
-        if !opaque_2d_phases.contains_key(&extracted_view.retained_view_entity)
-            || !transparent_2d_phases.contains_key(&extracted_view.retained_view_entity)
+        if !opaque_2d_phases.contains_key(&extracted_view.retained_view_entity) ||
+            !transparent_2d_phases.contains_key(&extracted_view.retained_view_entity)
         {
             continue;
         };

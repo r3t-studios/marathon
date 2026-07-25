@@ -1,29 +1,65 @@
+use core::any::{
+    Any,
+    TypeId,
+};
+
+use bevy_camera::{
+    Camera3d,
+    Projection,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_light::{
+    EnvironmentMapLight,
+    IrradianceVolume,
+    ShadowFilteringMethod,
+};
+use bevy_mesh::{
+    Mesh,
+    MeshVertexBufferLayout,
+    MeshVertexBufferLayoutRef,
+    MeshVertexBufferLayouts,
+    VertexBufferLayout,
+};
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+};
+use bevy_utils::default;
+
 use super::{
-    instance_manager::InstanceManager, pipelines::MeshletPipelines,
+    instance_manager::InstanceManager,
+    pipelines::MeshletPipelines,
     resource_manager::ResourceManager,
 };
-use crate::render::pbr::*;
-use bevy_camera::{Camera3d, Projection};
 use crate::render::{
-    prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
-    tonemapping::{DebandDither, Tonemapping},
+    camera::TemporalJitter,
+    erased_render_asset::ErasedRenderAssets,
+    pbr::*,
+    prepass::{
+        DeferredPrepass,
+        DepthPrepass,
+        MotionVectorPrepass,
+        NormalPrepass,
+    },
+    render_resource::*,
+    tonemapping::{
+        DebandDither,
+        Tonemapping,
+    },
+    view::ExtractedView,
 };
-use bevy_derive::{Deref, DerefMut};
-use bevy_light::{EnvironmentMapLight, IrradianceVolume, ShadowFilteringMethod};
-use bevy_mesh::VertexBufferLayout;
-use bevy_mesh::{Mesh, MeshVertexBufferLayout, MeshVertexBufferLayoutRef, MeshVertexBufferLayouts};
-use bevy_platform::collections::{HashMap, HashSet};
-use crate::render::erased_render_asset::ErasedRenderAssets;
-use crate::render::{camera::TemporalJitter, render_resource::*, view::ExtractedView};
-use bevy_utils::default;
-use core::any::{Any, TypeId};
 
-/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in [`super::MeshletMainOpaquePass3dNode`].
+/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in
+/// [`super::MeshletMainOpaquePass3dNode`].
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct MeshletViewMaterialsMainOpaquePass(pub Vec<(u32, CachedRenderPipelineId, BindGroup)>);
 
-/// Prepare [`Material`] pipelines for [`super::MeshletMesh`] entities for use in [`super::MeshletMainOpaquePass3dNode`],
-/// and register the material with [`InstanceManager`].
+/// Prepare [`Material`] pipelines for [`super::MeshletMesh`] entities for use
+/// in [`super::MeshletMainOpaquePass3dNode`], and register the material with
+/// [`InstanceManager`].
 pub fn prepare_material_meshlet_meshes_main_opaque_pass(
     resource_manager: ResMut<ResourceManager>,
     mut instance_manager: ResMut<InstanceManager>,
@@ -104,22 +140,22 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
 
         if let Some(projection) = projection {
             view_key |= match projection {
-                Projection::Perspective(_) => MeshPipelineKey::VIEW_PROJECTION_PERSPECTIVE,
-                Projection::Orthographic(_) => MeshPipelineKey::VIEW_PROJECTION_ORTHOGRAPHIC,
-                Projection::Custom(_) => MeshPipelineKey::VIEW_PROJECTION_NONSTANDARD,
+                | Projection::Perspective(_) => MeshPipelineKey::VIEW_PROJECTION_PERSPECTIVE,
+                | Projection::Orthographic(_) => MeshPipelineKey::VIEW_PROJECTION_ORTHOGRAPHIC,
+                | Projection::Custom(_) => MeshPipelineKey::VIEW_PROJECTION_NONSTANDARD,
             };
         }
 
         match shadow_filter_method.unwrap_or(&ShadowFilteringMethod::default()) {
-            ShadowFilteringMethod::Hardware2x2 => {
+            | ShadowFilteringMethod::Hardware2x2 => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_HARDWARE_2X2;
-            }
-            ShadowFilteringMethod::Gaussian => {
+            },
+            | ShadowFilteringMethod::Gaussian => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_GAUSSIAN;
-            }
-            ShadowFilteringMethod::Temporal => {
+            },
+            | ShadowFilteringMethod::Temporal => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_TEMPORAL;
-            }
+            },
         }
 
         if !view.hdr {
@@ -151,9 +187,9 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
                 continue;
             };
 
-            if material.properties.render_method != OpaqueRendererMethod::Forward
-                || material.properties.alpha_mode != AlphaMode::Opaque
-                || material.properties.reads_view_transmission_texture
+            if material.properties.render_method != OpaqueRendererMethod::Forward ||
+                material.properties.alpha_mode != AlphaMode::Opaque ||
+                material.properties.reads_view_transmission_texture
             {
                 continue;
             }
@@ -211,8 +247,8 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
                 multisample: MultisampleState::default(),
                 fragment: Some(FragmentState {
                     shader: match material.properties.get_shader(MeshletFragmentShader) {
-                        Some(shader) => shader.clone(),
-                        None => meshlet_pipelines.meshlet_mesh_material.clone(),
+                        | Some(shader) => shader.clone(),
+                        | None => meshlet_pipelines.meshlet_mesh_material.clone(),
                     },
                     shader_defs,
                     entry_point: material_fragment.entry_point,
@@ -245,18 +281,22 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
     }
 }
 
-/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in [`super::MeshletPrepassNode`].
+/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in
+/// [`super::MeshletPrepassNode`].
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct MeshletViewMaterialsPrepass(pub Vec<(u32, CachedRenderPipelineId, BindGroup)>);
 
-/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in [`super::MeshletDeferredGBufferPrepassNode`].
+/// A list of `(Material ID, Pipeline, BindGroup)` for a view for use in
+/// [`super::MeshletDeferredGBufferPrepassNode`].
 #[derive(Component, Deref, DerefMut, Default)]
 pub struct MeshletViewMaterialsDeferredGBufferPrepass(
     pub Vec<(u32, CachedRenderPipelineId, BindGroup)>,
 );
 
-/// Prepare [`Material`] pipelines for [`super::MeshletMesh`] entities for use in [`super::MeshletPrepassNode`],
-/// and [`super::MeshletDeferredGBufferPrepassNode`] and register the material with [`InstanceManager`].
+/// Prepare [`Material`] pipelines for [`super::MeshletMesh`] entities for use
+/// in [`super::MeshletPrepassNode`],
+/// and [`super::MeshletDeferredGBufferPrepassNode`] and register the material
+/// with [`InstanceManager`].
 pub fn prepare_material_meshlet_meshes_prepass(
     resource_manager: ResMut<ResourceManager>,
     mut instance_manager: ResMut<InstanceManager>,
@@ -314,8 +354,8 @@ pub fn prepare_material_meshlet_meshes_prepass(
                 continue;
             };
 
-            if material.properties.alpha_mode != AlphaMode::Opaque
-                || material.properties.reads_view_transmission_texture
+            if material.properties.alpha_mode != AlphaMode::Opaque ||
+                material.properties.reads_view_transmission_texture
             {
                 continue;
             }
@@ -436,7 +476,8 @@ pub fn prepare_material_meshlet_meshes_prepass(
     }
 }
 
-// Meshlet materials don't use a traditional vertex buffer, but the material specialization requires one.
+// Meshlet materials don't use a traditional vertex buffer, but the material
+// specialization requires one.
 fn fake_vertex_buffer_layout(layouts: &mut MeshVertexBufferLayouts) -> MeshVertexBufferLayoutRef {
     layouts.insert(MeshVertexBufferLayout::new(
         vec![

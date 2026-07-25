@@ -1,15 +1,36 @@
-use super::{GpuArrayBufferIndex, GpuArrayBufferable};
-use crate::render::{
-    render_resource::DynamicUniformBuffer,
-    renderer::{RenderDevice, RenderQueue},
+use core::{
+    marker::PhantomData,
+    num::NonZero,
 };
-use core::{marker::PhantomData, num::NonZero};
+
 use encase::{
-    private::{ArrayMetadata, BufferMut, Metadata, RuntimeSizedArray, WriteInto, Writer},
     ShaderType,
+    private::{
+        ArrayMetadata,
+        BufferMut,
+        Metadata,
+        RuntimeSizedArray,
+        WriteInto,
+        Writer,
+    },
 };
 use nonmax::NonMaxU32;
-use wgpu::{BindingResource, Limits};
+use wgpu::{
+    BindingResource,
+    Limits,
+};
+
+use super::{
+    GpuArrayBufferIndex,
+    GpuArrayBufferable,
+};
+use crate::render::{
+    render_resource::DynamicUniformBuffer,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 // 1MB else we will make really large arrays on macOS which reports very large
 // `max_uniform_buffer_binding_size`. On macOS this ends up being the minimum
@@ -30,8 +51,8 @@ const MAX_REASONABLE_UNIFORM_BUFFER_BINDING_SIZE: u32 = 1 << 20;
 #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
 const MAX_REASONABLE_UNIFORM_BUFFER_BINDING_SIZE: u32 = 1 << 12;
 
-/// Similar to [`DynamicUniformBuffer`], except every N elements (depending on size)
-/// are grouped into a batch as an `array<T, N>` in WGSL.
+/// Similar to [`DynamicUniformBuffer`], except every N elements (depending on
+/// size) are grouped into a batch as an `array<T, N>` in WGSL.
 ///
 /// This reduces the number of rebindings required due to having to pass dynamic
 /// offsets to bind group commands, and if indices into the array can be passed
@@ -52,8 +73,8 @@ impl<T: GpuArrayBufferable> BatchedUniformBuffer<T> {
     pub fn batch_size(limits: &Limits) -> usize {
         (limits
             .max_uniform_buffer_binding_size
-            .min(MAX_REASONABLE_UNIFORM_BUFFER_BINDING_SIZE) as u64
-            / T::min_size().get()) as usize
+            .min(MAX_REASONABLE_UNIFORM_BUFFER_BINDING_SIZE) as u64 /
+            T::min_size().get()) as usize
     }
 
     pub fn new(limits: &Limits) -> Self {

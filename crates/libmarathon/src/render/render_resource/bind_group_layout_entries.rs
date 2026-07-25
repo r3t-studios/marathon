@@ -1,6 +1,11 @@
 use core::num::NonZero;
+
 use variadics_please::all_tuples_with_size;
-use wgpu::{BindGroupLayoutEntry, BindingType, ShaderStages};
+use wgpu::{
+    BindGroupLayoutEntry,
+    BindingType,
+    ShaderStages,
+};
 
 /// Helper for constructing bind group layouts.
 ///
@@ -200,6 +205,7 @@ impl BindGroupLayoutEntries<1> {
 
 impl<const N: usize> core::ops::Deref for BindGroupLayoutEntries<N> {
     type Target = [BindGroupLayoutEntry];
+
     fn deref(&self) -> &[BindGroupLayoutEntry] {
         &self.entries
     }
@@ -222,7 +228,9 @@ impl IntoBindGroupLayoutEntryBuilder for BindingType {
 impl IntoBindGroupLayoutEntryBuilder for BindGroupLayoutEntry {
     fn into_bind_group_layout_entry_builder(self) -> BindGroupLayoutEntryBuilder {
         if self.binding != u32::MAX {
-            tracing::warn!("The BindGroupLayoutEntries api ignores the binding index when converting a raw wgpu::BindGroupLayoutEntry. You can ignore this warning by setting it to u32::MAX.");
+            tracing::warn!(
+                "The BindGroupLayoutEntries api ignores the binding index when converting a raw wgpu::BindGroupLayoutEntry. You can ignore this warning by setting it to u32::MAX."
+            );
         }
         BindGroupLayoutEntryBuilder {
             ty: self.ty,
@@ -364,14 +372,21 @@ impl core::ops::Deref for DynamicBindGroupLayoutEntries {
 }
 
 pub mod binding_types {
-    use crate::render::render_resource::{
-        BufferBindingType, SamplerBindingType, TextureSampleType, TextureViewDimension,
-    };
     use core::num::NonZero;
+
     use encase::ShaderType;
-    use wgpu::{StorageTextureAccess, TextureFormat};
+    use wgpu::{
+        StorageTextureAccess,
+        TextureFormat,
+    };
 
     use super::*;
+    use crate::render::render_resource::{
+        BufferBindingType,
+        SamplerBindingType,
+        TextureSampleType,
+        TextureViewDimension,
+    };
 
     pub fn storage_buffer<T: ShaderType>(has_dynamic_offset: bool) -> BindGroupLayoutEntryBuilder {
         storage_buffer_sized(has_dynamic_offset, Some(T::min_size()))

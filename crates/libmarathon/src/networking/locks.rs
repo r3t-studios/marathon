@@ -8,7 +8,8 @@
 //! 1. **Acquisition**: User selects entity → broadcast `LockRequest`
 //! 2. **Optimistic Apply**: All peers apply lock locally
 //! 3. **Confirm**: Holder broadcasts `LockAcquired`
-//! 4. **Conflict Resolution**: If two nodes acquire simultaneously, higher node ID wins
+//! 4. **Conflict Resolution**: If two nodes acquire simultaneously, higher node
+//!    ID wins
 //! 5. **Release**: User deselects entity → broadcast `LockReleased`
 //! 6. **Timeout**: 5-second timeout as crash recovery fallback
 //!
@@ -16,7 +17,11 @@
 //!
 //! ```no_run
 //! use bevy::prelude::*;
-//! use libmarathon::networking::{EntityLockRegistry, acquire_entity_lock, release_entity_lock};
+//! use libmarathon::networking::{
+//!     EntityLockRegistry,
+//!     acquire_entity_lock,
+//!     release_entity_lock,
+//! };
 //! use uuid::Uuid;
 //!
 //! fn my_system(world: &mut World) {
@@ -42,7 +47,6 @@ use std::{
 };
 
 use bevy::prelude::*;
-
 use uuid::Uuid;
 
 use crate::networking::{
@@ -63,16 +67,10 @@ pub const MAX_LOCKS_PER_NODE: usize = 100;
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, PartialEq, Eq)]
 pub enum LockMessage {
     /// Request to acquire a lock on an entity
-    LockRequest {
-        entity_id: Uuid,
-        node_id: NodeId,
-    },
+    LockRequest { entity_id: Uuid, node_id: NodeId },
 
     /// Confirmation that a lock was successfully acquired
-    LockAcquired {
-        entity_id: Uuid,
-        holder: NodeId,
-    },
+    LockAcquired { entity_id: Uuid, holder: NodeId },
 
     /// Lock acquisition failed (already locked by another node)
     LockRejected {
@@ -85,21 +83,13 @@ pub enum LockMessage {
     ///
     /// If no heartbeat is received for 5 seconds, the lock expires.
     /// This provides automatic crash recovery without explicit timeouts.
-    LockHeartbeat {
-        entity_id: Uuid,
-        holder: NodeId,
-    },
+    LockHeartbeat { entity_id: Uuid, holder: NodeId },
 
     /// Request to release a lock
-    LockRelease {
-        entity_id: Uuid,
-        node_id: NodeId,
-    },
+    LockRelease { entity_id: Uuid, node_id: NodeId },
 
     /// Confirmation that a lock was released
-    LockReleased {
-        entity_id: Uuid,
-    },
+    LockReleased { entity_id: Uuid },
 }
 
 /// Information about an active entity lock
@@ -169,7 +159,8 @@ impl EntityLockRegistry {
 
     /// Try to acquire a lock on an entity
     ///
-    /// Returns Ok(()) if lock was acquired, Err with current holder if already locked.
+    /// Returns Ok(()) if lock was acquired, Err with current holder if already
+    /// locked.
     pub fn try_acquire(&mut self, entity_id: Uuid, node_id: NodeId) -> Result<(), NodeId> {
         // Check if already locked
         if let Some(existing_lock) = self.locks.get(&entity_id) {
@@ -232,7 +223,8 @@ impl EntityLockRegistry {
     /// Check if an entity is locked by any node
     ///
     /// Takes the local node ID to properly handle expiration:
-    /// - Our own locks are never considered expired (held exactly as long as selected)
+    /// - Our own locks are never considered expired (held exactly as long as
+    ///   selected)
     /// - Remote locks are subject to the 5-second timeout
     pub fn is_locked(&self, entity_id: Uuid, local_node_id: NodeId) -> bool {
         self.locks.get(&entity_id).map_or(false, |lock| {
@@ -244,7 +236,8 @@ impl EntityLockRegistry {
     /// Check if an entity is locked by a specific node
     ///
     /// Takes the local node ID to properly handle expiration:
-    /// - If checking our own lock, ignore expiration (held exactly as long as selected)
+    /// - If checking our own lock, ignore expiration (held exactly as long as
+    ///   selected)
     /// - If checking another node's lock, apply 5-second timeout
     pub fn is_locked_by(&self, entity_id: Uuid, node_id: NodeId, local_node_id: NodeId) -> bool {
         self.locks.get(&entity_id).map_or(false, |lock| {
@@ -323,9 +316,11 @@ impl EntityLockRegistry {
         }
     }
 
-    /// Test helper: Manually expire a lock by setting its heartbeat timestamp to the past
+    /// Test helper: Manually expire a lock by setting its heartbeat timestamp
+    /// to the past
     ///
-    /// This is only intended for testing purposes to simulate lock expiration without waiting.
+    /// This is only intended for testing purposes to simulate lock expiration
+    /// without waiting.
     pub fn expire_lock_for_testing(&mut self, entity_id: Uuid) {
         if let Some(lock) = self.locks.get_mut(&entity_id) {
             lock.last_heartbeat = Instant::now() - Duration::from_secs(10);
@@ -358,15 +353,16 @@ pub fn acquire_locks_on_selection_system(
         // Only try to acquire if we don't already hold the lock
         if !already_locked {
             match registry.try_acquire(entity_id, node_id) {
-                Ok(()) => {
+                | Ok(()) => {
                     info!("Acquired lock on newly selected entity {}", entity_id);
 
                     // Broadcast LockRequest
                     if let Some(ref bridge) = bridge {
-                        let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
-                            entity_id,
-                            node_id,
-                        }));
+                        let msg =
+                            VersionedMessage::new(SyncMessage::Lock(LockMessage::LockRequest {
+                                entity_id,
+                                node_id,
+                            }));
 
                         if let Err(e) = bridge.send(msg) {
                             error!("Failed to broadcast LockRequest on selection: {}", e);
@@ -376,10 +372,13 @@ pub fn acquire_locks_on_selection_system(
                     } else {
                         warn!("No GossipBridge available to broadcast LockRequest");
                     }
-                }
-                Err(holder) => {
-                    warn!("Failed to acquire lock on selected entity {} (held by {})", entity_id, holder);
-                }
+                },
+                | Err(holder) => {
+                    warn!(
+                        "Failed to acquire lock on selected entity {} (held by {})",
+                        entity_id, holder
+                    );
+                },
             }
         }
     }
@@ -387,9 +386,9 @@ pub fn acquire_locks_on_selection_system(
 
 /// System to release locks when entities are deselected
 ///
-/// This system detects when entities are removed from the global `LocalSelection`
-/// resource and releases any locks held on those entities, broadcasting the release
-/// to other peers.
+/// This system detects when entities are removed from the global
+/// `LocalSelection` resource and releases any locks held on those entities,
+/// broadcasting the release to other peers.
 ///
 /// Add to your app as an Update system:
 /// ```no_run
@@ -423,7 +422,10 @@ pub fn release_locks_on_deselection_system(
         .collect();
 
     if !locks_to_release.is_empty() {
-        info!("Selection cleared, releasing {} locks", locks_to_release.len());
+        info!(
+            "Selection cleared, releasing {} locks",
+            locks_to_release.len()
+        );
     }
 
     // Release each lock and broadcast
@@ -454,9 +456,9 @@ pub fn release_locks_on_deselection_system(
 /// duration (default 5 seconds). This provides crash recovery - if a **remote**
 /// node crashes while holding a lock, it will eventually expire.
 ///
-/// **Important**: Only remote locks are cleaned up. Local locks (held by this node)
-/// are never timed out - they're held exactly as long as entities are selected,
-/// and only released via deselection.
+/// **Important**: Only remote locks are cleaned up. Local locks (held by this
+/// node) are never timed out - they're held exactly as long as entities are
+/// selected, and only released via deselection.
 ///
 /// Add to your app as an Update system:
 /// ```no_run
@@ -488,13 +490,17 @@ pub fn cleanup_expired_locks_system(
         info!("Cleaning up {} expired remote locks", expired.len());
 
         for entity_id in expired {
-            debug!("Force-releasing expired remote lock on entity {}", entity_id);
+            debug!(
+                "Force-releasing expired remote lock on entity {}",
+                entity_id
+            );
             registry.force_release(entity_id);
 
             // Broadcast LockReleased
             if let Some(ref bridge) = bridge {
-                let msg =
-                    VersionedMessage::new(SyncMessage::Lock(LockMessage::LockReleased { entity_id }));
+                let msg = VersionedMessage::new(SyncMessage::Lock(LockMessage::LockReleased {
+                    entity_id,
+                }));
 
                 if let Err(e) = bridge.send(msg) {
                     error!("Failed to broadcast LockReleased for expired lock: {}", e);
@@ -514,13 +520,17 @@ pub fn cleanup_expired_locks_system(
 ///
 /// Add to your app as an Update system with a run condition to throttle it:
 /// ```no_run
-/// use bevy::prelude::*;
-/// use bevy::time::common_conditions::on_timer;
 /// use std::time::Duration;
+///
+/// use bevy::{
+///     prelude::*,
+///     time::common_conditions::on_timer,
+/// };
 /// use libmarathon::networking::broadcast_lock_heartbeats_system;
 ///
-/// App::new().add_systems(Update,
-///     broadcast_lock_heartbeats_system.run_if(on_timer(Duration::from_secs(1)))
+/// App::new().add_systems(
+///     Update,
+///     broadcast_lock_heartbeats_system.run_if(on_timer(Duration::from_secs(1))),
 /// );
 /// ```
 pub fn broadcast_lock_heartbeats_system(
@@ -718,8 +728,11 @@ mod tests {
         ];
 
         for message in messages {
-            let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message).map(|b| b.to_vec()).unwrap();
-            let deserialized: LockMessage = rkyv::from_bytes::<LockMessage, rkyv::rancor::Failure>(&bytes).unwrap();
+            let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&message)
+                .map(|b| b.to_vec())
+                .unwrap();
+            let deserialized: LockMessage =
+                rkyv::from_bytes::<LockMessage, rkyv::rancor::Failure>(&bytes).unwrap();
             assert_eq!(message, deserialized);
         }
     }

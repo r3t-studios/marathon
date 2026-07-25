@@ -2,6 +2,11 @@
 //!
 //! This demonstrates real-time CRDT synchronization with Apple Pencil input.
 
+#[cfg(feature = "headless")]
+use std::time::Duration;
+
+#[cfg(feature = "headless")]
+use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use clap::Parser;
 use libmarathon::{
@@ -11,11 +16,6 @@ use libmarathon::{
     },
     persistence::PersistenceConfig,
 };
-
-#[cfg(feature = "headless")]
-use bevy::app::ScheduleRunnerPlugin;
-#[cfg(feature = "headless")]
-use std::time::Duration;
 
 /// Marathon - CRDT-based collaborative editing engine
 #[derive(Parser, Debug)]
@@ -101,7 +101,9 @@ fn main() {
         use tracing_subscriber::prelude::*;
 
         // Parse log level from args
-        let default_level = args.log_level.parse::<tracing::Level>()
+        let default_level = args
+            .log_level
+            .parse::<tracing::Level>()
             .unwrap_or_else(|_| {
                 eprintln!("Invalid log level '{}', using 'info'", args.log_level);
                 tracing::Level::INFO
@@ -115,13 +117,14 @@ fn main() {
 
         // Build subscriber based on combination of flags
         match (args.no_console, args.no_log_file) {
-            (false, false) => {
+            | (false, false) => {
                 // Both console and file
-                let console_layer = tracing_subscriber::fmt::layer()
-                    .with_writer(std::io::stdout);
+                let console_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
 
                 let log_path = std::path::PathBuf::from(&args.log_file);
-                let log_dir = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+                let log_dir = log_path
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("."));
                 let log_filename = log_path.file_name().unwrap().to_str().unwrap();
                 let file_appender = tracing_appender::rolling::never(log_dir, log_filename);
                 let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -137,11 +140,10 @@ fn main() {
                     .init();
 
                 eprintln!(">>> Logs written to: {} and console", args.log_file);
-            }
-            (false, true) => {
+            },
+            | (false, true) => {
                 // Console only
-                let console_layer = tracing_subscriber::fmt::layer()
-                    .with_writer(std::io::stdout);
+                let console_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
 
                 tracing_subscriber::registry()
                     .with(filter)
@@ -149,11 +151,13 @@ fn main() {
                     .init();
 
                 eprintln!(">>> Console logging only (no log file)");
-            }
-            (true, false) => {
+            },
+            | (true, false) => {
                 // File only
                 let log_path = std::path::PathBuf::from(&args.log_file);
-                let log_dir = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+                let log_dir = log_path
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new("."));
                 let log_filename = log_path.file_name().unwrap().to_str().unwrap();
                 let file_appender = tracing_appender::rolling::never(log_dir, log_filename);
                 let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -168,15 +172,13 @@ fn main() {
                     .init();
 
                 eprintln!(">>> Logs written to: {} (console disabled)", args.log_file);
-            }
-            (true, true) => {
+            },
+            | (true, true) => {
                 // Neither - warn but initialize anyway
-                tracing_subscriber::registry()
-                    .with(filter)
-                    .init();
+                tracing_subscriber::registry().with(filter).init();
 
                 eprintln!(">>> Warning: Both console and file logging disabled!");
-            }
+            },
         }
     }
 
@@ -243,11 +245,9 @@ fn main() {
     #[cfg(feature = "headless")]
     {
         info!("Adding MinimalPlugins (headless mode)");
-        app.add_plugins(
-            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-                Duration::from_secs_f64(1.0 / 60.0), // 60 FPS
-            )),
-        );
+        app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+            Duration::from_secs_f64(1.0 / 60.0), // 60 FPS
+        )));
         info!("MinimalPlugins added");
     }
 
@@ -269,7 +269,9 @@ fn main() {
     #[cfg(feature = "headless")]
     {
         info!("Adding networking and persistence (headless, no UI)");
-        app.add_plugins(libmarathon::networking::NetworkingPlugin::new(Default::default()));
+        app.add_plugins(libmarathon::networking::NetworkingPlugin::new(
+            Default::default(),
+        ));
         app.add_plugins(libmarathon::persistence::PersistencePlugin::with_config(
             db_path.clone(),
             PersistenceConfig {
@@ -295,7 +297,13 @@ fn main() {
     // Insert control socket path as resource
     app.insert_resource(control::ControlSocketPath(args.control_socket.clone()));
     app.add_systems(Startup, control::start_control_socket_system);
-    app.add_systems(Update, (control::process_app_commands, control::cleanup_control_socket));
+    app.add_systems(
+        Update,
+        (
+            control::process_app_commands,
+            control::cleanup_control_socket,
+        ),
+    );
 
     // Rendering-only plugins
     #[cfg(not(feature = "headless"))]
@@ -303,7 +311,8 @@ fn main() {
         app.add_plugins(CameraPlugin);
         app.add_plugins(RenderingPlugin);
         app.add_plugins(input::InputHandlerPlugin);
-        // SelectionPlugin removed - InputHandlerPlugin already handles selection via GameActions
+        // SelectionPlugin removed - InputHandlerPlugin already handles selection via
+        // GameActions
         app.add_plugins(DebugUiPlugin);
         app.add_plugins(SessionUiPlugin);
     }

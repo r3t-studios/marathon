@@ -1,34 +1,53 @@
+use core::ops::Range;
+
+use bevy_camera::Viewport;
+use bevy_color::LinearRgba;
+use bevy_utils::default;
+#[cfg(feature = "detailed_trace")]
+use tracing::trace;
+use wgpu::{
+    IndexFormat,
+    QuerySet,
+    RenderPass,
+};
+
 use crate::render::{
-    diagnostic::internal::{Pass, PassKind, WritePipelineStatistics, WriteTimestamp},
+    diagnostic::internal::{
+        Pass,
+        PassKind,
+        WritePipelineStatistics,
+        WriteTimestamp,
+    },
     render_resource::{
-        BindGroup, BindGroupId, Buffer, BufferId, BufferSlice, RenderPipeline, RenderPipelineId,
+        BindGroup,
+        BindGroupId,
+        Buffer,
+        BufferId,
+        BufferSlice,
+        RenderPipeline,
+        RenderPipelineId,
         ShaderStages,
     },
     renderer::RenderDevice,
 };
-use bevy_camera::Viewport;
-use bevy_color::LinearRgba;
-use bevy_utils::default;
-use core::ops::Range;
-use wgpu::{IndexFormat, QuerySet, RenderPass};
-
-#[cfg(feature = "detailed_trace")]
-use tracing::trace;
 
 /// Tracks the state of a [`TrackedRenderPass`].
 ///
-/// This is used to skip redundant operations on the [`TrackedRenderPass`] (e.g. setting an already
-/// set pipeline, binding an already bound bind group). These operations can otherwise be fairly
-/// costly due to IO to the GPU, so deduplicating these calls results in a speedup.
+/// This is used to skip redundant operations on the [`TrackedRenderPass`] (e.g.
+/// setting an already set pipeline, binding an already bound bind group). These
+/// operations can otherwise be fairly costly due to IO to the GPU, so
+/// deduplicating these calls results in a speedup.
 #[derive(Debug, Default)]
 struct DrawState {
     pipeline: Option<RenderPipelineId>,
     bind_groups: Vec<(Option<BindGroupId>, Vec<u32>)>,
-    /// List of vertex buffers by [`BufferId`], offset, and size. See [`DrawState::buffer_slice_key`]
+    /// List of vertex buffers by [`BufferId`], offset, and size. See
+    /// [`DrawState::buffer_slice_key`]
     vertex_buffers: Vec<Option<(BufferId, u64, u64)>>,
     index_buffer: Option<(BufferId, u64, IndexFormat)>,
 
-    /// Stores whether this state is populated or empty for quick state invalidation
+    /// Stores whether this state is populated or empty for quick state
+    /// invalidation
     stores_state: bool,
 }
 
@@ -86,7 +105,8 @@ impl DrawState {
         }
     }
 
-    /// Returns the value used for checking whether `BufferSlice`s are equivalent.
+    /// Returns the value used for checking whether `BufferSlice`s are
+    /// equivalent.
     fn buffer_slice_key(&self, buffer_slice: &BufferSlice) -> (BufferId, u64, u64) {
         (
             buffer_slice.id(),
@@ -129,10 +149,11 @@ impl DrawState {
     }
 }
 
-/// A [`RenderPass`], which tracks the current pipeline state to skip redundant operations.
+/// A [`RenderPass`], which tracks the current pipeline state to skip redundant
+/// operations.
 ///
-/// It is used to set the current [`RenderPipeline`], [`BindGroup`]s and [`Buffer`]s.
-/// After all requirements are specified, draw calls can be issued.
+/// It is used to set the current [`RenderPipeline`], [`BindGroup`]s and
+/// [`Buffer`]s. After all requirements are specified, draw calls can be issued.
 pub struct TrackedRenderPass<'a> {
     pass: RenderPass<'a>,
     state: DrawState,
@@ -165,7 +186,8 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Sets the active [`RenderPipeline`].
     ///
-    /// Subsequent draw calls will exhibit the behavior defined by the `pipeline`.
+    /// Subsequent draw calls will exhibit the behavior defined by the
+    /// `pipeline`.
     pub fn set_render_pipeline(&mut self, pipeline: &'a RenderPipeline) {
         #[cfg(feature = "detailed_trace")]
         trace!("set pipeline: {:?}", pipeline);
@@ -176,12 +198,13 @@ impl<'a> TrackedRenderPass<'a> {
         self.state.set_pipeline(pipeline.id());
     }
 
-    /// Sets the active bind group for a given bind group index. The bind group layout
-    /// in the active pipeline when any `draw()` function is called must match the layout of
-    /// this bind group.
+    /// Sets the active bind group for a given bind group index. The bind group
+    /// layout in the active pipeline when any `draw()` function is called
+    /// must match the layout of this bind group.
     ///
     /// If the bind group have dynamic offsets, provide them in binding order.
-    /// These offsets have to be aligned to [`WgpuLimits::min_uniform_buffer_offset_alignment`](crate::settings::WgpuLimits::min_uniform_buffer_offset_alignment)
+    /// These offsets have to be aligned to
+    /// [`WgpuLimits::min_uniform_buffer_offset_alignment`](crate::settings::WgpuLimits::min_uniform_buffer_offset_alignment)
     /// or [`WgpuLimits::min_storage_buffer_offset_alignment`](crate::settings::WgpuLimits::min_storage_buffer_offset_alignment) appropriately.
     pub fn set_bind_group(
         &mut self,
@@ -196,18 +219,14 @@ impl<'a> TrackedRenderPass<'a> {
             #[cfg(feature = "detailed_trace")]
             trace!(
                 "set bind_group {} (already set): {:?} ({:?})",
-                index,
-                bind_group,
-                dynamic_uniform_indices
+                index, bind_group, dynamic_uniform_indices
             );
             return;
         }
         #[cfg(feature = "detailed_trace")]
         trace!(
             "set bind_group {}: {:?} ({:?})",
-            index,
-            bind_group,
-            dynamic_uniform_indices
+            index, bind_group, dynamic_uniform_indices
         );
 
         self.pass
@@ -219,7 +238,8 @@ impl<'a> TrackedRenderPass<'a> {
     /// Assign a vertex buffer to a slot.
     ///
     /// Subsequent calls to [`draw`] and [`draw_indexed`] on this
-    /// [`TrackedRenderPass`] will use `buffer` as one of the source vertex buffers.
+    /// [`TrackedRenderPass`] will use `buffer` as one of the source vertex
+    /// buffers.
     ///
     /// The `slot_index` refers to the index of the matching descriptor in
     /// [`VertexState::buffers`](crate::render_resource::VertexState::buffers).
@@ -254,8 +274,8 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Sets the active index buffer.
     ///
-    /// Subsequent calls to [`TrackedRenderPass::draw_indexed`] will use the buffer referenced by
-    /// `buffer_slice` as the source index buffer.
+    /// Subsequent calls to [`TrackedRenderPass::draw_indexed`] will use the
+    /// buffer referenced by `buffer_slice` as the source index buffer.
     pub fn set_index_buffer(
         &mut self,
         buffer_slice: BufferSlice<'a>,
@@ -283,32 +303,34 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Draws primitives from the active vertex buffer(s).
     ///
-    /// The active vertex buffer(s) can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active vertex buffer(s) can be set with
+    /// [`TrackedRenderPass::set_vertex_buffer`].
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         #[cfg(feature = "detailed_trace")]
         trace!("draw: {:?} {:?}", vertices, instances);
         self.pass.draw(vertices, instances);
     }
 
-    /// Draws indexed primitives using the active index buffer and the active vertex buffer(s).
+    /// Draws indexed primitives using the active index buffer and the active
+    /// vertex buffer(s).
     ///
-    /// The active index buffer can be set with [`TrackedRenderPass::set_index_buffer`], while the
-    /// active vertex buffer(s) can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active index buffer can be set with
+    /// [`TrackedRenderPass::set_index_buffer`], while the active vertex
+    /// buffer(s) can be set with [`TrackedRenderPass::set_vertex_buffer`].
     pub fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "draw indexed: {:?} {} {:?}",
-            indices,
-            base_vertex,
-            instances
+            indices, base_vertex, instances
         );
         self.pass.draw_indexed(indices, base_vertex, instances);
     }
 
-    /// Draws primitives from the active vertex buffer(s) based on the contents of the
-    /// `indirect_buffer`.
+    /// Draws primitives from the active vertex buffer(s) based on the contents
+    /// of the `indirect_buffer`.
     ///
-    /// The active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active vertex buffers can be set with
+    /// [`TrackedRenderPass::set_vertex_buffer`].
     ///
     /// The structure expected in `indirect_buffer` is the following:
     ///
@@ -328,11 +350,12 @@ impl<'a> TrackedRenderPass<'a> {
         self.pass.draw_indirect(indirect_buffer, indirect_offset);
     }
 
-    /// Draws indexed primitives using the active index buffer and the active vertex buffers,
-    /// based on the contents of the `indirect_buffer`.
+    /// Draws indexed primitives using the active index buffer and the active
+    /// vertex buffers, based on the contents of the `indirect_buffer`.
     ///
-    /// The active index buffer can be set with [`TrackedRenderPass::set_index_buffer`], while the
-    /// active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active index buffer can be set with
+    /// [`TrackedRenderPass::set_index_buffer`], while the active vertex
+    /// buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
     ///
     /// The structure expected in `indirect_buffer` is the following:
     ///
@@ -351,19 +374,20 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "draw indexed indirect: {:?} {}",
-            indirect_buffer,
-            indirect_offset
+            indirect_buffer, indirect_offset
         );
         self.pass
             .draw_indexed_indirect(indirect_buffer, indirect_offset);
     }
 
-    /// Dispatches multiple draw calls from the active vertex buffer(s) based on the contents of the
-    /// `indirect_buffer`.`count` draw calls are issued.
+    /// Dispatches multiple draw calls from the active vertex buffer(s) based on
+    /// the contents of the `indirect_buffer`.`count` draw calls are issued.
     ///
-    /// The active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active vertex buffers can be set with
+    /// [`TrackedRenderPass::set_vertex_buffer`].
     ///
-    /// `indirect_buffer` should contain `count` tightly packed elements of the following structure:
+    /// `indirect_buffer` should contain `count` tightly packed elements of the
+    /// following structure:
     ///
     /// ```
     /// #[repr(C)]
@@ -384,25 +408,25 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "multi draw indirect: {:?} {}, {}x",
-            indirect_buffer,
-            indirect_offset,
-            count
+            indirect_buffer, indirect_offset, count
         );
         self.pass
             .multi_draw_indirect(indirect_buffer, indirect_offset, count);
     }
 
-    /// Dispatches multiple draw calls from the active vertex buffer(s) based on the contents of
-    /// the `indirect_buffer`.
+    /// Dispatches multiple draw calls from the active vertex buffer(s) based on
+    /// the contents of the `indirect_buffer`.
     /// The count buffer is read to determine how many draws to issue.
     ///
-    /// The indirect buffer must be long enough to account for `max_count` draws, however only
-    /// `count` elements will be read, where `count` is the value read from `count_buffer` capped
-    /// at `max_count`.
+    /// The indirect buffer must be long enough to account for `max_count`
+    /// draws, however only `count` elements will be read, where `count` is
+    /// the value read from `count_buffer` capped at `max_count`.
     ///
-    /// The active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active vertex buffers can be set with
+    /// [`TrackedRenderPass::set_vertex_buffer`].
     ///
-    /// `indirect_buffer` should contain `count` tightly packed elements of the following structure:
+    /// `indirect_buffer` should contain `count` tightly packed elements of the
+    /// following structure:
     ///
     /// ```
     /// #[repr(C)]
@@ -425,11 +449,7 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "multi draw indirect count: {:?} {}, ({:?} {})x, max {}x",
-            indirect_buffer,
-            indirect_offset,
-            count_buffer,
-            count_offset,
-            max_count
+            indirect_buffer, indirect_offset, count_buffer, count_offset, max_count
         );
         self.pass.multi_draw_indirect_count(
             indirect_buffer,
@@ -440,13 +460,16 @@ impl<'a> TrackedRenderPass<'a> {
         );
     }
 
-    /// Dispatches multiple draw calls from the active index buffer and the active vertex buffers,
-    /// based on the contents of the `indirect_buffer`. `count` draw calls are issued.
+    /// Dispatches multiple draw calls from the active index buffer and the
+    /// active vertex buffers, based on the contents of the
+    /// `indirect_buffer`. `count` draw calls are issued.
     ///
-    /// The active index buffer can be set with [`TrackedRenderPass::set_index_buffer`], while the
-    /// active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active index buffer can be set with
+    /// [`TrackedRenderPass::set_index_buffer`], while the active vertex
+    /// buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
     ///
-    /// `indirect_buffer` should contain `count` tightly packed elements of the following structure:
+    /// `indirect_buffer` should contain `count` tightly packed elements of the
+    /// following structure:
     ///
     /// ```
     /// #[repr(C)]
@@ -468,26 +491,27 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "multi draw indexed indirect: {:?} {}, {}x",
-            indirect_buffer,
-            indirect_offset,
-            count
+            indirect_buffer, indirect_offset, count
         );
         self.pass
             .multi_draw_indexed_indirect(indirect_buffer, indirect_offset, count);
     }
 
-    /// Dispatches multiple draw calls from the active index buffer and the active vertex buffers,
-    /// based on the contents of the `indirect_buffer`.
-    /// The count buffer is read to determine how many draws to issue.
+    /// Dispatches multiple draw calls from the active index buffer and the
+    /// active vertex buffers, based on the contents of the
+    /// `indirect_buffer`. The count buffer is read to determine how many
+    /// draws to issue.
     ///
-    /// The indirect buffer must be long enough to account for `max_count` draws, however only
-    /// `count` elements will be read, where `count` is the value read from `count_buffer` capped
-    /// at `max_count`.
+    /// The indirect buffer must be long enough to account for `max_count`
+    /// draws, however only `count` elements will be read, where `count` is
+    /// the value read from `count_buffer` capped at `max_count`.
     ///
-    /// The active index buffer can be set with [`TrackedRenderPass::set_index_buffer`], while the
-    /// active vertex buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
+    /// The active index buffer can be set with
+    /// [`TrackedRenderPass::set_index_buffer`], while the active vertex
+    /// buffers can be set with [`TrackedRenderPass::set_vertex_buffer`].
     ///
-    /// `indirect_buffer` should contain `count` tightly packed elements of the following structure:
+    /// `indirect_buffer` should contain `count` tightly packed elements of the
+    /// following structure:
     ///
     /// ```
     /// #[repr(C)]
@@ -511,11 +535,7 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "multi draw indexed indirect count: {:?} {}, ({:?} {})x, max {}x",
-            indirect_buffer,
-            indirect_offset,
-            count_buffer,
-            count_offset,
-            max_count
+            indirect_buffer, indirect_offset, count_buffer, count_offset, max_count
         );
         self.pass.multi_draw_indexed_indirect_count(
             indirect_buffer,
@@ -537,7 +557,8 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Sets the scissor region.
     ///
-    /// Subsequent draw calls will discard any fragments that fall outside this region.
+    /// Subsequent draw calls will discard any fragments that fall outside this
+    /// region.
     pub fn set_scissor_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
         #[cfg(feature = "detailed_trace")]
         trace!("set_scissor_rect: {} {} {} {}", x, y, width, height);
@@ -546,7 +567,8 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Set push constant data.
     ///
-    /// `Features::PUSH_CONSTANTS` must be enabled on the device in order to call these functions.
+    /// `Features::PUSH_CONSTANTS` must be enabled on the device in order to
+    /// call these functions.
     pub fn set_push_constants(&mut self, stages: ShaderStages, offset: u32, data: &[u8]) {
         #[cfg(feature = "detailed_trace")]
         trace!(
@@ -573,12 +595,7 @@ impl<'a> TrackedRenderPass<'a> {
         #[cfg(feature = "detailed_trace")]
         trace!(
             "set viewport: {} {} {} {} {} {}",
-            x,
-            y,
-            width,
-            height,
-            min_depth,
-            max_depth
+            x, y, width, height, min_depth, max_depth
         );
         self.pass
             .set_viewport(x, y, width, height, min_depth, max_depth);
@@ -600,7 +617,8 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Insert a single debug marker.
     ///
-    /// This is a GPU debugging feature. This has no effect on the rendering itself.
+    /// This is a GPU debugging feature. This has no effect on the rendering
+    /// itself.
     pub fn insert_debug_marker(&mut self, label: &str) {
         #[cfg(feature = "detailed_trace")]
         trace!("insert debug marker: {}", label);
@@ -609,8 +627,9 @@ impl<'a> TrackedRenderPass<'a> {
 
     /// Start a new debug group.
     ///
-    /// Push a new debug group over the internal stack. Subsequent render commands and debug
-    /// markers are grouped into this new group, until [`pop_debug_group`] is called.
+    /// Push a new debug group over the internal stack. Subsequent render
+    /// commands and debug markers are grouped into this new group, until
+    /// [`pop_debug_group`] is called.
     ///
     /// ```
     /// # fn example(mut pass: bevy_render::render_phase::TrackedRenderPass<'static>) {
@@ -621,9 +640,11 @@ impl<'a> TrackedRenderPass<'a> {
     /// # }
     /// ```
     ///
-    /// Note that [`push_debug_group`] and [`pop_debug_group`] must always be called in pairs.
+    /// Note that [`push_debug_group`] and [`pop_debug_group`] must always be
+    /// called in pairs.
     ///
-    /// This is a GPU debugging feature. This has no effect on the rendering itself.
+    /// This is a GPU debugging feature. This has no effect on the rendering
+    /// itself.
     ///
     /// [`push_debug_group`]: TrackedRenderPass::push_debug_group
     /// [`pop_debug_group`]: TrackedRenderPass::pop_debug_group
@@ -636,12 +657,14 @@ impl<'a> TrackedRenderPass<'a> {
     /// End the current debug group.
     ///
     /// Subsequent render commands and debug markers are not grouped anymore in
-    /// this group, but in the previous one (if any) or the default top-level one
-    /// if the debug group was the last one on the stack.
+    /// this group, but in the previous one (if any) or the default top-level
+    /// one if the debug group was the last one on the stack.
     ///
-    /// Note that [`push_debug_group`] and [`pop_debug_group`] must always be called in pairs.
+    /// Note that [`push_debug_group`] and [`pop_debug_group`] must always be
+    /// called in pairs.
     ///
-    /// This is a GPU debugging feature. This has no effect on the rendering itself.
+    /// This is a GPU debugging feature. This has no effect on the rendering
+    /// itself.
     ///
     /// [`push_debug_group`]: TrackedRenderPass::push_debug_group
     /// [`pop_debug_group`]: TrackedRenderPass::pop_debug_group

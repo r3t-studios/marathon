@@ -1,25 +1,64 @@
-use std::{borrow::Cow, sync::Arc};
 use core::{
-    ops::{DerefMut, Range},
-    sync::atomic::{AtomicBool, Ordering},
+    ops::{
+        DerefMut,
+        Range,
+    },
+    sync::atomic::{
+        AtomicBool,
+        Ordering,
+    },
 };
-use std::thread::{self, ThreadId};
+use std::{
+    borrow::Cow,
+    sync::{
+        Arc,
+        Mutex,
+    },
+    thread::{
+        self,
+        ThreadId,
+    },
+};
 
-use bevy_diagnostic::{Diagnostic, DiagnosticMeasurement, DiagnosticPath, DiagnosticsStore};
-use bevy_ecs::resource::Resource;
-use bevy_ecs::system::{Res, ResMut};
+use bevy_diagnostic::{
+    Diagnostic,
+    DiagnosticMeasurement,
+    DiagnosticPath,
+    DiagnosticsStore,
+};
+use bevy_ecs::{
+    resource::Resource,
+    system::{
+        Res,
+        ResMut,
+    },
+};
 use bevy_platform::time::Instant;
-use std::sync::Mutex;
 use wgpu::{
-    Buffer, BufferDescriptor, BufferUsages, CommandEncoder, ComputePass, Features, MapMode,
-    PipelineStatisticsTypes, QuerySet, QuerySetDescriptor, QueryType, RenderPass,
+    Buffer,
+    BufferDescriptor,
+    BufferUsages,
+    CommandEncoder,
+    ComputePass,
+    Features,
+    MapMode,
+    PipelineStatisticsTypes,
+    QuerySet,
+    QuerySetDescriptor,
+    QueryType,
+    RenderPass,
 };
-
-use crate::render::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue, WgpuWrapper};
 
 use super::RecordDiagnostics;
+use crate::render::renderer::{
+    RenderAdapterInfo,
+    RenderDevice,
+    RenderQueue,
+    WgpuWrapper,
+};
 
-// buffer offset must be divisible by 256, so this constant must be divisible by 32 (=256/8)
+// buffer offset must be divisible by 256, so this constant must be divisible by
+// 32 (=256/8)
 const MAX_TIMESTAMP_QUERIES: u32 = 256;
 const MAX_PIPELINE_STATISTICS: u32 = 128;
 
@@ -96,7 +135,8 @@ impl DiagnosticsRecorder {
         self.current_frame_mut().begin();
     }
 
-    /// Copies data from [`QuerySet`]'s to a [`Buffer`], after which it can be downloaded to CPU.
+    /// Copies data from [`QuerySet`]'s to a [`Buffer`], after which it can be
+    /// downloaded to CPU.
     ///
     /// Should be called before [`DiagnosticsRecorder::finish_frame`].
     pub fn resolve(&mut self, encoder: &mut CommandEncoder) {
@@ -105,7 +145,8 @@ impl DiagnosticsRecorder {
 
     /// Finishes recording diagnostics for the current frame.
     ///
-    /// The specified `callback` will be invoked when diagnostics become available.
+    /// The specified `callback` will be invoked when diagnostics become
+    /// available.
     ///
     /// Should be called after [`DiagnosticsRecorder::resolve`],
     /// and **after** all commands buffers have been queued.
@@ -126,8 +167,8 @@ impl DiagnosticsRecorder {
 
         // reuse one of the finished frames, if we can
         let new_frame = match internal.finished_frames.pop() {
-            Some(frame) => frame,
-            None => FrameData::new(
+            | Some(frame) => frame,
+            | None => FrameData::new(
                 device,
                 internal.features,
                 #[cfg(feature = "tracing-tracy")]
@@ -330,15 +371,15 @@ impl FrameData {
             .next_back();
 
         let path_range = match &parent {
-            Some(parent) if parent.path_range.end == self.path_components.len() => {
+            | Some(parent) if parent.path_range.end == self.path_components.len() => {
                 parent.path_range.start..parent.path_range.end + 1
-            }
-            Some(parent) => {
+            },
+            | Some(parent) => {
                 self.path_components
                     .extend_from_within(parent.path_range.clone());
                 self.path_components.len() - parent.path_range.len()..self.path_components.len() + 1
-            }
-            None => self.path_components.len()..self.path_components.len() + 1,
+            },
+            | None => self.path_components.len()..self.path_components.len() + 1,
         };
 
         self.path_components.push(name);
@@ -420,22 +461,22 @@ impl FrameData {
         };
 
         match &self.timestamps_query_set {
-            Some(set) if self.num_timestamps > 0 => {
+            | Some(set) if self.num_timestamps > 0 => {
                 encoder.resolve_query_set(set, 0..self.num_timestamps, resolve_buffer, 0);
-            }
-            _ => {}
+            },
+            | _ => {},
         }
 
         match &self.pipeline_statistics_query_set {
-            Some(set) if self.num_pipeline_statistics > 0 => {
+            | Some(set) if self.num_pipeline_statistics > 0 => {
                 encoder.resolve_query_set(
                     set,
                     0..self.num_pipeline_statistics,
                     resolve_buffer,
                     self.pipeline_statistics_buffer_offset,
                 );
-            }
-            _ => {}
+            },
+            | _ => {},
         }
 
         let Some(read_buffer) = &self.read_buffer else {
@@ -532,9 +573,14 @@ impl FrameData {
 
                 #[cfg(feature = "tracing-tracy")]
                 {
-                    // Calling span_alloc() and end_zone() here instead of in open_span() and close_span() means that tracy does not know where each GPU command was recorded on the CPU timeline.
-                    // Unfortunately we must do it this way, because tracy does not play nicely with multithreaded command recording. The start/end pairs would get all mixed up.
-                    // The GPU spans themselves are still accurate though, and it's probably safe to assume that each GPU span in frame N belongs to the corresponding CPU render node span from frame N-1.
+                    // Calling span_alloc() and end_zone() here instead of in open_span() and
+                    // close_span() means that tracy does not know where each GPU command was
+                    // recorded on the CPU timeline. Unfortunately we must do it
+                    // this way, because tracy does not play nicely with multithreaded command
+                    // recording. The start/end pairs would get all mixed up.
+                    // The GPU spans themselves are still accurate though, and it's probably safe to
+                    // assume that each GPU span in frame N belongs to the corresponding CPU render
+                    // node span from frame N-1.
                     let name = &self.path_components[span.path_range.clone()].join("/");
                     let mut tracy_gpu_span =
                         self.tracy_gpu_context.span_alloc(name, "", "", 0).unwrap();
@@ -603,7 +649,8 @@ impl FrameData {
 #[derive(Debug, Default, Clone, Resource)]
 pub struct RenderDiagnostics(Vec<RenderDiagnostic>);
 
-/// A render diagnostic which has been recorded, but not yet stored in [`DiagnosticsStore`].
+/// A render diagnostic which has been recorded, but not yet stored in
+/// [`DiagnosticsStore`].
 #[derive(Debug, Clone, Resource)]
 pub struct RenderDiagnostic {
     pub path: DiagnosticPath,
@@ -615,7 +662,8 @@ pub struct RenderDiagnostic {
 ///
 /// This mutex is locked twice per frame:
 ///  1. in `PreUpdate`, during [`sync_diagnostics`],
-///  2. after rendering has finished and statistics have been downloaded from GPU.
+///  2. after rendering has finished and statistics have been downloaded from
+///     GPU.
 #[derive(Debug, Default, Clone, Resource)]
 pub struct RenderDiagnosticsMutex(pub(crate) Arc<Mutex<Option<RenderDiagnostics>>>);
 

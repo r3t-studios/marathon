@@ -1,67 +1,150 @@
 //! Screen space reflections implemented via raymarching.
 
-use bevy_app::{App, Plugin};
-use bevy_asset::{load_embedded_asset, AssetServer, Handle};
-use crate::render::{
-    core_3d::{
-        graph::{Core3d, Node3d},
-        DEPTH_TEXTURE_SAMPLING_SUPPORTED,
-    },
-    prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
-    FullscreenShader,
+use bevy_app::{
+    App,
+    Plugin,
 };
-use bevy_derive::{Deref, DerefMut};
+use bevy_asset::{
+    AssetServer,
+    Handle,
+    load_embedded_asset,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    query::{Has, QueryItem, With},
+    query::{
+        Has,
+        QueryItem,
+        With,
+    },
     reflect::ReflectComponent,
     resource::Resource,
     schedule::IntoScheduleConfigs as _,
-    system::{lifetimeless::Read, Commands, Query, Res, ResMut},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+        lifetimeless::Read,
+    },
     world::World,
 };
 use bevy_image::BevyDefault as _;
 use bevy_light::EnvironmentMapLight;
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use crate::render::{
-    diagnostic::RecordDiagnostics,
-    extract_component::{ExtractComponent, ExtractComponentPlugin},
-    render_graph::{
-        NodeRunError, RenderGraph, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner,
-    },
-    render_resource::{
-        binding_types, AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
-        CachedRenderPipelineId, ColorTargetState, ColorWrites, DynamicUniformBuffer, FilterMode,
-        FragmentState, Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-        RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-        ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, TextureFormat,
-        TextureSampleType,
-    },
-    renderer::{RenderAdapter, RenderContext, RenderDevice, RenderQueue},
-    view::{ExtractedView, Msaa, ViewTarget, ViewUniformOffset},
-    Render, RenderApp, RenderStartup, RenderSystems,
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
 };
-use bevy_shader::{load_shader_library, Shader};
-use bevy_utils::{once, prelude::default};
+use bevy_shader::{
+    Shader,
+    load_shader_library,
+};
+use bevy_utils::{
+    once,
+    prelude::default,
+};
 use tracing::info;
 
-use crate::render::pbr::{
-    binding_arrays_are_usable, graph::NodePbr, MeshPipelineViewLayoutKey, MeshPipelineViewLayouts,
-    MeshViewBindGroup, RenderViewLightProbes, ViewEnvironmentMapUniformOffset,
-    ViewFogUniformOffset, ViewLightProbesUniformOffset, ViewLightsUniformOffset,
+use crate::render::{
+    FullscreenShader,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::{
+        DEPTH_TEXTURE_SAMPLING_SUPPORTED,
+        graph::{
+            Core3d,
+            Node3d,
+        },
+    },
+    diagnostic::RecordDiagnostics,
+    extract_component::{
+        ExtractComponent,
+        ExtractComponentPlugin,
+    },
+    pbr::{
+        MeshPipelineViewLayoutKey,
+        MeshPipelineViewLayouts,
+        MeshViewBindGroup,
+        RenderViewLightProbes,
+        ViewEnvironmentMapUniformOffset,
+        ViewFogUniformOffset,
+        ViewLightProbesUniformOffset,
+        ViewLightsUniformOffset,
+        binding_arrays_are_usable,
+        graph::NodePbr,
+    },
+    prepass::{
+        DeferredPrepass,
+        DepthPrepass,
+        MotionVectorPrepass,
+        NormalPrepass,
+    },
+    render_graph::{
+        NodeRunError,
+        RenderGraph,
+        RenderGraphContext,
+        RenderGraphExt,
+        ViewNode,
+        ViewNodeRunner,
+    },
+    render_resource::{
+        AddressMode,
+        BindGroupEntries,
+        BindGroupLayout,
+        BindGroupLayoutEntries,
+        CachedRenderPipelineId,
+        ColorTargetState,
+        ColorWrites,
+        DynamicUniformBuffer,
+        FilterMode,
+        FragmentState,
+        Operations,
+        PipelineCache,
+        RenderPassColorAttachment,
+        RenderPassDescriptor,
+        RenderPipelineDescriptor,
+        Sampler,
+        SamplerBindingType,
+        SamplerDescriptor,
+        ShaderStages,
+        ShaderType,
+        SpecializedRenderPipeline,
+        SpecializedRenderPipelines,
+        TextureFormat,
+        TextureSampleType,
+        binding_types,
+    },
+    renderer::{
+        RenderAdapter,
+        RenderContext,
+        RenderDevice,
+        RenderQueue,
+    },
+    view::{
+        ExtractedView,
+        Msaa,
+        ViewTarget,
+        ViewUniformOffset,
+    },
 };
 
 /// Enables screen-space reflections for a camera.
 ///
-/// Screen-space reflections are currently only supported with deferred rendering.
+/// Screen-space reflections are currently only supported with deferred
+/// rendering.
 pub struct ScreenSpaceReflectionsPlugin;
 
 /// Add this component to a camera to enable *screen-space reflections* (SSR).
 ///
 /// Screen-space reflections currently require deferred rendering in order to
-/// appear. Therefore, they also need the [`DepthPrepass`] and [`DeferredPrepass`]
-/// components, which are inserted automatically.
+/// appear. Therefore, they also need the [`DepthPrepass`] and
+/// [`DeferredPrepass`] components, which are inserted automatically.
 ///
 /// SSR currently performs no roughness filtering for glossy reflections, so
 /// only very smooth surfaces will reflect objects in screen space. You can
@@ -71,8 +154,8 @@ pub struct ScreenSpaceReflectionsPlugin;
 /// As with all screen-space techniques, SSR can only reflect objects on screen.
 /// When objects leave the camera, they will disappear from reflections.
 /// An alternative that doesn't suffer from this problem is the combination of
-/// a [`LightProbe`](bevy_light::LightProbe) and [`EnvironmentMapLight`]. The advantage of SSR is
-/// that it can reflect all objects, not just static ones.
+/// a [`LightProbe`](bevy_light::LightProbe) and [`EnvironmentMapLight`]. The
+/// advantage of SSR is that it can reflect all objects, not just static ones.
 ///
 /// SSR is an approximation technique and produces artifacts in some situations.
 /// Hand-tuning the settings in this component will likely be useful.
@@ -438,9 +521,9 @@ pub fn prepare_ssr_pipelines(
     {
         // SSR is only supported in the deferred pipeline, which has no MSAA
         // support. Thus we can assume MSAA is off.
-        let mut mesh_pipeline_view_key = MeshPipelineViewLayoutKey::from(Msaa::Off)
-            | MeshPipelineViewLayoutKey::DEPTH_PREPASS
-            | MeshPipelineViewLayoutKey::DEFERRED_PREPASS;
+        let mut mesh_pipeline_view_key = MeshPipelineViewLayoutKey::from(Msaa::Off) |
+            MeshPipelineViewLayoutKey::DEPTH_PREPASS |
+            MeshPipelineViewLayoutKey::DEFERRED_PREPASS;
         mesh_pipeline_view_key.set(
             MeshPipelineViewLayoutKey::NORMAL_PREPASS,
             has_normal_prepass,
@@ -485,8 +568,8 @@ pub fn prepare_ssr_settings(
 
     for (view, ssr_uniform) in views.iter() {
         let uniform_offset = match ssr_uniform {
-            None => 0,
-            Some(ssr_uniform) => writer.write(ssr_uniform),
+            | None => 0,
+            | Some(ssr_uniform) => writer.write(ssr_uniform),
         };
         commands
             .entity(view)
@@ -495,11 +578,9 @@ pub fn prepare_ssr_settings(
 }
 
 impl ExtractComponent for ScreenSpaceReflections {
-    type QueryData = Read<ScreenSpaceReflections>;
-
-    type QueryFilter = ();
-
     type Out = ScreenSpaceReflectionsUniform;
+    type QueryData = Read<ScreenSpaceReflections>;
+    type QueryFilter = ();
 
     fn extract_component(settings: QueryItem<'_, '_, Self::QueryData>) -> Option<Self::Out> {
         if !DEPTH_TEXTURE_SAMPLING_SUPPORTED {

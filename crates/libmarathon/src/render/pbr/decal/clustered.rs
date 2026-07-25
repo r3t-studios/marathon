@@ -14,40 +14,89 @@
 //! clustered decal arbitrarily. See the documentation in `clustered.wgsl` for
 //! more information and the `clustered_decals` example for an example of use.
 
-use core::{num::NonZero, ops::Deref};
+use core::{
+    num::NonZero,
+    ops::Deref,
+};
 
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_asset::AssetId;
 use bevy_camera::visibility::ViewVisibility;
-use bevy_derive::{Deref, DerefMut};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
-    entity::{Entity, EntityHashMap},
+    entity::{
+        Entity,
+        EntityHashMap,
+    },
     query::With,
     resource::Resource,
     schedule::IntoScheduleConfigs as _,
-    system::{Commands, Local, Query, Res, ResMut},
+    system::{
+        Commands,
+        Local,
+        Query,
+        Res,
+        ResMut,
+    },
 };
 use bevy_image::Image;
-use bevy_light::{ClusteredDecal, DirectionalLightTexture, PointLightTexture, SpotLightTexture};
+use bevy_light::{
+    ClusteredDecal,
+    DirectionalLightTexture,
+    PointLightTexture,
+    SpotLightTexture,
+};
 use bevy_math::Mat4;
 use bevy_platform::collections::HashMap;
-use crate::render::{
-    render_asset::RenderAssets,
-    render_resource::{
-        binding_types, BindGroupLayoutEntryBuilder, Buffer, BufferUsages, RawBufferVec, Sampler,
-        SamplerBindingType, ShaderType, TextureSampleType, TextureView,
-    },
-    renderer::{RenderAdapter, RenderDevice, RenderQueue},
-    sync_component::SyncComponentPlugin,
-    sync_world::RenderEntity,
-    texture::{FallbackImage, GpuImage},
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
-};
 use bevy_shader::load_shader_library;
 use bevy_transform::components::GlobalTransform;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{
+    Pod,
+    Zeroable,
+};
 
-use crate::render::pbr::{binding_arrays_are_usable, prepare_lights, GlobalClusterableObjectMeta};
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
+    pbr::{
+        GlobalClusterableObjectMeta,
+        binding_arrays_are_usable,
+        prepare_lights,
+    },
+    render_asset::RenderAssets,
+    render_resource::{
+        BindGroupLayoutEntryBuilder,
+        Buffer,
+        BufferUsages,
+        RawBufferVec,
+        Sampler,
+        SamplerBindingType,
+        ShaderType,
+        TextureSampleType,
+        TextureView,
+        binding_types,
+    },
+    renderer::{
+        RenderAdapter,
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_component::SyncComponentPlugin,
+    sync_world::RenderEntity,
+    texture::{
+        FallbackImage,
+        GpuImage,
+    },
+};
 
 /// The maximum number of decals that can be present in a view.
 ///
@@ -359,16 +408,16 @@ impl<'a> RenderViewClusteredDecalBindGroupEntries<'a> {
             .filter_map(|image_id| images.get(*image_id))
             .next()
         {
-            Some(gpu_image) => &gpu_image.sampler,
-            None => &fallback_image.d2.sampler,
+            | Some(gpu_image) => &gpu_image.sampler,
+            | None => &fallback_image.d2.sampler,
         };
 
         // Gather up the decal textures.
         let mut texture_views = vec![];
         for image_id in &render_decals.binding_index_to_textures {
             match images.get(*image_id) {
-                None => texture_views.push(&*fallback_image.d2.texture_view),
-                Some(gpu_image) => texture_views.push(&*gpu_image.texture_view),
+                | None => texture_views.push(&*fallback_image.d2.texture_view),
+                | Some(gpu_image) => texture_views.push(&*gpu_image.texture_view),
             }
         }
 
@@ -433,9 +482,9 @@ pub fn clustered_decals_are_usable(
     render_device: &RenderDevice,
     render_adapter: &RenderAdapter,
 ) -> bool {
-    // Disable binding arrays on Metal. There aren't enough texture bindings available.
-    // See issue #17553.
+    // Disable binding arrays on Metal. There aren't enough texture bindings
+    // available. See issue #17553.
     // Re-enable this when `wgpu` has first-class bindless.
-    binding_arrays_are_usable(render_device, render_adapter)
-        && cfg!(feature = "pbr_clustered_decals")
+    binding_arrays_are_usable(render_device, render_adapter) &&
+        cfg!(feature = "pbr_clustered_decals")
 }

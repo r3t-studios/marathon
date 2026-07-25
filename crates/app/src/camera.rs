@@ -2,9 +2,11 @@
 //!
 //! This module handles the 3D camera setup for the cube demo.
 
-use bevy::prelude::*;
-use bevy::camera::RenderTarget;
-use bevy::window::WindowRef;
+use bevy::{
+    camera::RenderTarget,
+    prelude::*,
+    window::WindowRef,
+};
 
 pub struct CameraPlugin;
 

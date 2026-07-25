@@ -1,45 +1,104 @@
-use crate::render::pbr::{
-    graph::NodePbr, MeshPipeline, MeshViewBindGroup, RenderViewLightProbes,
-    ScreenSpaceAmbientOcclusion, ScreenSpaceReflectionsUniform, ViewEnvironmentMapUniformOffset,
-    ViewLightProbesUniformOffset, ViewScreenSpaceReflectionsUniformOffset,
-    TONEMAPPING_LUT_SAMPLER_BINDING_INDEX, TONEMAPPING_LUT_TEXTURE_BINDING_INDEX,
-};
-use crate::render::pbr::{DistanceFog, MeshPipelineKey, ViewFogUniformOffset, ViewLightsUniformOffset};
 use bevy_app::prelude::*;
-use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer, Handle};
-use crate::render::{
-    core_3d::graph::{Core3d, Node3d},
-    deferred::{
-        copy_lighting_id::DeferredLightingIdDepthTexture, DEFERRED_LIGHTING_PASS_ID_DEPTH_FORMAT,
-    },
-    prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
-    tonemapping::{DebandDither, Tonemapping},
+use bevy_asset::{
+    AssetServer,
+    Handle,
+    embedded_asset,
+    load_embedded_asset,
 };
-use bevy_ecs::{prelude::*, query::QueryItem};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
+};
 use bevy_image::BevyDefault as _;
-use bevy_light::{EnvironmentMapLight, IrradianceVolume, ShadowFilteringMethod};
-use crate::render::RenderStartup;
+use bevy_light::{
+    EnvironmentMapLight,
+    IrradianceVolume,
+    ShadowFilteringMethod,
+};
+use bevy_shader::{
+    Shader,
+    ShaderDefVal,
+};
+use bevy_utils::default;
+
 use crate::render::{
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
+    deferred::{
+        DEFERRED_LIGHTING_PASS_ID_DEPTH_FORMAT,
+        copy_lighting_id::DeferredLightingIdDepthTexture,
+    },
     diagnostic::RecordDiagnostics,
     extract_component::{
-        ComponentUniforms, ExtractComponent, ExtractComponentPlugin, UniformComponentPlugin,
+        ComponentUniforms,
+        ExtractComponent,
+        ExtractComponentPlugin,
+        UniformComponentPlugin,
     },
-    render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner},
-    render_resource::{binding_types::uniform_buffer, *},
-    renderer::{RenderContext, RenderDevice},
-    view::{ExtractedView, ViewTarget, ViewUniformOffset},
-    Render, RenderApp, RenderSystems,
+    pbr::{
+        DistanceFog,
+        MeshPipeline,
+        MeshPipelineKey,
+        MeshViewBindGroup,
+        RenderViewLightProbes,
+        ScreenSpaceAmbientOcclusion,
+        ScreenSpaceReflectionsUniform,
+        TONEMAPPING_LUT_SAMPLER_BINDING_INDEX,
+        TONEMAPPING_LUT_TEXTURE_BINDING_INDEX,
+        ViewEnvironmentMapUniformOffset,
+        ViewFogUniformOffset,
+        ViewLightProbesUniformOffset,
+        ViewLightsUniformOffset,
+        ViewScreenSpaceReflectionsUniformOffset,
+        graph::NodePbr,
+    },
+    prepass::{
+        DeferredPrepass,
+        DepthPrepass,
+        MotionVectorPrepass,
+        NormalPrepass,
+    },
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        RenderGraphExt,
+        ViewNode,
+        ViewNodeRunner,
+    },
+    render_resource::{
+        binding_types::uniform_buffer,
+        *,
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+    },
+    tonemapping::{
+        DebandDither,
+        Tonemapping,
+    },
+    view::{
+        ExtractedView,
+        ViewTarget,
+        ViewUniformOffset,
+    },
 };
-use bevy_shader::{Shader, ShaderDefVal};
-use bevy_utils::default;
 
 pub struct DeferredPbrLightingPlugin;
 
 pub const DEFAULT_PBR_DEFERRED_LIGHTING_PASS_ID: u8 = 1;
 
-/// Component with a `depth_id` for specifying which corresponding materials should be rendered by this specific PBR deferred lighting pass.
+/// Component with a `depth_id` for specifying which corresponding materials
+/// should be rendered by this specific PBR deferred lighting pass.
 ///
-/// Will be automatically added to entities with the [`DeferredPrepass`] component that don't already have a [`PbrDeferredLightingDepthId`].
+/// Will be automatically added to entities with the [`DeferredPrepass`]
+/// component that don't already have a [`PbrDeferredLightingDepthId`].
 #[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
 pub struct PbrDeferredLightingDepthId {
     depth_id: u32,
@@ -468,9 +527,9 @@ pub fn prepare_deferred_lighting_pipelines(
         skip_deferred_lighting,
     ) in &views
     {
-        // If there is no deferred prepass or we want to skip the deferred lighting pass,
-        // remove the old pipeline if there was one. This handles the case in which a
-        // view using deferred stops using it.
+        // If there is no deferred prepass or we want to skip the deferred lighting
+        // pass, remove the old pipeline if there was one. This handles the case
+        // in which a view using deferred stops using it.
         if !deferred_prepass || skip_deferred_lighting {
             commands.entity(entity).remove::<DeferredLightingPipeline>();
             continue;
@@ -497,18 +556,18 @@ pub fn prepare_deferred_lighting_pipelines(
             if let Some(tonemapping) = tonemapping {
                 view_key |= MeshPipelineKey::TONEMAP_IN_SHADER;
                 view_key |= match tonemapping {
-                    Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
-                    Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
-                    Tonemapping::ReinhardLuminance => {
+                    | Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
+                    | Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
+                    | Tonemapping::ReinhardLuminance => {
                         MeshPipelineKey::TONEMAP_METHOD_REINHARD_LUMINANCE
-                    }
-                    Tonemapping::AcesFitted => MeshPipelineKey::TONEMAP_METHOD_ACES_FITTED,
-                    Tonemapping::AgX => MeshPipelineKey::TONEMAP_METHOD_AGX,
-                    Tonemapping::SomewhatBoringDisplayTransform => {
+                    },
+                    | Tonemapping::AcesFitted => MeshPipelineKey::TONEMAP_METHOD_ACES_FITTED,
+                    | Tonemapping::AgX => MeshPipelineKey::TONEMAP_METHOD_AGX,
+                    | Tonemapping::SomewhatBoringDisplayTransform => {
                         MeshPipelineKey::TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM
-                    }
-                    Tonemapping::TonyMcMapface => MeshPipelineKey::TONEMAP_METHOD_TONY_MC_MAPFACE,
-                    Tonemapping::BlenderFilmic => MeshPipelineKey::TONEMAP_METHOD_BLENDER_FILMIC,
+                    },
+                    | Tonemapping::TonyMcMapface => MeshPipelineKey::TONEMAP_METHOD_TONY_MC_MAPFACE,
+                    | Tonemapping::BlenderFilmic => MeshPipelineKey::TONEMAP_METHOD_BLENDER_FILMIC,
                 };
             }
             if let Some(DebandDither::Enabled) = dither {
@@ -538,15 +597,15 @@ pub fn prepare_deferred_lighting_pipelines(
         }
 
         match shadow_filter_method.unwrap_or(&ShadowFilteringMethod::default()) {
-            ShadowFilteringMethod::Hardware2x2 => {
+            | ShadowFilteringMethod::Hardware2x2 => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_HARDWARE_2X2;
-            }
-            ShadowFilteringMethod::Gaussian => {
+            },
+            | ShadowFilteringMethod::Gaussian => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_GAUSSIAN;
-            }
-            ShadowFilteringMethod::Temporal => {
+            },
+            | ShadowFilteringMethod::Temporal => {
                 view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_TEMPORAL;
-            }
+            },
         }
 
         let pipeline_id =
@@ -558,12 +617,14 @@ pub fn prepare_deferred_lighting_pipelines(
     }
 }
 
-/// Component to skip running the deferred lighting pass in [`DeferredOpaquePass3dPbrLightingNode`] for a specific view.
+/// Component to skip running the deferred lighting pass in
+/// [`DeferredOpaquePass3dPbrLightingNode`] for a specific view.
 ///
-/// This works like [`crate::PbrPlugin::add_default_deferred_lighting_plugin`], but is per-view instead of global.
+/// This works like [`crate::PbrPlugin::add_default_deferred_lighting_plugin`],
+/// but is per-view instead of global.
 ///
-/// Useful for cases where you want to generate a gbuffer, but skip the built-in deferred lighting pass
-/// to run your own custom lighting pass instead.
+/// Useful for cases where you want to generate a gbuffer, but skip the built-in
+/// deferred lighting pass to run your own custom lighting pass instead.
 ///
 /// Insert this component in the render world only.
 #[derive(Component, Clone, Copy, Default)]

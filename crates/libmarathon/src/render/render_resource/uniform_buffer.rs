@@ -1,30 +1,50 @@
-use core::{marker::PhantomData, num::NonZero};
-
-use crate::render::{
-    render_resource::Buffer,
-    renderer::{RenderDevice, RenderQueue},
+use core::{
+    marker::PhantomData,
+    num::NonZero,
 };
+
 use encase::{
-    internal::{AlignmentValue, BufferMut, WriteInto},
-    DynamicUniformBuffer as DynamicUniformBufferWrapper, ShaderType,
+    DynamicUniformBuffer as DynamicUniformBufferWrapper,
+    ShaderType,
     UniformBuffer as UniformBufferWrapper,
+    internal::{
+        AlignmentValue,
+        BufferMut,
+        WriteInto,
+    },
 };
 use wgpu::{
-    util::BufferInitDescriptor, BindingResource, BufferBinding, BufferDescriptor, BufferUsages,
+    BindingResource,
+    BufferBinding,
+    BufferDescriptor,
+    BufferUsages,
+    util::BufferInitDescriptor,
 };
 
 use super::IntoBinding;
+use crate::render::{
+    render_resource::Buffer,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
-/// Stores data to be transferred to the GPU and made accessible to shaders as a uniform buffer.
+/// Stores data to be transferred to the GPU and made accessible to shaders as a
+/// uniform buffer.
 ///
-/// Uniform buffers are available to shaders on a read-only basis. Uniform buffers are commonly used to make available to shaders
-/// parameters that are constant during shader execution, and are best used for data that is relatively small in size as they are
-/// only guaranteed to support up to 16kB per binding.
+/// Uniform buffers are available to shaders on a read-only basis. Uniform
+/// buffers are commonly used to make available to shaders parameters that are
+/// constant during shader execution, and are best used for data that is
+/// relatively small in size as they are only guaranteed to support up to 16kB
+/// per binding.
 ///
-/// The contained data is stored in system RAM. [`write_buffer`](UniformBuffer::write_buffer) queues
-/// copying of the data from system RAM to VRAM. Data in uniform buffers must follow [std140 alignment/padding requirements],
-/// which is automatically enforced by this structure. Per the WGPU spec, uniform buffers cannot store runtime-sized array
-/// (vectors), or structures with fields that are vectors.
+/// The contained data is stored in system RAM.
+/// [`write_buffer`](UniformBuffer::write_buffer) queues copying of the data
+/// from system RAM to VRAM. Data in uniform buffers must follow [std140
+/// alignment/padding requirements], which is automatically enforced by this
+/// structure. Per the WGPU spec, uniform buffers cannot store runtime-sized
+/// array (vectors), or structures with fields that are vectors.
 ///
 /// Other options for storing GPU-accessible data are:
 /// * [`BufferVec`](crate::render_resource::BufferVec)
@@ -115,17 +135,19 @@ impl<T: ShaderType + WriteInto> UniformBuffer<T> {
     ///
     /// This method only allows addition of flags to the default usage flags.
     ///
-    /// The default values for buffer usage are `BufferUsages::COPY_DST` and `BufferUsages::UNIFORM`.
+    /// The default values for buffer usage are `BufferUsages::COPY_DST` and
+    /// `BufferUsages::UNIFORM`.
     pub fn add_usages(&mut self, usage: BufferUsages) {
         self.buffer_usage |= usage;
         self.changed = true;
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`], if a GPU-side backing buffer already exists.
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`], if a GPU-side
+    /// backing buffer already exists.
     ///
-    /// If a GPU-side buffer does not already exist for this data, such a buffer is initialized with currently
-    /// available data.
+    /// If a GPU-side buffer does not already exist for this data, such a buffer
+    /// is initialized with currently available data.
     pub fn write_buffer(&mut self, device: &RenderDevice, queue: &RenderQueue) {
         self.scratch.write(&self.value).unwrap();
 
@@ -152,16 +174,21 @@ impl<'a, T: ShaderType + WriteInto> IntoBinding<'a> for &'a UniformBuffer<T> {
     }
 }
 
-/// Stores data to be transferred to the GPU and made accessible to shaders as a dynamic uniform buffer.
+/// Stores data to be transferred to the GPU and made accessible to shaders as a
+/// dynamic uniform buffer.
 ///
-/// Dynamic uniform buffers are available to shaders on a read-only basis. Dynamic uniform buffers are commonly used to make
-/// available to shaders runtime-sized arrays of parameters that are otherwise constant during shader execution, and are best
-/// suited to data that is relatively small in size as they are only guaranteed to support up to 16kB per binding.
+/// Dynamic uniform buffers are available to shaders on a read-only basis.
+/// Dynamic uniform buffers are commonly used to make available to shaders
+/// runtime-sized arrays of parameters that are otherwise constant during shader
+/// execution, and are best suited to data that is relatively small in size as
+/// they are only guaranteed to support up to 16kB per binding.
 ///
-/// The contained data is stored in system RAM. [`write_buffer`](DynamicUniformBuffer::write_buffer) queues
-/// copying of the data from system RAM to VRAM. Data in uniform buffers must follow [std140 alignment/padding requirements],
-/// which is automatically enforced by this structure. Per the WGPU spec, uniform buffers cannot store runtime-sized array
-/// (vectors), or structures with fields that are vectors.
+/// The contained data is stored in system RAM.
+/// [`write_buffer`](DynamicUniformBuffer::write_buffer) queues copying of the
+/// data from system RAM to VRAM. Data in uniform buffers must follow [std140
+/// alignment/padding requirements], which is automatically enforced by this
+/// structure. Per the WGPU spec, uniform buffers cannot store runtime-sized
+/// array (vectors), or structures with fields that are vectors.
 ///
 /// Other options for storing GPU-accessible data are:
 /// * [`BufferVec`](crate::render_resource::BufferVec)
@@ -226,7 +253,8 @@ impl<T: ShaderType + WriteInto> DynamicUniformBuffer<T> {
         self.scratch.as_ref().is_empty()
     }
 
-    /// Push data into the `DynamicUniformBuffer`'s internal vector (residing on system RAM).
+    /// Push data into the `DynamicUniformBuffer`'s internal vector (residing on
+    /// system RAM).
     #[inline]
     pub fn push(&mut self, value: &T) -> u32 {
         self.scratch.write(value).unwrap() as u32
@@ -250,24 +278,31 @@ impl<T: ShaderType + WriteInto> DynamicUniformBuffer<T> {
     ///
     /// This method only allows addition of flags to the default usage flags.
     ///
-    /// The default values for buffer usage are `BufferUsages::COPY_DST` and `BufferUsages::UNIFORM`.
+    /// The default values for buffer usage are `BufferUsages::COPY_DST` and
+    /// `BufferUsages::UNIFORM`.
     pub fn add_usages(&mut self, usage: BufferUsages) {
         self.buffer_usage |= usage;
         self.changed = true;
     }
 
-    /// Creates a writer that can be used to directly write elements into the target buffer.
+    /// Creates a writer that can be used to directly write elements into the
+    /// target buffer.
     ///
-    /// This method uses less memory and performs fewer memory copies using over [`push`] and [`write_buffer`].
+    /// This method uses less memory and performs fewer memory copies using over
+    /// [`push`] and [`write_buffer`].
     ///
-    /// `max_count` *must* be greater than or equal to the number of elements that are to be written to the buffer, or
-    /// the writer will panic while writing.  Dropping the writer will schedule the buffer write into the provided
-    /// [`RenderQueue`].
+    /// `max_count` *must* be greater than or equal to the number of elements
+    /// that are to be written to the buffer, or the writer will panic while
+    /// writing.  Dropping the writer will schedule the buffer write into the
+    /// provided [`RenderQueue`].
     ///
-    /// If there is no GPU-side buffer allocated to hold the data currently stored, or if a GPU-side buffer previously
-    /// allocated does not have enough capacity to hold `max_count` elements, a new GPU-side buffer is created.
+    /// If there is no GPU-side buffer allocated to hold the data currently
+    /// stored, or if a GPU-side buffer previously allocated does not have
+    /// enough capacity to hold `max_count` elements, a new GPU-side buffer is
+    /// created.
     ///
-    /// Returns `None` if there is no allocated GPU-side buffer, and `max_count` is 0.
+    /// Returns `None` if there is no allocated GPU-side buffer, and `max_count`
+    /// is 0.
     ///
     /// [`push`]: Self::push
     /// [`write_buffer`]: Self::write_buffer
@@ -279,9 +314,9 @@ impl<T: ShaderType + WriteInto> DynamicUniformBuffer<T> {
         queue: &'a RenderQueue,
     ) -> Option<DynamicUniformBufferWriter<'a, T>> {
         let alignment = if cfg!(target_abi = "sim") {
-            // On iOS simulator on silicon macs, metal validation check that the host OS alignment
-            // is respected, but the device reports the correct value for iOS, which is smaller.
-            // Use the larger value.
+            // On iOS simulator on silicon macs, metal validation check that the host OS
+            // alignment is respected, but the device reports the correct value
+            // for iOS, which is smaller. Use the larger value.
             // See https://github.com/gfx-rs/wgpu/issues/7057 - remove if it's not needed anymore.
             AlignmentValue::new(256)
         } else {
@@ -325,11 +360,12 @@ impl<T: ShaderType + WriteInto> DynamicUniformBuffer<T> {
         }
     }
 
-    /// Queues writing of data from system RAM to VRAM using the [`RenderDevice`]
-    /// and the provided [`RenderQueue`].
+    /// Queues writing of data from system RAM to VRAM using the
+    /// [`RenderDevice`] and the provided [`RenderQueue`].
     ///
-    /// If there is no GPU-side buffer allocated to hold the data currently stored, or if a GPU-side buffer previously
-    /// allocated does not have enough capacity, a new GPU-side buffer is created.
+    /// If there is no GPU-side buffer allocated to hold the data currently
+    /// stored, or if a GPU-side buffer previously allocated does not have
+    /// enough capacity, a new GPU-side buffer is created.
     #[inline]
     pub fn write_buffer(&mut self, device: &RenderDevice, queue: &RenderQueue) {
         let capacity = self.buffer.as_deref().map(wgpu::Buffer::size).unwrap_or(0);
@@ -368,12 +404,12 @@ impl<'a, T: ShaderType + WriteInto> DynamicUniformBufferWriter<'a, T> {
     }
 }
 
-/// A wrapper to work around the orphan rule so that [`wgpu::QueueWriteBufferView`] can  implement
-/// [`BufferMut`].
+/// A wrapper to work around the orphan rule so that
+/// [`wgpu::QueueWriteBufferView`] can  implement [`BufferMut`].
 struct QueueWriteBufferViewWrapper<'a> {
     buffer_view: wgpu::QueueWriteBufferView<'a>,
-    // Must be kept separately and cannot be retrieved from buffer_view, as the read-only access will
-    // invoke a panic.
+    // Must be kept separately and cannot be retrieved from buffer_view, as the read-only access
+    // will invoke a panic.
     capacity: usize,
 }
 

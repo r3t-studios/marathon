@@ -1,24 +1,32 @@
-use std::borrow::Cow;
-use bevy_ecs::entity::Entity;
 use core::fmt;
+use std::borrow::Cow;
+
+use bevy_ecs::entity::Entity;
 use derive_more::derive::From;
 
-use crate::render::render_resource::{Buffer, Sampler, TextureView};
+use crate::render::render_resource::{
+    Buffer,
+    Sampler,
+    TextureView,
+};
 
 /// A value passed between render [`Nodes`](super::Node).
-/// Corresponds to the [`SlotType`] specified in the [`RenderGraph`](super::RenderGraph).
+/// Corresponds to the [`SlotType`] specified in the
+/// [`RenderGraph`](super::RenderGraph).
 ///
 /// Slots can have four different types of values:
 /// [`Buffer`], [`TextureView`], [`Sampler`] and [`Entity`].
 ///
-/// These values do not contain the actual render data, but only the ids to retrieve them.
+/// These values do not contain the actual render data, but only the ids to
+/// retrieve them.
 #[derive(Debug, Clone, From)]
 pub enum SlotValue {
     /// A GPU-accessible [`Buffer`].
     Buffer(Buffer),
     /// A [`TextureView`] describes a texture used in a pipeline.
     TextureView(TextureView),
-    /// A texture [`Sampler`] defines how a pipeline will sample from a [`TextureView`].
+    /// A texture [`Sampler`] defines how a pipeline will sample from a
+    /// [`TextureView`].
     Sampler(Sampler),
     /// An entity from the ECS.
     Entity(Entity),
@@ -28,10 +36,10 @@ impl SlotValue {
     /// Returns the [`SlotType`] of this value.
     pub fn slot_type(&self) -> SlotType {
         match self {
-            SlotValue::Buffer(_) => SlotType::Buffer,
-            SlotValue::TextureView(_) => SlotType::TextureView,
-            SlotValue::Sampler(_) => SlotType::Sampler,
-            SlotValue::Entity(_) => SlotType::Entity,
+            | SlotValue::Buffer(_) => SlotType::Buffer,
+            | SlotValue::TextureView(_) => SlotType::TextureView,
+            | SlotValue::Sampler(_) => SlotType::Sampler,
+            | SlotValue::Entity(_) => SlotType::Entity,
         }
     }
 }
@@ -39,14 +47,16 @@ impl SlotValue {
 /// Describes the render resources created (output) or used (input) by
 /// the render [`Nodes`](super::Node).
 ///
-/// This should not be confused with [`SlotValue`], which actually contains the passed data.
+/// This should not be confused with [`SlotValue`], which actually contains the
+/// passed data.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SlotType {
     /// A GPU-accessible [`Buffer`].
     Buffer,
     /// A [`TextureView`] describes a texture used in a pipeline.
     TextureView,
-    /// A texture [`Sampler`] defines how a pipeline will sample from a [`TextureView`].
+    /// A texture [`Sampler`] defines how a pipeline will sample from a
+    /// [`TextureView`].
     Sampler,
     /// An entity from the ECS.
     Entity,
@@ -55,10 +65,10 @@ pub enum SlotType {
 impl fmt::Display for SlotType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            SlotType::Buffer => "Buffer",
-            SlotType::TextureView => "TextureView",
-            SlotType::Sampler => "Sampler",
-            SlotType::Entity => "Entity",
+            | SlotType::Buffer => "Buffer",
+            | SlotType::TextureView => "TextureView",
+            | SlotType::Sampler => "Sampler",
+            | SlotType::Entity => "Entity",
         };
 
         f.write_str(s)
@@ -91,7 +101,8 @@ impl From<&'static str> for SlotLabel {
     }
 }
 
-/// The internal representation of a slot, which specifies its [`SlotType`] and name.
+/// The internal representation of a slot, which specifies its [`SlotType`] and
+/// name.
 #[derive(Clone, Debug)]
 pub struct SlotInfo {
     pub name: Cow<'static, str>,
@@ -149,12 +160,13 @@ impl SlotInfos {
         self.slots.get_mut(index)
     }
 
-    /// Retrieves the index (inside input or output slots) of the slot for the provided label.
+    /// Retrieves the index (inside input or output slots) of the slot for the
+    /// provided label.
     pub fn get_slot_index(&self, label: impl Into<SlotLabel>) -> Option<usize> {
         let label = label.into();
         match label {
-            SlotLabel::Index(index) => Some(index),
-            SlotLabel::Name(ref name) => self.slots.iter().position(|s| s.name == *name),
+            | SlotLabel::Index(index) => Some(index),
+            | SlotLabel::Name(ref name) => self.slots.iter().position(|s| s.name == *name),
         }
     }
 

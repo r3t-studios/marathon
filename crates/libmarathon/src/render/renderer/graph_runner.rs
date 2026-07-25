@@ -1,30 +1,55 @@
-use bevy_ecs::{prelude::Entity, world::World};
+use std::{
+    borrow::Cow,
+    collections::VecDeque,
+};
+
+use bevy_ecs::{
+    prelude::Entity,
+    world::World,
+};
 use bevy_platform::collections::HashMap;
+use smallvec::{
+    SmallVec,
+    smallvec,
+};
+use thiserror::Error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use std::{borrow::Cow, collections::VecDeque};
-use smallvec::{smallvec, SmallVec};
-use thiserror::Error;
-
 use crate::render::{
-    diagnostic::internal::{DiagnosticsRecorder, RenderDiagnosticsMutex},
-    render_graph::{
-        Edge, InternedRenderLabel, InternedRenderSubGraph, NodeRunError, NodeState, RenderGraph,
-        RenderGraphContext, SlotLabel, SlotType, SlotValue,
+    diagnostic::internal::{
+        DiagnosticsRecorder,
+        RenderDiagnosticsMutex,
     },
-    renderer::{RenderContext, RenderDevice},
+    render_graph::{
+        Edge,
+        InternedRenderLabel,
+        InternedRenderSubGraph,
+        NodeRunError,
+        NodeState,
+        RenderGraph,
+        RenderGraphContext,
+        SlotLabel,
+        SlotType,
+        SlotValue,
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+    },
 };
 
 /// The [`RenderGraphRunner`] is responsible for executing a [`RenderGraph`].
 ///
-/// It will run all nodes in the graph sequentially in the correct order (defined by the edges).
-/// Each [`Node`](crate::render_graph::Node) can run any arbitrary code, but will generally
-/// either send directly a [`CommandBuffer`] or a task that will asynchronously generate a [`CommandBuffer`]
+/// It will run all nodes in the graph sequentially in the correct order
+/// (defined by the edges). Each [`Node`](crate::render_graph::Node) can run any
+/// arbitrary code, but will generally either send directly a [`CommandBuffer`]
+/// or a task that will asynchronously generate a [`CommandBuffer`]
 ///
-/// After running the graph, the [`RenderGraphRunner`] will execute in parallel all the tasks to get
-/// an ordered list of [`CommandBuffer`]s to execute. These [`CommandBuffer`] will be submitted to the GPU
-/// sequentially in the order that the tasks were submitted. (which is the order of the [`RenderGraph`])
+/// After running the graph, the [`RenderGraphRunner`] will execute in parallel
+/// all the tasks to get an ordered list of [`CommandBuffer`]s to execute. These
+/// [`CommandBuffer`] will be submitted to the GPU sequentially in the order
+/// that the tasks were submitted. (which is the order of the [`RenderGraph`])
 ///
 /// [`CommandBuffer`]: wgpu::CommandBuffer
 pub(crate) struct RenderGraphRunner;
@@ -39,7 +64,9 @@ pub enum RenderGraphRunnerError {
         slot_index: usize,
         slot_name: Cow<'static, str>,
     },
-    #[error("graph '{sub_graph:?}' could not be run because slot '{slot_name}' at index {slot_index} has no value")]
+    #[error(
+        "graph '{sub_graph:?}' could not be run because slot '{slot_name}' at index {slot_index} has no value"
+    )]
     MissingInput {
         slot_index: usize,
         slot_name: Cow<'static, str>,
@@ -99,8 +126,9 @@ impl RenderGraphRunner {
         Ok(diagnostics_recorder)
     }
 
-    /// Runs the [`RenderGraph`] and all its sub-graphs sequentially, making sure that all nodes are
-    /// run in the correct order. (a node only runs when all its dependencies have finished running)
+    /// Runs the [`RenderGraph`] and all its sub-graphs sequentially, making
+    /// sure that all nodes are run in the correct order. (a node only runs
+    /// when all its dependencies have finished running)
     fn run_graph<'w>(
         graph: &RenderGraph,
         sub_graph: Option<InternedRenderSubGraph>,
@@ -172,7 +200,7 @@ impl RenderGraphRunner {
                 .expect("node is in graph")
             {
                 match edge {
-                    Edge::SlotEdge {
+                    | Edge::SlotEdge {
                         output_index,
                         input_index,
                         ..
@@ -184,13 +212,13 @@ impl RenderGraphRunner {
                             node_queue.push_front(node_state);
                             continue 'handle_node;
                         }
-                    }
-                    Edge::NodeEdge { .. } => {
+                    },
+                    | Edge::NodeEdge { .. } => {
                         if !node_outputs.contains_key(&input_node.label) {
                             node_queue.push_front(node_state);
                             continue 'handle_node;
                         }
-                    }
+                    },
                 }
             }
 

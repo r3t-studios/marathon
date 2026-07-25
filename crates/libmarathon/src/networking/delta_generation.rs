@@ -70,13 +70,10 @@ pub fn generate_delta_system(world: &mut World) {
     // Broadcast only happens when online
 
     let changed_entities: Vec<(Entity, uuid::Uuid, uuid::Uuid)> = {
-        let mut query = world.query_filtered::<
-            (Entity, &NetworkedEntity),
-            (
-                Or<(Added<NetworkedEntity>, Changed<NetworkedEntity>)>,
-                Without<crate::networking::SkipNextDeltaGeneration>,
-            ),
-        >();
+        let mut query = world.query_filtered::<(Entity, &NetworkedEntity), (
+            Or<(Added<NetworkedEntity>, Changed<NetworkedEntity>)>,
+            Without<crate::networking::SkipNextDeltaGeneration>,
+        )>();
         query
             .iter(world)
             .map(|(entity, networked)| (entity, networked.network_id, networked.owner_node_id))
@@ -126,7 +123,8 @@ pub fn generate_delta_system(world: &mut World) {
 
         // Phase 2: Build operations (needs world access without holding other borrows)
         let operations = {
-            let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+            let type_registry_res =
+                world.resource::<crate::persistence::ComponentTypeRegistryResource>();
             let type_registry = type_registry_res.0;
             build_entity_operations(
                 entity,
@@ -184,7 +182,8 @@ pub fn generate_delta_system(world: &mut World) {
 
             // Update last sync version with NEW sequence (after tick) to prevent duplicates
             // CRITICAL: Must use new_seq (after tick), not current_seq (before tick)
-            // This prevents sending duplicate deltas if system runs multiple times per frame
+            // This prevents sending duplicate deltas if system runs multiple times per
+            // frame
             last_versions.update(network_id, new_seq);
 
             delta
@@ -194,10 +193,11 @@ pub fn generate_delta_system(world: &mut World) {
         {
             // Get type registry first before mutable borrow
             let type_registry = {
-                let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+                let type_registry_res =
+                    world.resource::<crate::persistence::ComponentTypeRegistryResource>();
                 type_registry_res.0
             };
-            
+
             if let Some(mut component_clocks) =
                 world.get_resource_mut::<crate::networking::ComponentVectorClocks>()
             {
@@ -208,9 +208,10 @@ pub fn generate_delta_system(world: &mut World) {
                         ..
                     } = op
                     {
-                        let component_type_name = type_registry.get_type_name(*discriminant)
+                        let component_type_name = type_registry
+                            .get_type_name(*discriminant)
                             .unwrap_or("unknown");
-                            
+
                         component_clocks.set(
                             network_id,
                             component_type_name.to_string(),
@@ -241,18 +242,23 @@ pub fn generate_delta_system(world: &mut World) {
 ///
 /// ```no_run
 /// use bevy::prelude::*;
-/// use libmarathon::networking::{generate_delta_system, cleanup_skip_delta_markers_system};
-///
-/// App::new().add_systems(PostUpdate, (
-///     generate_delta_system,
+/// use libmarathon::networking::{
 ///     cleanup_skip_delta_markers_system,
-/// ).chain());
+///     generate_delta_system,
+/// };
+///
+/// App::new().add_systems(
+///     PostUpdate,
+///     (generate_delta_system, cleanup_skip_delta_markers_system).chain(),
+/// );
 /// ```
 pub fn cleanup_skip_delta_markers_system(world: &mut World) {
     // Use immediate removal (not deferred commands) to ensure markers are removed
-    // synchronously after generate_delta_system runs, not at the start of next frame
+    // synchronously after generate_delta_system runs, not at the start of next
+    // frame
     let entities_to_clean: Vec<Entity> = {
-        let mut query = world.query_filtered::<Entity, With<crate::networking::SkipNextDeltaGeneration>>();
+        let mut query =
+            world.query_filtered::<Entity, With<crate::networking::SkipNextDeltaGeneration>>();
         query.iter(world).collect()
     };
 

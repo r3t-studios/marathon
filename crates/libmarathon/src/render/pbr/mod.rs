@@ -9,13 +9,16 @@ extern crate alloc;
 mod meshlet;
 pub mod wireframe;
 
-/// Experimental features that are not yet finished. Please report any issues you encounter!
+/// Experimental features that are not yet finished. Please report any issues
+/// you encounter!
 ///
-/// Expect bugs, missing features, compatibility issues, low performance, and/or future breaking changes.
+/// Expect bugs, missing features, compatibility issues, low performance, and/or
+/// future breaking changes.
 #[cfg(feature = "meshlet")]
 pub mod experimental {
     /// Render high-poly 3d meshes using an efficient GPU-driven method.
-    /// See [`MeshletPlugin`](meshlet::MeshletPlugin) and [`MeshletMesh`](meshlet::MeshletMesh) for details.
+    /// See [`MeshletPlugin`](meshlet::MeshletPlugin) and
+    /// [`MeshletMesh`](meshlet::MeshletMesh) for details.
     pub mod meshlet {
         pub use crate::render::pbr::meshlet::*;
     }
@@ -41,14 +44,23 @@ mod ssao;
 mod ssr;
 mod volumetric_fog;
 
-use bevy_color::{Color, LinearRgba};
-
 pub use atmosphere::*;
+use bevy_color::{
+    Color,
+    LinearRgba,
+};
 use bevy_light::{
-    AmbientLight, DirectionalLight, PointLight, ShadowFilteringMethod, SimulationLightSystems,
+    AmbientLight,
+    DirectionalLight,
+    PointLight,
+    ShadowFilteringMethod,
+    SimulationLightSystems,
     SpotLight,
 };
-use bevy_shader::{load_shader_library, ShaderRef};
+use bevy_shader::{
+    ShaderRef,
+    load_shader_library,
+};
 pub use cluster::*;
 pub use components::*;
 pub use decal::clustered::ClusteredDecalPlugin;
@@ -69,12 +81,19 @@ pub use volumetric_fog::VolumetricFogPlugin;
 
 /// The PBR prelude.
 ///
-/// This includes the most common types in this crate, re-exported for your convenience.
+/// This includes the most common types in this crate, re-exported for your
+/// convenience.
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::render::pbr::{
-        fog::{DistanceFog, FogFalloff},
-        material::{Material, MaterialPlugin},
+        fog::{
+            DistanceFog,
+            FogFalloff,
+        },
+        material::{
+            Material,
+            MaterialPlugin,
+        },
         mesh_material::MeshMaterial3d,
         parallax::ParallaxMappingMethod,
         pbr_material::StandardMaterial,
@@ -120,28 +139,56 @@ pub mod graph {
     }
 }
 
-use crate::render::pbr::{deferred::DeferredPbrLightingPlugin, graph::NodePbr};
+use std::path::PathBuf;
+
 use bevy_app::prelude::*;
-use bevy_asset::{AssetApp, AssetPath, Assets, Handle, RenderAssetUsages};
-use crate::render::core_3d::graph::{Core3d, Node3d};
+use bevy_asset::{
+    AssetApp,
+    AssetPath,
+    Assets,
+    Handle,
+    RenderAssetUsages,
+};
 use bevy_ecs::prelude::*;
 #[cfg(feature = "bluenoise_texture")]
-use bevy_image::{CompressedImageFormats, ImageType};
-use bevy_image::{Image, ImageSampler};
+use bevy_image::{
+    CompressedImageFormats,
+    ImageType,
+};
+use bevy_image::{
+    Image,
+    ImageSampler,
+};
+
 use crate::render::{
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderDebugFlags,
+    RenderStartup,
+    RenderSystems,
     alpha::AlphaMode,
     camera::sort_cameras,
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
     extract_resource::ExtractResourcePlugin,
+    pbr::{
+        deferred::DeferredPbrLightingPlugin,
+        graph::NodePbr,
+    },
     render_graph::RenderGraph,
     render_resource::{
-        Extent3d, TextureDataOrder, TextureDescriptor, TextureDimension, TextureFormat,
+        Extent3d,
+        TextureDataOrder,
+        TextureDescriptor,
+        TextureDimension,
+        TextureFormat,
         TextureUsages,
     },
     sync_component::SyncComponentPlugin,
-    ExtractSchedule, Render, RenderApp, RenderDebugFlags, RenderStartup, RenderSystems,
 };
-
-use std::path::PathBuf;
 
 fn shader_ref(path: PathBuf) -> ShaderRef {
     ShaderRef::Path(AssetPath::from_path_buf(path).with_source("embedded"))
@@ -153,7 +200,8 @@ pub const TONEMAPPING_LUT_SAMPLER_BINDING_INDEX: u32 = 19;
 /// Sets up the entire PBR infrastructure of bevy.
 pub struct PbrPlugin {
     /// Controls if the prepass is enabled for the [`StandardMaterial`].
-    /// For more information about what a prepass is, see the [`bevy_core_pipeline::prepass`] docs.
+    /// For more information about what a prepass is, see the
+    /// [`bevy_core_pipeline::prepass`] docs.
     pub prepass_enabled: bool,
     /// Controls if [`DeferredPbrLightingPlugin`] is added.
     pub add_default_deferred_lighting_plugin: bool,
@@ -162,7 +210,8 @@ pub struct PbrPlugin {
     /// This requires compute shader support and so will be forcibly disabled if
     /// the platform doesn't support those.
     pub use_gpu_instance_buffer_builder: bool,
-    /// Debugging flags that can optionally be set when constructing the renderer.
+    /// Debugging flags that can optionally be set when constructing the
+    /// renderer.
     pub debug_flags: RenderDebugFlags,
 }
 
@@ -206,7 +255,8 @@ impl Plugin for PbrPlugin {
         load_shader_library!(app, "render/parallax_mapping.wgsl");
         load_shader_library!(app, "render/view_transformations.wgsl");
 
-        // Setup dummy shaders for when MeshletPlugin is not used to prevent shader import errors.
+        // Setup dummy shaders for when MeshletPlugin is not used to prevent shader
+        // import errors.
         load_shader_library!(app, "meshlet/dummy_visibility_buffer_resolve.wgsl");
 
         app.register_asset_reflect::<StandardMaterial>()

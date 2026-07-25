@@ -1,18 +1,29 @@
 //! Networking Manager - handles iroh networking and CRDT state outside Bevy
 
 use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::time;
+
 use bytes::Bytes;
 use futures_lite::StreamExt;
-
-use crate::networking::{
-    EntityLockRegistry, NodeId, OperationLog, SessionId, TombstoneRegistry, VectorClock,
-    VersionedMessage, SyncMessage, LockMessage,
+use tokio::{
+    sync::mpsc,
+    time,
 };
 
-use super::EngineEvent;
-use super::events::NetworkingInitStatus;
+use super::{
+    EngineEvent,
+    events::NetworkingInitStatus,
+};
+use crate::networking::{
+    EntityLockRegistry,
+    LockMessage,
+    NodeId,
+    OperationLog,
+    SessionId,
+    SyncMessage,
+    TombstoneRegistry,
+    VectorClock,
+    VersionedMessage,
+};
 
 pub struct NetworkingManager {
     session_id: SessionId,
@@ -53,9 +64,9 @@ impl NetworkingManager {
             tracing::info!("Networking init: {:?}", status);
         };
         use iroh::{
+            Endpoint,
             discovery::pkarr::dht::DhtDiscovery,
             protocol::Router,
-            Endpoint,
         };
         use iroh_gossip::{
             net::Gossip,
@@ -73,10 +84,7 @@ impl NetworkingManager {
         // This allows peers to discover each other over the internet via Mainline DHT
         // Security comes from the secret session-derived ALPN, not network isolation
         let dht_discovery = DhtDiscovery::builder().build()?;
-        let endpoint = Endpoint::builder()
-            .discovery(dht_discovery)
-            .bind()
-            .await?;
+        let endpoint = Endpoint::builder().discovery(dht_discovery).bind().await?;
 
         send_progress(NetworkingInitStatus::EndpointReady);
 
@@ -95,7 +103,8 @@ impl NetworkingManager {
             .build()?;
 
         // Discover existing peers from DHT with retries
-        // Retry immediately without delays - if peers aren't in DHT yet, they'll appear soon
+        // Retry immediately without delays - if peers aren't in DHT yet, they'll appear
+        // soon
         let mut peer_endpoint_ids = vec![];
         for attempt in 1..=3 {
             // Check for cancellation before each attempt
@@ -108,25 +117,25 @@ impl NetworkingManager {
                 session_code: session_id.to_code().to_string(),
                 attempt,
             });
-            match crate::engine::peer_discovery::discover_peers_from_dht(&session_id, &pkarr_client).await {
-                Ok(peers) if !peers.is_empty() => {
+            match crate::engine::peer_discovery::discover_peers_from_dht(&session_id, &pkarr_client)
+                .await
+            {
+                | Ok(peers) if !peers.is_empty() => {
                     let count = peers.len();
                     peer_endpoint_ids = peers;
-                    send_progress(NetworkingInitStatus::PeersFound {
-                        count,
-                    });
+                    send_progress(NetworkingInitStatus::PeersFound { count });
                     break;
-                }
-                Ok(_) if attempt == 3 => {
+                },
+                | Ok(_) if attempt == 3 => {
                     // Last attempt and no peers found
                     send_progress(NetworkingInitStatus::NoPeersFound);
-                }
-                Ok(_) => {
+                },
+                | Ok(_) => {
                     // No peers found, but will retry immediately
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     tracing::warn!("DHT query attempt {} failed: {}", attempt, e);
-                }
+                },
             }
         }
 
@@ -220,9 +229,14 @@ impl NetworkingManager {
         self.session_id.clone()
     }
 
-    /// Process gossip events (unbounded) and periodic tasks (heartbeats, lock cleanup)
-    /// Also bridges messages between iroh-gossip and Bevy's GossipBridge
-    pub async fn run(mut self, event_tx: mpsc::UnboundedSender<EngineEvent>, cancel_token: tokio_util::sync::CancellationToken) {
+    /// Process gossip events (unbounded) and periodic tasks (heartbeats, lock
+    /// cleanup) Also bridges messages between iroh-gossip and Bevy's
+    /// GossipBridge
+    pub async fn run(
+        mut self,
+        event_tx: mpsc::UnboundedSender<EngineEvent>,
+        cancel_token: tokio_util::sync::CancellationToken,
+    ) {
         let mut heartbeat_interval = time::interval(Duration::from_secs(1));
         let mut bridge_poll_interval = time::interval(Duration::from_millis(10));
 
@@ -381,33 +395,41 @@ impl NetworkingManager {
         }
     }
 
-
-    async fn handle_sync_message(&mut self, msg_bytes: &[u8], event_tx: &mpsc::UnboundedSender<EngineEvent>) {
+    async fn handle_sync_message(
+        &mut self,
+        msg_bytes: &[u8],
+        event_tx: &mpsc::UnboundedSender<EngineEvent>,
+    ) {
         // Deserialize SyncMessage
-        let versioned: VersionedMessage = match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(msg_bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("Failed to deserialize sync message: {}", e);
-                return;
-            }
-        };
+        let versioned: VersionedMessage =
+            match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(msg_bytes) {
+                | Ok(v) => v,
+                | Err(e) => {
+                    tracing::warn!("Failed to deserialize sync message: {}", e);
+                    return;
+                },
+            };
 
         match versioned.message {
-            SyncMessage::Lock(lock_msg) => {
+            | SyncMessage::Lock(lock_msg) => {
                 self.handle_lock_message(lock_msg, event_tx);
-            }
-            _ => {
+            },
+            | _ => {
                 // TODO: Handle other message types (ComponentOp, EntitySpawn, etc.)
                 tracing::debug!("Unhandled sync message type");
-            }
+            },
         }
     }
 
-    fn handle_lock_message(&mut self, msg: LockMessage, event_tx: &mpsc::UnboundedSender<EngineEvent>) {
+    fn handle_lock_message(
+        &mut self,
+        msg: LockMessage,
+        event_tx: &mpsc::UnboundedSender<EngineEvent>,
+    ) {
         match msg {
-            LockMessage::LockRequest { entity_id, node_id } => {
+            | LockMessage::LockRequest { entity_id, node_id } => {
                 match self.locks.try_acquire(entity_id, node_id) {
-                    Ok(()) => {
+                    | Ok(()) => {
                         // Track if this is our lock
                         if node_id == self.node_id {
                             self.our_locks.insert(entity_id);
@@ -417,19 +439,19 @@ impl NetworkingManager {
                             entity_id,
                             holder: node_id,
                         });
-                    }
-                    Err(current_holder) => {
+                    },
+                    | Err(current_holder) => {
                         let _ = event_tx.send(EngineEvent::LockDenied {
                             entity_id,
                             current_holder,
                         });
-                    }
+                    },
                 }
-            }
-            LockMessage::LockHeartbeat { entity_id, holder } => {
+            },
+            | LockMessage::LockHeartbeat { entity_id, holder } => {
                 self.locks.renew_heartbeat(entity_id, holder);
-            }
-            LockMessage::LockRelease { entity_id, node_id } => {
+            },
+            | LockMessage::LockRelease { entity_id, node_id } => {
                 self.locks.release(entity_id, node_id);
 
                 // Remove from our locks tracking
@@ -438,8 +460,8 @@ impl NetworkingManager {
                 }
 
                 let _ = event_tx.send(EngineEvent::LockReleased { entity_id });
-            }
-            _ => {}
+            },
+            | _ => {},
         }
     }
 

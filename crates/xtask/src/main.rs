@@ -1,9 +1,22 @@
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
-use std::process::Command;
-use std::fs;
-use tracing::{info, warn, error};
+use std::{
+    fs,
+    path::PathBuf,
+    process::Command,
+};
+
+use anyhow::{
+    Context,
+    Result,
+};
+use clap::{
+    Parser,
+    Subcommand,
+};
+use tracing::{
+    error,
+    info,
+    warn,
+};
 
 #[derive(Parser)]
 #[command(name = "xtask")]
@@ -59,10 +72,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::IosBuild { debug } => ios_build(debug),
-        Commands::IosDeploy { device, debug } => ios_deploy(&device, debug),
-        Commands::IosRun { device, debug } => ios_run(&device, debug),
-        Commands::IosDevice { debug } => ios_device(debug),
+        | Commands::IosBuild { debug } => ios_build(debug),
+        | Commands::IosDeploy { device, debug } => ios_deploy(&device, debug),
+        | Commands::IosRun { device, debug } => ios_run(&device, debug),
+        | Commands::IosDevice { debug } => ios_device(debug),
     }
 }
 
@@ -93,18 +106,15 @@ fn package_app_bundle(profile: &str, target: &str) -> Result<()> {
 
     // Remove old bundle if it exists
     if bundle_path.exists() {
-        fs::remove_dir_all(&bundle_path)
-            .context("Failed to remove old app bundle")?;
+        fs::remove_dir_all(&bundle_path).context("Failed to remove old app bundle")?;
     }
 
     // Create bundle directory
-    fs::create_dir_all(&bundle_path)
-        .context("Failed to create app bundle directory")?;
+    fs::create_dir_all(&bundle_path).context("Failed to create app bundle directory")?;
 
     // Copy binary
     let bundle_binary = bundle_path.join("app");
-    fs::copy(&binary_path, &bundle_binary)
-        .context("Failed to copy binary to bundle")?;
+    fs::copy(&binary_path, &bundle_binary).context("Failed to copy binary to bundle")?;
 
     // Set executable permissions
     #[cfg(unix)]
@@ -121,8 +131,7 @@ fn package_app_bundle(profile: &str, target: &str) -> Result<()> {
         .context("Failed to copy Info.plist")?;
 
     // Create PkgInfo
-    fs::write(bundle_path.join("PkgInfo"), b"APPL????")
-        .context("Failed to create PkgInfo")?;
+    fs::write(bundle_path.join("PkgInfo"), b"APPL????").context("Failed to create PkgInfo")?;
 
     info!("App bundle packaged successfully");
     Ok(())
@@ -156,14 +165,20 @@ fn ios_build(debug: bool) -> Result<()> {
     // Package the app bundle
     package_app_bundle(profile, "aarch64-apple-ios-sim")?;
 
-    info!("Build complete: target/aarch64-apple-ios-sim/{}/Aspen.app", profile);
+    info!(
+        "Build complete: target/aarch64-apple-ios-sim/{}/Aspen.app",
+        profile
+    );
     Ok(())
 }
 
 fn ios_deploy(device_name: &str, debug: bool) -> Result<()> {
     let root = project_root();
     let profile = if debug { "debug" } else { "release" };
-    let bundle_path = root.join(format!("target/aarch64-apple-ios-sim/{}/Aspen.app", profile));
+    let bundle_path = root.join(format!(
+        "target/aarch64-apple-ios-sim/{}/Aspen.app",
+        profile
+    ));
 
     info!("Deploying to iOS Simulator");
     info!("Device: {}", device_name);
@@ -180,12 +195,7 @@ fn ios_deploy(device_name: &str, debug: bool) -> Result<()> {
     let device_uuid = devices_list
         .lines()
         .find(|line| line.contains(device_name))
-        .and_then(|line| {
-            line.split('(')
-                .nth(1)?
-                .split(')')
-                .next()
-        })
+        .and_then(|line| line.split('(').nth(1)?.split(')').next())
         .context("Device not found")?;
 
     info!("Found device: {}", device_uuid);
@@ -270,12 +280,7 @@ fn ios_run(device_name: &str, debug: bool) -> Result<()> {
     let device_uuid = devices_list
         .lines()
         .find(|line| line.contains(device_name))
-        .and_then(|line| {
-            line.split('(')
-                .nth(1)?
-                .split(')')
-                .next()
-        })
+        .and_then(|line| line.split('(').nth(1)?.split(')').next())
         .context("Device not found")?;
 
     // Stream logs using simctl spawn
@@ -293,7 +298,8 @@ fn ios_run(device_name: &str, debug: bool) -> Result<()> {
         "compact",
     ]);
 
-    // When debug flag is set, show all log levels (info, debug, default, error, fault)
+    // When debug flag is set, show all log levels (info, debug, default, error,
+    // fault)
     if debug {
         log_cmd.args(["--info", "--debug"]);
         info!("Streaming all log levels (info, debug, default, error, fault)");
@@ -309,9 +315,9 @@ fn ios_run(device_name: &str, debug: bool) -> Result<()> {
     // - User hit Ctrl+C
     // Don't treat these as errors
     match status.code() {
-        Some(0) => info!("Log streaming ended normally"),
-        Some(code) => info!("Log streaming ended with code {}", code),
-        None => info!("Log streaming ended (killed by signal)"),
+        | Some(0) => info!("Log streaming ended normally"),
+        | Some(code) => info!("Log streaming ended with code {}", code),
+        | None => info!("Log streaming ended (killed by signal)"),
     }
 
     Ok(())
@@ -353,13 +359,19 @@ fn ios_device(debug: bool) -> Result<()> {
     // Code sign with Apple Development certificate
     info!("Signing app with Apple Development certificate");
     let status = Command::new("codesign")
-        .args(["--force", "--sign", "Apple Development: sienna@r3t.io (6A6PF29R8A)"])
+        .args([
+            "--force",
+            "--sign",
+            "Apple Development: sienna@r3t.io (6A6PF29R8A)",
+        ])
         .arg(&bundle_path)
         .status()
         .context("Failed to code sign app")?;
 
     if !status.success() {
-        anyhow::bail!("Code signing failed. Make sure the certificate is trusted in Keychain Access.");
+        anyhow::bail!(
+            "Code signing failed. Make sure the certificate is trusted in Keychain Access."
+        );
     }
 
     info!("App signed successfully");
@@ -374,10 +386,13 @@ fn ios_device(debug: bool) -> Result<()> {
     let devices_list = String::from_utf8_lossy(&output.stdout);
     let device_id = devices_list
         .lines()
-        .find(|line| (line.contains("connected") || line.contains("available")) && line.contains("iPad"))
+        .find(|line| {
+            (line.contains("connected") || line.contains("available")) && line.contains("iPad")
+        })
         .and_then(|line| {
             // Extract device ID from the line
-            // Format: "Name    domain.coredevice.local    ID    connected/available    Model"
+            // Format: "Name    domain.coredevice.local    ID    connected/available
+            // Model"
             line.split_whitespace().nth(2)
         })
         .context("No connected iPad found. Make sure your iPad is connected and trusted.")?;
@@ -439,9 +454,9 @@ fn ios_device(debug: bool) -> Result<()> {
     let status = log_cmd.status().context("Failed to start log stream")?;
 
     match status.code() {
-        Some(0) => info!("Log streaming ended normally"),
-        Some(code) => info!("Log streaming ended with code {}", code),
-        None => info!("Log streaming ended (killed by signal)"),
+        | Some(0) => info!("Log streaming ended normally"),
+        | Some(code) => info!("Log streaming ended with code {}", code),
+        | None => info!("Log streaming ended (killed by signal)"),
     }
 
     Ok(())

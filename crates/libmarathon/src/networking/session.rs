@@ -6,7 +6,6 @@ use std::fmt;
 /// human-readable ! session codes, ALPN-based network isolation, and persistent
 /// session tracking.
 use bevy::prelude::*;
-
 use uuid::Uuid;
 
 use crate::networking::VectorClock;
@@ -114,12 +113,14 @@ impl SessionId {
 
     /// Derive deterministic pkarr keypair for DHT-based peer discovery
     ///
-    /// All peers in the same session derive the same keypair from the session code.
-    /// This shared keypair is used to publish and discover peer EndpointIds in the DHT.
+    /// All peers in the same session derive the same keypair from the session
+    /// code. This shared keypair is used to publish and discover peer
+    /// EndpointIds in the DHT.
     ///
     /// # Security
-    /// The session code is the secret - anyone with the code can discover peers.
-    /// The domain separation prefix ensures no collision with other uses.
+    /// The session code is the secret - anyone with the code can discover
+    /// peers. The domain separation prefix ensures no collision with other
+    /// uses.
     pub fn to_pkarr_keypair(&self) -> pkarr::Keypair {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"/app/v1/session-pkarr-key/");

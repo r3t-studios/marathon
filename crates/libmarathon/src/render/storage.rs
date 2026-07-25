@@ -1,17 +1,43 @@
-use crate::render::{
-    render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin},
-    render_resource::{Buffer, BufferUsages},
-    renderer::RenderDevice,
+use bevy_app::{
+    App,
+    Plugin,
 };
-use bevy_app::{App, Plugin};
-use bevy_asset::{Asset, AssetApp, AssetId, RenderAssetUsages};
-use bevy_ecs::system::{lifetimeless::SRes, SystemParamItem};
-use bevy_reflect::{prelude::ReflectDefault, Reflect};
+use bevy_asset::{
+    Asset,
+    AssetApp,
+    AssetId,
+    RenderAssetUsages,
+};
+use bevy_ecs::system::{
+    SystemParamItem,
+    lifetimeless::SRes,
+};
+use bevy_reflect::{
+    Reflect,
+    prelude::ReflectDefault,
+};
 use bevy_utils::default;
-use encase::{internal::WriteInto, ShaderType};
+use encase::{
+    ShaderType,
+    internal::WriteInto,
+};
 use wgpu::util::BufferInitDescriptor;
 
-/// Adds [`ShaderStorageBuffer`] as an asset that is extracted and uploaded to the GPU.
+use crate::render::{
+    render_asset::{
+        PrepareAssetError,
+        RenderAsset,
+        RenderAssetPlugin,
+    },
+    render_resource::{
+        Buffer,
+        BufferUsages,
+    },
+    renderer::RenderDevice,
+};
+
+/// Adds [`ShaderStorageBuffer`] as an asset that is extracted and uploaded to
+/// the GPU.
 #[derive(Default)]
 pub struct StoragePlugin;
 
@@ -23,7 +49,8 @@ impl Plugin for StoragePlugin {
     }
 }
 
-/// A storage buffer that is prepared as a [`RenderAsset`] and uploaded to the GPU.
+/// A storage buffer that is prepared as a [`RenderAsset`] and uploaded to the
+/// GPU.
 #[derive(Asset, Reflect, Debug, Clone)]
 #[reflect(opaque)]
 #[reflect(Default, Debug, Clone)]
@@ -77,8 +104,7 @@ impl ShaderStorageBuffer {
     /// Sets the data of the storage buffer to the given [`ShaderType`].
     pub fn set_data<T>(&mut self, value: T)
     where
-        T: ShaderType + WriteInto,
-    {
+        T: ShaderType + WriteInto, {
         let size = value.size().get() as usize;
         let mut wrapper = encase::StorageBuffer::<Vec<u8>>::new(Vec::with_capacity(size));
         wrapper.write(&value).unwrap();
@@ -98,14 +124,15 @@ where
     }
 }
 
-/// A storage buffer that is prepared as a [`RenderAsset`] and uploaded to the GPU.
+/// A storage buffer that is prepared as a [`RenderAsset`] and uploaded to the
+/// GPU.
 pub struct GpuShaderStorageBuffer {
     pub buffer: Buffer,
 }
 
 impl RenderAsset for GpuShaderStorageBuffer {
-    type SourceAsset = ShaderStorageBuffer;
     type Param = SRes<RenderDevice>;
+    type SourceAsset = ShaderStorageBuffer;
 
     fn asset_usage(source_asset: &Self::SourceAsset) -> RenderAssetUsages {
         source_asset.asset_usage
@@ -118,18 +145,18 @@ impl RenderAsset for GpuShaderStorageBuffer {
         _: Option<&Self>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         match source_asset.data {
-            Some(data) => {
+            | Some(data) => {
                 let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
                     label: source_asset.buffer_description.label,
                     contents: &data,
                     usage: source_asset.buffer_description.usage,
                 });
                 Ok(GpuShaderStorageBuffer { buffer })
-            }
-            None => {
+            },
+            | None => {
                 let buffer = render_device.create_buffer(&source_asset.buffer_description);
                 Ok(GpuShaderStorageBuffer { buffer })
-            }
+            },
         }
     }
 }

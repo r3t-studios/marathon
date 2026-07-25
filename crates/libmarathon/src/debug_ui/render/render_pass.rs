@@ -4,25 +4,53 @@
 // This code is vendored from bevy_egui: https://github.com/vladbat00/bevy_egui
 // Original author: Vladyslav Batyrenko <vladyslav.batyrenko@gmail.com>
 
+use bevy::{
+    camera::Viewport,
+    ecs::{
+        query::QueryState,
+        world::{
+            Mut,
+            World,
+        },
+    },
+    math::{
+        URect,
+        UVec2,
+    },
+    render::{
+        camera::ExtractedCamera,
+        render_graph::{
+            Node,
+            NodeRunError,
+            RenderGraphContext,
+        },
+        render_resource::{
+            PipelineCache,
+            RenderPassDescriptor,
+        },
+        renderer::RenderContext,
+        sync_world::RenderEntity,
+        view::{
+            ExtractedView,
+            ViewTarget,
+        },
+    },
+};
+use wgpu_types::{
+    IndexFormat,
+    ShaderStages,
+};
+
 use crate::debug_ui::render::{
-    DrawPrimitive, EguiViewTarget,
-    systems::{EguiPipelines, EguiRenderData, EguiTextureBindGroups, EguiTransforms},
+    DrawPrimitive,
+    EguiViewTarget,
+    systems::{
+        EguiPipelines,
+        EguiRenderData,
+        EguiTextureBindGroups,
+        EguiTransforms,
+    },
 };
-use bevy::camera::Viewport;
-use bevy::ecs::{
-    query::QueryState,
-    world::{Mut, World},
-};
-use bevy::math::{URect, UVec2};
-use bevy::render::{
-    camera::ExtractedCamera,
-    render_graph::{Node, NodeRunError, RenderGraphContext},
-    render_resource::{PipelineCache, RenderPassDescriptor},
-    renderer::RenderContext,
-    sync_world::RenderEntity,
-    view::{ExtractedView, ViewTarget},
-};
-use wgpu_types::{IndexFormat, ShaderStages};
 
 /// Egui pass node.
 pub struct EguiPassNode {
@@ -140,10 +168,10 @@ impl Node for EguiPassNode {
             .1;
 
         let (vertex_buffer, index_buffer) = match (&data.vertex_buffer, &data.index_buffer) {
-            (Some(vertex), Some(index)) => (vertex, index),
-            _ => {
+            | (Some(vertex), Some(index)) => (vertex, index),
+            | _ => {
                 return Ok(());
-            }
+            },
         };
 
         let mut index_offset: u32 = 0;
@@ -202,7 +230,7 @@ impl Node for EguiPassNode {
                 continue;
             };
             match &draw_command.primitive {
-                DrawPrimitive::Egui(command) => {
+                | DrawPrimitive::Egui(command) => {
                     let Some((texture_bind_group, bindless_offset)) =
                         bind_groups.get(&command.egui_texture)
                     else {
@@ -214,8 +242,8 @@ impl Node for EguiPassNode {
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     render_pass.set_index_buffer(index_buffer.slice(..), 0, IndexFormat::Uint32);
 
-                    if let Some(bindless_offset) = bindless_offset
-                        && last_bindless_offset != Some(bindless_offset)
+                    if let Some(bindless_offset) = bindless_offset &&
+                        last_bindless_offset != Some(bindless_offset)
                     {
                         last_bindless_offset = Some(bindless_offset);
 
@@ -229,7 +257,8 @@ impl Node for EguiPassNode {
                         );
                     }
 
-                    // NOTE: vertices_count is actually the indices count (poorly named in EguiDraw struct)
+                    // NOTE: vertices_count is actually the indices count (poorly named in EguiDraw
+                    // struct)
                     render_pass.draw_indexed(
                         index_offset..(index_offset + command.vertices_count as u32),
                         0,
@@ -237,8 +266,8 @@ impl Node for EguiPassNode {
                     );
 
                     index_offset += command.vertices_count as u32;
-                }
-                DrawPrimitive::PaintCallback(command) => {
+                },
+                | DrawPrimitive::PaintCallback(command) => {
                     let info = egui::PaintCallbackInfo {
                         viewport: command.rect,
                         clip_rect: draw_command.clip_rect,
@@ -266,7 +295,7 @@ impl Node for EguiPassNode {
                             world,
                         );
                     }
-                }
+                },
             }
         }
 
