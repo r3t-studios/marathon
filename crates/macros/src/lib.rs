@@ -7,10 +7,16 @@ mod extract_resource;
 mod specializer;
 mod synced;
 
-use bevy_macro_utils::{derive_label, BevyManifest};
+use bevy_macro_utils::{
+    BevyManifest,
+    derive_label,
+};
 use proc_macro::TokenStream;
 use quote::format_ident;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{
+    DeriveInput,
+    parse_macro_input,
+};
 
 pub(crate) fn bevy_render_path() -> syn::Path {
     // Use our vendored render module
@@ -33,10 +39,12 @@ pub fn derive_extract_resource(input: TokenStream) -> TokenStream {
 ///
 /// The component must implement [`Clone`].
 /// The component will be extracted into the render world via cloning.
-/// Note that this only enables extraction of the component, it does not execute the extraction.
-/// See `ExtractComponentPlugin` to actually perform the extraction.
+/// Note that this only enables extraction of the component, it does not execute
+/// the extraction. See `ExtractComponentPlugin` to actually perform the
+/// extraction.
 ///
-/// If you only want to extract a component conditionally, you may use the `extract_component_filter` attribute.
+/// If you only want to extract a component conditionally, you may use the
+/// `extract_component_filter` attribute.
 ///
 /// # Example
 ///
@@ -154,8 +162,18 @@ pub fn derive_draw_function_label(input: TokenStream) -> TokenStream {
 
 /// Attribute macro for automatic component synchronization.
 ///
-/// Automatically generates Component, rkyv serialization derives, and registers 
-/// the component in the ComponentTypeRegistry for network synchronization.
+/// Automatically generates `Component`, `Clone`, `Debug`, and rkyv
+/// serialization derives, and registers the component in the
+/// `ComponentTypeRegistry` for network synchronization. `Copy` is *not*
+/// derived — add `#[derive(Copy)]` yourself if the type supports it.
+///
+/// # CRDT merge semantics
+///
+/// Pass `merge = path::to::merge_fn` to register the component with a merge
+/// function. Remote `Set` operations then always merge instead of going
+/// through the whole-component last-writer-wins gate. The path must have the
+/// `ComponentMeta::merge_fn` signature — typically
+/// `libmarathon::networking::merge_into::<T>` for a `T: CrdtMerge`.
 ///
 /// # Example
 ///
@@ -168,6 +186,11 @@ pub fn derive_draw_function_label(input: TokenStream) -> TokenStream {
 ///     pub color_g: f32,
 ///     pub color_b: f32,
 ///     pub size: f32,
+/// }
+///
+/// #[synced(merge = libmarathon::networking::merge_into::<Score>)]
+/// pub struct Score {
+///     pub points: u64,
 /// }
 /// ```
 #[proc_macro_attribute]

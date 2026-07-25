@@ -32,8 +32,8 @@ fn test_health_rkyv_serialization() {
     let health = Health { current: 100.0 };
 
     // Test rkyv serialization (which the synced macro adds)
-    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&health)
-        .expect("Should serialize with rkyv");
+    let bytes =
+        rkyv::to_bytes::<rkyv::rancor::Failure>(&health).expect("Should serialize with rkyv");
 
     let deserialized: Health = rkyv::from_bytes::<Health, rkyv::rancor::Failure>(&bytes)
         .expect("Should deserialize with rkyv");
@@ -42,19 +42,31 @@ fn test_health_rkyv_serialization() {
 }
 
 #[test]
-fn test_health_is_clone_and_copy() {
+fn test_health_is_clone() {
     let health = Health { current: 100.0 };
 
-    // Test Clone
+    // Clone is derived by the macro
     let cloned = health.clone();
     assert_eq!(cloned.current, health.current);
+}
 
-    // Test Copy (implicit through assignment)
-    let copied = health;
-    assert_eq!(copied.current, health.current);
+// Copy is no longer derived by the macro — opt in with a user derive
+#[libmarathon_macros::synced]
+#[derive(Copy)]
+struct Mana {
+    current: f32,
+}
+
+#[test]
+fn test_copy_opt_in_via_user_derive() {
+    let mana = Mana { current: 50.0 };
+
+    // Copy (implicit through assignment)
+    let copied = mana;
+    assert_eq!(copied.current, mana.current);
 
     // Original still valid after copy
-    assert_eq!(health.current, 100.0);
+    assert_eq!(mana.current, 50.0);
 }
 
 // Test 2: Struct with multiple fields
@@ -75,8 +87,7 @@ fn test_position_compiles() {
 fn test_position_rkyv_serialization() {
     let pos = Position { x: 10.0, y: 20.0 };
 
-    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&pos)
-        .expect("Should serialize with rkyv");
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&pos).expect("Should serialize with rkyv");
 
     let deserialized: Position = rkyv::from_bytes::<Position, rkyv::rancor::Failure>(&bytes)
         .expect("Should deserialize with rkyv");
@@ -109,7 +120,10 @@ fn test_component_registry_has_health() {
     let type_id = std::any::TypeId::of::<Health>();
     let discriminant = registry.get_discriminant(type_id);
 
-    assert!(discriminant.is_some(), "Health should be registered in ComponentTypeRegistry");
+    assert!(
+        discriminant.is_some(),
+        "Health should be registered in ComponentTypeRegistry"
+    );
 
     // Check the type name
     let type_name = registry.get_type_name(discriminant.unwrap());
@@ -125,7 +139,10 @@ fn test_component_registry_has_position() {
     let type_id = std::any::TypeId::of::<Position>();
     let discriminant = registry.get_discriminant(type_id);
 
-    assert!(discriminant.is_some(), "Position should be registered in ComponentTypeRegistry");
+    assert!(
+        discriminant.is_some(),
+        "Position should be registered in ComponentTypeRegistry"
+    );
 
     // Check the type name
     let type_name = registry.get_type_name(discriminant.unwrap());
@@ -145,28 +162,104 @@ fn test_registry_serialization_roundtrip() {
     let discriminant = registry.get_discriminant(type_id).unwrap();
 
     // Serialize using the registry
-    let serialize_fn = registry.get_discriminant(type_id)
-        .and_then(|disc| {
-            // Get serializer from the registry internals
-            // We'll use the serialization method from the registry
-            let serializer = world.get::<Health>(entity).map(|component| {
+    let serialize_fn = registry
+        .get_discriminant(type_id)
+        .and_then(|_disc| {
+            world.get::<Health>(entity).map(|component| {
                 rkyv::to_bytes::<rkyv::rancor::Failure>(component)
                     .expect("Should serialize")
                     .to_vec()
-            });
-            serializer
+            })
         })
         .expect("Should serialize Health component");
 
     // Deserialize using the registry
-    let deserialize_fn = registry.get_deserialize_fn(discriminant)
+    let deserialize_fn = registry
+        .get_deserialize_fn(discriminant)
         .expect("Should have deserialize function");
 
-    let boxed = deserialize_fn(&serialize_fn)
-        .expect("Should deserialize Health component");
+    let boxed = deserialize_fn(&serialize_fn).expect("Should deserialize Health component");
 
-    let health = boxed.downcast::<Health>()
+    let health = boxed
+        .downcast::<Health>()
         .expect("Should downcast to Health");
 
     assert_eq!(health.current, 75.0);
+}
+
+// Test 5: Non-Copy struct (String, Vec fields) — the reason Copy was dropped
+#[libmarathon_macros::synced]
+struct InventoryEntry {
+    name: String,
+    tags: Vec<String>,
+}
+
+#[test]
+fn test_non_copy_struct_compiles_and_serializes() {
+    let entry = InventoryEntry {
+        name: "shovel".into(),
+        tags: vec!["tool".into(), "shed".into()],
+    };
+
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&entry).expect("Should serialize");
+    let back: InventoryEntry = rkyv::from_bytes::<InventoryEntry, rkyv::rancor::Failure>(&bytes)
+        .expect("Should deserialize");
+
+    assert_eq!(back.name, "shovel");
+    assert_eq!(back.tags, ["tool", "shed"]);
+}
+
+// Test 6: Default registration has no merge function
+#[test]
+fn test_default_registration_has_no_merge_fn() {
+    use libmarathon::persistence::ComponentTypeRegistry;
+
+    let registry = ComponentTypeRegistry::init();
+    let discriminant = registry
+        .get_discriminant(std::any::TypeId::of::<Health>())
+        .expect("Health registered");
+
+    assert!(registry.get_merge_fn(discriminant).is_none());
+}
+
+// Test 7: `merge = path` registers the given merge function
+fn add_health(entity_mut: &mut bevy::ecs::world::EntityWorldMut, boxed: Box<dyn std::any::Any>) {
+    if let Ok(remote) = boxed.downcast::<MergeableHealth>() {
+        if let Some(mut local) = entity_mut.get_mut::<MergeableHealth>() {
+            local.current += remote.current;
+        } else {
+            entity_mut.insert(*remote);
+        }
+    }
+}
+
+#[libmarathon_macros::synced(merge = add_health)]
+struct MergeableHealth {
+    current: f32,
+}
+
+#[test]
+fn test_merge_attribute_registers_merge_fn() {
+    use libmarathon::persistence::ComponentTypeRegistry;
+
+    let registry = ComponentTypeRegistry::init();
+    let discriminant = registry
+        .get_discriminant(std::any::TypeId::of::<MergeableHealth>())
+        .expect("MergeableHealth registered");
+    let merge_fn = registry
+        .get_merge_fn(discriminant)
+        .expect("merge function registered");
+
+    // Merges into an existing component
+    let mut world = World::new();
+    let entity = world.spawn(MergeableHealth { current: 10.0 }).id();
+    let mut entity_mut = world.get_entity_mut(entity).unwrap();
+    merge_fn(&mut entity_mut, Box::new(MergeableHealth { current: 5.0 }));
+    assert_eq!(entity_mut.get::<MergeableHealth>().unwrap().current, 15.0);
+
+    // Inserts when the entity doesn't have the component
+    let other = world.spawn_empty().id();
+    let mut entity_mut = world.get_entity_mut(other).unwrap();
+    merge_fn(&mut entity_mut, Box::new(MergeableHealth { current: 7.0 }));
+    assert_eq!(entity_mut.get::<MergeableHealth>().unwrap().current, 7.0);
 }
