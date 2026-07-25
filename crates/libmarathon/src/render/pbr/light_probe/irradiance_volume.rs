@@ -90,9 +90,9 @@
 //!    normalized and scaled to the SH0 base color, as [Frostbite] does. This
 //!    allows them to be packed in standard LDR RGBA8 textures. However, this
 //!    prevents the use of hardware trilinear filtering, as the nonuniform scale
-//!    factor means that hardware interpolation no longer produces correct results.
-//!    The 8 texture fetches needed to interpolate between voxels can be upwards of
-//!    twice as slow as the hardware interpolation.
+//!    factor means that hardware interpolation no longer produces correct
+//!    results. The 8 texture fetches needed to interpolate between voxels can
+//!    be upwards of twice as slow as the hardware interpolation.
 //!
 //! The following chart summarizes the costs and benefits of ambient cubes,
 //! level 1 spherical harmonics, and level 2 spherical harmonics:
@@ -133,27 +133,41 @@
 //!
 //! [Why ambient cubes?]: #why-ambient-cubes
 
-use bevy_image::Image;
-use bevy_light::IrradianceVolume;
-use crate::render::{
-    render_asset::RenderAssets,
-    render_resource::{
-        binding_types, BindGroupLayoutEntryBuilder, Sampler, SamplerBindingType, TextureSampleType,
-        TextureView,
-    },
-    renderer::{RenderAdapter, RenderDevice},
-    texture::{FallbackImage, GpuImage},
+use core::{
+    num::NonZero,
+    ops::Deref,
 };
-use core::{num::NonZero, ops::Deref};
 
 use bevy_asset::AssetId;
-
-use crate::render::pbr::{
-    add_cubemap_texture_view, binding_arrays_are_usable, RenderViewLightProbes,
-    MAX_VIEW_LIGHT_PROBES,
-};
+use bevy_image::Image;
+use bevy_light::IrradianceVolume;
 
 use super::LightProbeComponent;
+use crate::render::{
+    pbr::{
+        MAX_VIEW_LIGHT_PROBES,
+        RenderViewLightProbes,
+        add_cubemap_texture_view,
+        binding_arrays_are_usable,
+    },
+    render_asset::RenderAssets,
+    render_resource::{
+        BindGroupLayoutEntryBuilder,
+        Sampler,
+        SamplerBindingType,
+        TextureSampleType,
+        TextureView,
+        binding_types,
+    },
+    renderer::{
+        RenderAdapter,
+        RenderDevice,
+    },
+    texture::{
+        FallbackImage,
+        GpuImage,
+    },
+};
 
 /// On WebGL and WebGPU, we must disable irradiance volumes, as otherwise we can
 /// overflow the number of texture bindings when deferred rendering is in use
@@ -163,7 +177,8 @@ pub(crate) const IRRADIANCE_VOLUMES_ARE_USABLE: bool = cfg!(not(target_arch = "w
 /// All the bind group entries necessary for PBR shaders to access the
 /// irradiance volumes exposed to a view.
 pub(crate) enum RenderViewIrradianceVolumeBindGroupEntries<'a> {
-    /// The version used when binding arrays aren't available on the current platform.
+    /// The version used when binding arrays aren't available on the current
+    /// platform.
     Single {
         /// The texture view of the closest light probe.
         texture_view: &'a TextureView,
@@ -178,8 +193,9 @@ pub(crate) enum RenderViewIrradianceVolumeBindGroupEntries<'a> {
         /// order that they are supplied to the view (i.e. in the same order as
         /// `binding_index_to_cubemap` in [`RenderViewLightProbes`]).
         ///
-        /// This is a vector of `wgpu::TextureView`s. But we don't want to import
-        /// `wgpu` in this crate, so we refer to it indirectly like this.
+        /// This is a vector of `wgpu::TextureView`s. But we don't want to
+        /// import `wgpu` in this crate, so we refer to it indirectly
+        /// like this.
         texture_views: Vec<&'a <TextureView as Deref>::Target>,
 
         /// A sampler used to sample voxels of the irradiance volumes.
@@ -253,13 +269,13 @@ impl<'a> RenderViewIrradianceVolumeBindGroupEntries<'a> {
         images: &'a RenderAssets<GpuImage>,
         fallback_image: &'a FallbackImage,
     ) -> RenderViewIrradianceVolumeBindGroupEntries<'a> {
-        if let Some(irradiance_volumes) = render_view_irradiance_volumes
-            && let Some(irradiance_volume) = irradiance_volumes.render_light_probes.first()
-            && irradiance_volume.texture_index >= 0
-            && let Some(image_id) = irradiance_volumes
+        if let Some(irradiance_volumes) = render_view_irradiance_volumes &&
+            let Some(irradiance_volume) = irradiance_volumes.render_light_probes.first() &&
+            irradiance_volume.texture_index >= 0 &&
+            let Some(image_id) = irradiance_volumes
                 .binding_index_to_textures
-                .get(irradiance_volume.texture_index as usize)
-            && let Some(image) = images.get(*image_id)
+                .get(irradiance_volume.texture_index as usize) &&
+            let Some(image) = images.get(*image_id)
         {
             return RenderViewIrradianceVolumeBindGroupEntries::Single {
                 texture_view: &image.texture_view,
@@ -295,7 +311,6 @@ pub(crate) fn get_bind_group_layout_entries(
 
 impl LightProbeComponent for IrradianceVolume {
     type AssetId = AssetId<Image>;
-
     // Irradiance volumes can't be attached to the view, so we store nothing
     // here.
     type ViewLightProbeInfo = ();

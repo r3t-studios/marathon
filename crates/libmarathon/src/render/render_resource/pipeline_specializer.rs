@@ -1,28 +1,46 @@
-use crate::render::render_resource::{
-    CachedComputePipelineId, CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
-    RenderPipelineDescriptor,
+use core::{
+    fmt::Debug,
+    hash::Hash,
 };
+
 use bevy_ecs::resource::Resource;
-use bevy_mesh::{MeshVertexBufferLayoutRef, MissingVertexAttributeError, VertexBufferLayout};
+use bevy_mesh::{
+    MeshVertexBufferLayoutRef,
+    MissingVertexAttributeError,
+    VertexBufferLayout,
+};
 use bevy_platform::{
     collections::{
-        hash_map::{Entry, RawEntryMut, VacantEntry},
         HashMap,
+        hash_map::{
+            Entry,
+            RawEntryMut,
+            VacantEntry,
+        },
     },
     hash::FixedHasher,
 };
 use bevy_utils::default;
-use core::{fmt::Debug, hash::Hash};
 use thiserror::Error;
 use tracing::error;
 
-/// A trait that allows constructing different variants of a render pipeline from a key.
+use crate::render::render_resource::{
+    CachedComputePipelineId,
+    CachedRenderPipelineId,
+    ComputePipelineDescriptor,
+    PipelineCache,
+    RenderPipelineDescriptor,
+};
+
+/// A trait that allows constructing different variants of a render pipeline
+/// from a key.
 ///
-/// Note: This is intended for modifying your pipeline descriptor on the basis of a key. If your key
-/// contains no data then you don't need to specialize. For example, if you are using the
-/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the `#[bind_group_data]` attribute,
-/// you don't need to specialize. Instead, create the pipeline directly from [`PipelineCache`] and
-/// store its ID.
+/// Note: This is intended for modifying your pipeline descriptor on the basis
+/// of a key. If your key contains no data then you don't need to specialize.
+/// For example, if you are using the
+/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the
+/// `#[bind_group_data]` attribute, you don't need to specialize. Instead,
+/// create the pipeline directly from [`PipelineCache`] and store its ID.
 ///
 /// See [`SpecializedRenderPipelines`] for more info.
 pub trait SpecializedRenderPipeline {
@@ -33,18 +51,20 @@ pub trait SpecializedRenderPipeline {
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor;
 }
 
-/// A convenience cache for creating different variants of a render pipeline based on some key.
+/// A convenience cache for creating different variants of a render pipeline
+/// based on some key.
 ///
-/// Some render pipelines may need to be configured differently depending on the exact situation.
-/// This cache allows constructing different render pipelines for each situation based on a key,
-/// making it easy to A) construct the necessary pipelines, and B) reuse already constructed
-/// pipelines.
+/// Some render pipelines may need to be configured differently depending on the
+/// exact situation. This cache allows constructing different render pipelines
+/// for each situation based on a key, making it easy to A) construct the
+/// necessary pipelines, and B) reuse already constructed pipelines.
 ///
-/// Note: This is intended for modifying your pipeline descriptor on the basis of a key. If your key
-/// contains no data then you don't need to specialize. For example, if you are using the
-/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the `#[bind_group_data]` attribute,
-/// you don't need to specialize. Instead, create the pipeline directly from [`PipelineCache`] and
-/// store its ID.
+/// Note: This is intended for modifying your pipeline descriptor on the basis
+/// of a key. If your key contains no data then you don't need to specialize.
+/// For example, if you are using the
+/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the
+/// `#[bind_group_data]` attribute, you don't need to specialize. Instead,
+/// create the pipeline directly from [`PipelineCache`] and store its ID.
 #[derive(Resource)]
 pub struct SpecializedRenderPipelines<S: SpecializedRenderPipeline> {
     cache: HashMap<S::Key, CachedRenderPipelineId>,
@@ -57,7 +77,8 @@ impl<S: SpecializedRenderPipeline> Default for SpecializedRenderPipelines<S> {
 }
 
 impl<S: SpecializedRenderPipeline> SpecializedRenderPipelines<S> {
-    /// Get or create a specialized instance of the pipeline corresponding to `key`.
+    /// Get or create a specialized instance of the pipeline corresponding to
+    /// `key`.
     pub fn specialize(
         &mut self,
         cache: &PipelineCache,
@@ -71,13 +92,15 @@ impl<S: SpecializedRenderPipeline> SpecializedRenderPipelines<S> {
     }
 }
 
-/// A trait that allows constructing different variants of a compute pipeline from a key.
+/// A trait that allows constructing different variants of a compute pipeline
+/// from a key.
 ///
-/// Note: This is intended for modifying your pipeline descriptor on the basis of a key. If your key
-/// contains no data then you don't need to specialize. For example, if you are using the
-/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the `#[bind_group_data]` attribute,
-/// you don't need to specialize. Instead, create the pipeline directly from [`PipelineCache`] and
-/// store its ID.
+/// Note: This is intended for modifying your pipeline descriptor on the basis
+/// of a key. If your key contains no data then you don't need to specialize.
+/// For example, if you are using the
+/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the
+/// `#[bind_group_data]` attribute, you don't need to specialize. Instead,
+/// create the pipeline directly from [`PipelineCache`] and store its ID.
 ///
 /// See [`SpecializedComputePipelines`] for more info.
 pub trait SpecializedComputePipeline {
@@ -88,18 +111,20 @@ pub trait SpecializedComputePipeline {
     fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor;
 }
 
-/// A convenience cache for creating different variants of a compute pipeline based on some key.
+/// A convenience cache for creating different variants of a compute pipeline
+/// based on some key.
 ///
-/// Some compute pipelines may need to be configured differently depending on the exact situation.
-/// This cache allows constructing different compute pipelines for each situation based on a key,
-/// making it easy to A) construct the necessary pipelines, and B) reuse already constructed
-/// pipelines.
+/// Some compute pipelines may need to be configured differently depending on
+/// the exact situation. This cache allows constructing different compute
+/// pipelines for each situation based on a key, making it easy to A) construct
+/// the necessary pipelines, and B) reuse already constructed pipelines.
 ///
-/// Note: This is intended for modifying your pipeline descriptor on the basis of a key. If your key
-/// contains no data then you don't need to specialize. For example, if you are using the
-/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the `#[bind_group_data]` attribute,
-/// you don't need to specialize. Instead, create the pipeline directly from [`PipelineCache`] and
-/// store its ID.
+/// Note: This is intended for modifying your pipeline descriptor on the basis
+/// of a key. If your key contains no data then you don't need to specialize.
+/// For example, if you are using the
+/// [`AsBindGroup`](crate::render_resource::AsBindGroup) without the
+/// `#[bind_group_data]` attribute, you don't need to specialize. Instead,
+/// create the pipeline directly from [`PipelineCache`] and store its ID.
 #[derive(Resource)]
 pub struct SpecializedComputePipelines<S: SpecializedComputePipeline> {
     cache: HashMap<S::Key, CachedComputePipelineId>,
@@ -112,7 +137,8 @@ impl<S: SpecializedComputePipeline> Default for SpecializedComputePipelines<S> {
 }
 
 impl<S: SpecializedComputePipeline> SpecializedComputePipelines<S> {
-    /// Get or create a specialized instance of the pipeline corresponding to `key`.
+    /// Get or create a specialized instance of the pipeline corresponding to
+    /// `key`.
     pub fn specialize(
         &mut self,
         cache: &PipelineCache,
@@ -126,18 +152,19 @@ impl<S: SpecializedComputePipeline> SpecializedComputePipelines<S> {
     }
 }
 
-/// A trait that allows constructing different variants of a render pipeline from a key and the
-/// particular mesh's vertex buffer layout.
+/// A trait that allows constructing different variants of a render pipeline
+/// from a key and the particular mesh's vertex buffer layout.
 ///
 /// See [`SpecializedMeshPipelines`] for more info.
 pub trait SpecializedMeshPipeline {
     /// The key that defines each "variant" of the render pipeline.
     type Key: Clone + Hash + PartialEq + Eq;
 
-    /// Construct a new render pipeline based on the provided key and vertex layout.
+    /// Construct a new render pipeline based on the provided key and vertex
+    /// layout.
     ///
-    /// The returned pipeline descriptor should have a single vertex buffer, which is derived from
-    /// `layout`.
+    /// The returned pipeline descriptor should have a single vertex buffer,
+    /// which is derived from `layout`.
     fn specialize(
         &self,
         key: Self::Key,
@@ -145,8 +172,8 @@ pub trait SpecializedMeshPipeline {
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError>;
 }
 
-/// A cache of different variants of a render pipeline based on a key and the particular mesh's
-/// vertex buffer layout.
+/// A cache of different variants of a render pipeline based on a key and the
+/// particular mesh's vertex buffer layout.
 #[derive(Resource)]
 pub struct SpecializedMeshPipelines<S: SpecializedMeshPipeline> {
     mesh_layout_cache: HashMap<(MeshVertexBufferLayoutRef, S::Key), CachedRenderPipelineId>,
@@ -168,8 +195,8 @@ impl<S: SpecializedMeshPipeline> Default for SpecializedMeshPipelines<S> {
 }
 
 impl<S: SpecializedMeshPipeline> SpecializedMeshPipelines<S> {
-    /// Construct a new render pipeline based on the provided key and the mesh's vertex buffer
-    /// layout.
+    /// Construct a new render pipeline based on the provided key and the mesh's
+    /// vertex buffer layout.
     #[inline]
     pub fn specialize(
         &mut self,
@@ -179,8 +206,8 @@ impl<S: SpecializedMeshPipeline> SpecializedMeshPipelines<S> {
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<CachedRenderPipelineId, SpecializedMeshPipelineError> {
         return match self.mesh_layout_cache.entry((layout.clone(), key.clone())) {
-            Entry::Occupied(entry) => Ok(*entry.into_mut()),
-            Entry::Vacant(entry) => specialize_slow(
+            | Entry::Occupied(entry) => Ok(*entry.into_mut()),
+            | Entry::Vacant(entry) => specialize_slow(
                 &mut self.vertex_layout_cache,
                 cache,
                 pipeline_specializer,
@@ -204,8 +231,7 @@ impl<S: SpecializedMeshPipeline> SpecializedMeshPipelines<S> {
             >,
         ) -> Result<CachedRenderPipelineId, SpecializedMeshPipelineError>
         where
-            S: SpecializedMeshPipeline,
-        {
+            S: SpecializedMeshPipeline, {
             let descriptor = specialize_pipeline
                 .specialize(key.clone(), layout)
                 .map_err(|mut err| {
@@ -215,21 +241,22 @@ impl<S: SpecializedMeshPipeline> SpecializedMeshPipelines<S> {
                     }
                     err
                 })?;
-            // Different MeshVertexBufferLayouts can produce the same final VertexBufferLayout
-            // We want compatible vertex buffer layouts to use the same pipelines, so we must "deduplicate" them
+            // Different MeshVertexBufferLayouts can produce the same final
+            // VertexBufferLayout We want compatible vertex buffer layouts to
+            // use the same pipelines, so we must "deduplicate" them
             let layout_map = match vertex_layout_cache
                 .raw_entry_mut()
                 .from_key(&descriptor.vertex.buffers[0])
             {
-                RawEntryMut::Occupied(entry) => entry.into_mut(),
-                RawEntryMut::Vacant(entry) => {
+                | RawEntryMut::Occupied(entry) => entry.into_mut(),
+                | RawEntryMut::Vacant(entry) => {
                     entry
                         .insert(descriptor.vertex.buffers[0].clone(), Default::default())
                         .1
-                }
+                },
             };
             Ok(*entry.insert(match layout_map.entry(key) {
-                Entry::Occupied(entry) => {
+                | Entry::Occupied(entry) => {
                     if cfg!(debug_assertions) {
                         let stored_descriptor = cache.get_render_pipeline_descriptor(*entry.get());
                         if stored_descriptor != &descriptor {
@@ -245,8 +272,8 @@ impl<S: SpecializedMeshPipeline> SpecializedMeshPipelines<S> {
                         }
                     }
                     *entry.into_mut()
-                }
-                Entry::Vacant(entry) => *entry.insert(cache.queue_render_pipeline(descriptor)),
+                },
+                | Entry::Vacant(entry) => *entry.insert(cache.queue_render_pipeline(descriptor)),
             }))
         }
     }

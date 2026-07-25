@@ -1,27 +1,50 @@
 //! Specific distances from the camera in which entities are visible, also known
 //! as *hierarchical levels of detail* or *HLOD*s.
 
-use super::VisibilityRange;
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_ecs::{
     entity::Entity,
     lifecycle::RemovedComponents,
     query::Changed,
     resource::Resource,
     schedule::IntoScheduleConfigs as _,
-    system::{Query, Res, ResMut},
+    system::{
+        Query,
+        Res,
+        ResMut,
+    },
 };
-use bevy_math::{vec4, Vec4};
+use bevy_math::{
+    Vec4,
+    vec4,
+};
 use bevy_platform::collections::HashMap;
 use bevy_utils::prelude::default;
 use nonmax::NonMaxU16;
-use wgpu::{BufferBindingType, BufferUsages};
+use wgpu::{
+    BufferBindingType,
+    BufferUsages,
+};
 
+use super::VisibilityRange;
 use crate::render::{
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
     render_resource::BufferVec,
-    renderer::{RenderDevice, RenderQueue},
-    sync_world::{MainEntity, MainEntityHashMap},
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_world::{
+        MainEntity,
+        MainEntityHashMap,
+    },
 };
 
 /// We need at least 4 storage buffer bindings available to enable the
@@ -37,8 +60,8 @@ pub const VISIBILITY_RANGES_STORAGE_BUFFER_COUNT: u32 = 4;
 /// buffer instead (most notably, on WebGL 2).
 const VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE: usize = 64;
 
-/// A plugin that enables [`RenderVisibilityRanges`]s, which allow entities to be
-/// hidden or shown based on distance to the camera.
+/// A plugin that enables [`RenderVisibilityRanges`]s, which allow entities to
+/// be hidden or shown based on distance to the camera.
 pub struct RenderVisibilityRangePlugin;
 
 impl Plugin for RenderVisibilityRangePlugin {
@@ -196,28 +219,28 @@ pub fn write_render_visibility_ranges(
     {
         // If we're using a uniform buffer, we must have *exactly*
         // `VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE` elements.
-        BufferBindingType::Uniform
+        | BufferBindingType::Uniform
             if render_visibility_ranges.buffer.len() > VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE =>
         {
             render_visibility_ranges
                 .buffer
                 .truncate(VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE);
-        }
-        BufferBindingType::Uniform
+        },
+        | BufferBindingType::Uniform
             if render_visibility_ranges.buffer.len() < VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE =>
         {
             while render_visibility_ranges.buffer.len() < VISIBILITY_RANGE_UNIFORM_BUFFER_SIZE {
                 render_visibility_ranges.buffer.push(default());
             }
-        }
+        },
 
         // Otherwise, if we're using a storage buffer, just ensure there's
         // something in the buffer, or else it won't get allocated.
-        BufferBindingType::Storage { .. } if render_visibility_ranges.buffer.is_empty() => {
+        | BufferBindingType::Storage { .. } if render_visibility_ranges.buffer.is_empty() => {
             render_visibility_ranges.buffer.push(default());
-        }
+        },
 
-        _ => {}
+        | _ => {},
     }
 
     // Schedule the write.

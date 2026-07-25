@@ -1,15 +1,29 @@
-use crate::render::{
-    extract_resource::ExtractResource,
-    render_resource::{ShaderType, UniformBuffer},
-    renderer::{RenderDevice, RenderQueue},
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
+use bevy_app::{
+    App,
+    Plugin,
 };
-use bevy_app::{App, Plugin};
 use bevy_diagnostic::FrameCount;
 use bevy_ecs::prelude::*;
 use bevy_reflect::prelude::*;
 use bevy_shader::load_shader_library;
 use bevy_time::Time;
+
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
+    extract_resource::ExtractResource,
+    render_resource::{
+        ShaderType,
+        UniformBuffer,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 pub struct GlobalsPlugin;
 

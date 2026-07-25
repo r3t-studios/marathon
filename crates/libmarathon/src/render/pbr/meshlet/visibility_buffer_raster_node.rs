@@ -1,27 +1,45 @@
-use super::{
-    pipelines::MeshletPipelines,
-    resource_manager::{MeshletViewBindGroups, MeshletViewResources},
-};
-use crate::render::pbr::{
-    meshlet::resource_manager::ResourceManager, LightEntity, ShadowView, ViewLightEntities,
-};
 use bevy_color::LinearRgba;
-use crate::render::prepass::PreviousViewUniformOffset;
 use bevy_ecs::{
     query::QueryState,
-    world::{FromWorld, World},
+    world::{
+        FromWorld,
+        World,
+    },
 };
 use bevy_math::UVec2;
+
+use super::{
+    pipelines::MeshletPipelines,
+    resource_manager::{
+        MeshletViewBindGroups,
+        MeshletViewResources,
+    },
+};
 use crate::render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
-    render_graph::{Node, NodeRunError, RenderGraphContext},
+    pbr::{
+        LightEntity,
+        ShadowView,
+        ViewLightEntities,
+        meshlet::resource_manager::ResourceManager,
+    },
+    prepass::PreviousViewUniformOffset,
+    render_graph::{
+        Node,
+        NodeRunError,
+        RenderGraphContext,
+    },
     render_resource::*,
     renderer::RenderContext,
-    view::{ViewDepthTexture, ViewUniformOffset},
+    view::{
+        ViewDepthTexture,
+        ViewUniformOffset,
+    },
 };
 
-/// Rasterize meshlets into a depth buffer, and optional visibility buffer + material depth buffer for shading passes.
+/// Rasterize meshlets into a depth buffer, and optional visibility buffer +
+/// material depth buffer for shading passes.
 pub struct MeshletVisibilityBufferRasterPassNode {
     main_view_query: QueryState<(
         &'static ExtractedCamera,
@@ -57,7 +75,8 @@ impl Node for MeshletVisibilityBufferRasterPassNode {
         self.view_light_query.update_archetypes(world);
     }
 
-    // TODO: Reuse compute/render passes between logical passes where possible, as they're expensive
+    // TODO: Reuse compute/render passes between logical passes where possible, as
+    // they're expensive
     fn run(
         &self,
         graph: &mut RenderGraphContext,

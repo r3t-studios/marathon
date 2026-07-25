@@ -1,14 +1,22 @@
-use crate::render::prepass::ViewPrepassTextures;
-use crate::render::render_resource::{
-    binding_types::{
-        texture_2d, texture_2d_multisampled, texture_depth_2d, texture_depth_2d_multisampled,
-    },
-    BindGroupLayoutEntryBuilder, TextureAspect, TextureSampleType, TextureView,
-    TextureViewDescriptor,
-};
 use bevy_utils::default;
 
-use crate::render::pbr::MeshPipelineViewLayoutKey;
+use crate::render::{
+    pbr::MeshPipelineViewLayoutKey,
+    prepass::ViewPrepassTextures,
+    render_resource::{
+        BindGroupLayoutEntryBuilder,
+        TextureAspect,
+        TextureSampleType,
+        TextureView,
+        TextureViewDescriptor,
+        binding_types::{
+            texture_2d,
+            texture_2d_multisampled,
+            texture_depth_2d,
+            texture_depth_2d_multisampled,
+        },
+    },
+};
 
 pub fn get_bind_group_layout_entries(
     layout_key: MeshPipelineViewLayoutKey,

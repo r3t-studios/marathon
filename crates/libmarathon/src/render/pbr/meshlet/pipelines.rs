@@ -1,17 +1,26 @@
-use super::resource_manager::ResourceManager;
-use bevy_asset::{load_embedded_asset, AssetServer, Handle};
-use crate::render::{
-    core_3d::CORE_3D_DEPTH_FORMAT, experimental::mip_generation::DownsampleDepthShader,
-    FullscreenShader,
+use bevy_asset::{
+    AssetServer,
+    Handle,
+    load_embedded_asset,
 };
 use bevy_ecs::{
     resource::Resource,
-    system::{Commands, Res},
+    system::{
+        Commands,
+        Res,
+    },
     world::World,
 };
-use crate::render::render_resource::*;
 use bevy_shader::Shader;
 use bevy_utils::default;
+
+use super::resource_manager::ResourceManager;
+use crate::render::{
+    FullscreenShader,
+    core_3d::CORE_3D_DEPTH_FORMAT,
+    experimental::mip_generation::DownsampleDepthShader,
+    render_resource::*,
+};
 
 #[derive(Resource)]
 pub struct MeshletPipelines {
@@ -490,12 +499,14 @@ pub fn init_meshlet_pipelines(
             label: Some("meshlet_fill_counts_pipeline".into()),
             layout: vec![fill_counts_layout],
             shader: fill_counts,
-            shader_defs: vec![if remap_1d_to_2d_dispatch_layout.is_some() {
-                "MESHLET_2D_DISPATCH"
-            } else {
-                ""
-            }
-            .into()],
+            shader_defs: vec![
+                if remap_1d_to_2d_dispatch_layout.is_some() {
+                    "MESHLET_2D_DISPATCH"
+                } else {
+                    ""
+                }
+                .into(),
+            ],
             ..default()
         }),
 
@@ -571,8 +582,8 @@ impl MeshletPipelines {
             pipeline_cache.get_render_pipeline(pipeline.resolve_depth_shadow_view)?,
             pipeline_cache.get_render_pipeline(pipeline.resolve_material_depth)?,
             match pipeline.remap_1d_to_2d_dispatch {
-                Some(id) => Some(pipeline_cache.get_compute_pipeline(id)?),
-                None => None,
+                | Some(id) => Some(pipeline_cache.get_compute_pipeline(id)?),
+                | None => None,
             },
             pipeline_cache.get_compute_pipeline(pipeline.fill_counts)?,
         ))

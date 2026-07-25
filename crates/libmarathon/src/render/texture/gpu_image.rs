@@ -1,17 +1,46 @@
-use crate::render::{
-    render_asset::{PrepareAssetError, RenderAsset},
-    render_resource::{DefaultImageSampler, Sampler, Texture, TextureView},
-    renderer::{RenderDevice, RenderQueue},
+use bevy_asset::{
+    AssetId,
+    RenderAssetUsages,
 };
-use bevy_asset::{AssetId, RenderAssetUsages};
-use bevy_ecs::system::{lifetimeless::SRes, SystemParamItem};
-use bevy_image::{Image, ImageSampler};
-use bevy_math::{AspectRatio, UVec2};
+use bevy_ecs::system::{
+    SystemParamItem,
+    lifetimeless::SRes,
+};
+use bevy_image::{
+    Image,
+    ImageSampler,
+};
+use bevy_math::{
+    AspectRatio,
+    UVec2,
+};
 use tracing::warn;
-use wgpu::{Extent3d, TextureFormat, TextureViewDescriptor};
+use wgpu::{
+    Extent3d,
+    TextureFormat,
+    TextureViewDescriptor,
+};
+
+use crate::render::{
+    render_asset::{
+        PrepareAssetError,
+        RenderAsset,
+    },
+    render_resource::{
+        DefaultImageSampler,
+        Sampler,
+        Texture,
+        TextureView,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+};
 
 /// The GPU-representation of an [`Image`].
-/// Consists of the [`Texture`], its [`TextureView`] and the corresponding [`Sampler`], and the texture's size.
+/// Consists of the [`Texture`], its [`TextureView`] and the corresponding
+/// [`Sampler`], and the texture's size.
 #[derive(Debug, Clone)]
 pub struct GpuImage {
     pub texture: Texture,
@@ -23,12 +52,12 @@ pub struct GpuImage {
 }
 
 impl RenderAsset for GpuImage {
-    type SourceAsset = Image;
     type Param = (
         SRes<RenderDevice>,
         SRes<RenderQueue>,
         SRes<DefaultImageSampler>,
     );
+    type SourceAsset = Image;
 
     #[inline]
     fn asset_usage(image: &Self::SourceAsset) -> RenderAssetUsages {
@@ -97,10 +126,10 @@ impl RenderAsset for GpuImage {
                 .unwrap(),
         );
         let sampler = match image.sampler {
-            ImageSampler::Default => (***default_sampler).clone(),
-            ImageSampler::Descriptor(descriptor) => {
+            | ImageSampler::Default => (***default_sampler).clone(),
+            | ImageSampler::Descriptor(descriptor) => {
                 render_device.create_sampler(&descriptor.as_wgpu())
-            }
+            },
         };
 
         Ok(GpuImage {

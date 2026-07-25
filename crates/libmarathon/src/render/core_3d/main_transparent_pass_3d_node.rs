@@ -1,18 +1,36 @@
-use crate::render::core_3d::Transparent3d;
-use bevy_camera::{MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::*, query::QueryItem};
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::ViewSortedRenderPhases,
-    render_resource::{RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
+};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
+
+use crate::render::{
+    camera::ExtractedCamera,
+    core_3d::Transparent3d,
+    diagnostic::RecordDiagnostics,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::ViewSortedRenderPhases,
+    render_resource::{
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    view::{
+        ExtractedView,
+        ViewDepthTexture,
+        ViewTarget,
+    },
+};
 
 /// A [`bevy_render::render_graph::Node`] that runs the [`Transparent3d`]
 /// [`ViewSortedRenderPhases`].
@@ -27,6 +45,7 @@ impl ViewNode for MainTransparentPass3dNode {
         &'static ViewDepthTexture,
         Option<&'static MainPassResolutionOverride>,
     );
+
     fn run(
         &self,
         graph: &mut RenderGraphContext,
@@ -83,8 +102,9 @@ impl ViewNode for MainTransparentPass3dNode {
             pass_span.end(&mut render_pass);
         }
 
-        // WebGL2 quirk: if ending with a render pass with a custom viewport, the viewport isn't
-        // reset for the next render pass so add an empty render pass without a custom viewport
+        // WebGL2 quirk: if ending with a render pass with a custom viewport, the
+        // viewport isn't reset for the next render pass so add an empty render
+        // pass without a custom viewport
         #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
         if camera.viewport.is_some() {
             #[cfg(feature = "trace")]

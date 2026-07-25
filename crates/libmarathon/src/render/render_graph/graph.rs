@@ -1,23 +1,40 @@
+use core::fmt::Debug;
+
+use bevy_ecs::{
+    define_label,
+    intern::Interned,
+    prelude::World,
+    resource::Resource,
+};
+use bevy_platform::collections::HashMap;
+pub use libmarathon_macros::RenderSubGraph;
+
+use super::{
+    EdgeExistence,
+    InternedRenderLabel,
+    IntoRenderNodeArray,
+};
 use crate::render::{
     render_graph::{
-        Edge, Node, NodeRunError, NodeState, RenderGraphContext, RenderGraphError, RenderLabel,
-        SlotInfo, SlotLabel,
+        Edge,
+        Node,
+        NodeRunError,
+        NodeState,
+        RenderGraphContext,
+        RenderGraphError,
+        RenderLabel,
+        SlotInfo,
+        SlotLabel,
     },
     renderer::RenderContext,
 };
-use bevy_ecs::{define_label, intern::Interned, prelude::World, resource::Resource};
-use bevy_platform::collections::HashMap;
-use core::fmt::Debug;
-
-use super::{EdgeExistence, InternedRenderLabel, IntoRenderNodeArray};
-
-pub use libmarathon_macros::RenderSubGraph;
 
 define_label!(
     #[diagnostic::on_unimplemented(
         note = "consider annotating `{Self}` with `#[derive(RenderSubGraph)]`"
     )]
-    /// A strongly-typed class of labels used to identify a [`SubGraph`] in a render graph.
+    /// A strongly-typed class of labels used to identify a [`SubGraph`] in a
+    /// render graph.
     RenderSubGraph,
     RENDER_SUB_GRAPH_INTERNER
 );
@@ -27,24 +44,29 @@ pub type InternedRenderSubGraph = Interned<dyn RenderSubGraph>;
 
 /// The render graph configures the modular and re-usable render logic.
 ///
-/// It is a retained and stateless (nodes themselves may have their own internal state) structure,
-/// which can not be modified while it is executed by the graph runner.
+/// It is a retained and stateless (nodes themselves may have their own internal
+/// state) structure, which can not be modified while it is executed by the
+/// graph runner.
 ///
-/// The render graph runner is responsible for executing the entire graph each frame.
-/// It will execute each node in the graph in the correct order, based on the edges between the nodes.
+/// The render graph runner is responsible for executing the entire graph each
+/// frame. It will execute each node in the graph in the correct order, based on
+/// the edges between the nodes.
 ///
 /// It consists of three main components: [`Nodes`](Node), [`Edges`](Edge)
 /// and [`Slots`](super::SlotType).
 ///
-/// Nodes are responsible for generating draw calls and operating on input and output slots.
-/// Edges specify the order of execution for nodes and connect input and output slots together.
-/// Slots describe the render resources created or used by the nodes.
+/// Nodes are responsible for generating draw calls and operating on input and
+/// output slots. Edges specify the order of execution for nodes and connect
+/// input and output slots together. Slots describe the render resources created
+/// or used by the nodes.
 ///
-/// Additionally a render graph can contain multiple sub graphs, which are run by the
-/// corresponding nodes. Every render graph can have its own optional input node.
+/// Additionally a render graph can contain multiple sub graphs, which are run
+/// by the corresponding nodes. Every render graph can have its own optional
+/// input node.
 ///
 /// ## Example
-/// Here is a simple render graph example with two nodes connected by a node edge.
+/// Here is a simple render graph example with two nodes connected by a node
+/// edge. 
 /// ```ignore
 /// # TODO: Remove when #10645 is fixed
 /// # use bevy_app::prelude::*;
@@ -82,7 +104,8 @@ pub struct RenderGraph {
 pub struct GraphInput;
 
 impl RenderGraph {
-    /// Updates all nodes and sub graphs of the render graph. Should be called before executing it.
+    /// Updates all nodes and sub graphs of the render graph. Should be called
+    /// before executing it.
     pub fn update(&mut self, world: &mut World) {
         for node in self.nodes.values_mut() {
             node.node.update(world);
@@ -93,7 +116,8 @@ impl RenderGraph {
         }
     }
 
-    /// Creates an [`GraphInputNode`] with the specified slots if not already present.
+    /// Creates an [`GraphInputNode`] with the specified slots if not already
+    /// present.
     pub fn set_input(&mut self, inputs: Vec<SlotInfo>) {
         assert!(
             matches!(
@@ -124,7 +148,8 @@ impl RenderGraph {
     ///
     /// # See also
     ///
-    /// - [`get_input_node`](Self::get_input_node) for a version which returns an [`Option`] instead.
+    /// - [`get_input_node`](Self::get_input_node) for a version which returns
+    ///   an [`Option`] instead.
     #[inline]
     pub fn input_node(&self) -> &NodeState {
         self.get_input_node().unwrap()
@@ -134,8 +159,7 @@ impl RenderGraph {
     /// If the label is already present replaces it instead.
     pub fn add_node<T>(&mut self, label: impl RenderLabel, node: T)
     where
-        T: Node,
-    {
+        T: Node, {
         let label = label.intern();
         let node_state = NodeState::new(label, node);
         self.nodes.insert(label, node_state);
@@ -143,8 +167,8 @@ impl RenderGraph {
 
     /// Add `node_edge`s based on the order of the given `edges` array.
     ///
-    /// Defining an edge that already exists is not considered an error with this api.
-    /// It simply won't create a new edge.
+    /// Defining an edge that already exists is not considered an error with
+    /// this api. It simply won't create a new edge.
     #[track_caller]
     pub fn add_node_edges<const N: usize>(&mut self, edges: impl IntoRenderNodeArray<N>) {
         for window in edges.into_array().windows(2) {
@@ -155,8 +179,8 @@ impl RenderGraph {
                 match err {
                     // Already existing edges are very easy to produce with this api
                     // and shouldn't cause a panic
-                    RenderGraphError::EdgeAlreadyExists(_) => {}
-                    _ => panic!("{err}"),
+                    | RenderGraphError::EdgeAlreadyExists(_) => {},
+                    | _ => panic!("{err}"),
                 }
             }
         }
@@ -167,39 +191,39 @@ impl RenderGraph {
     pub fn remove_node(&mut self, label: impl RenderLabel) -> Result<(), RenderGraphError> {
         let label = label.intern();
         if let Some(node_state) = self.nodes.remove(&label) {
-            // Remove all edges from other nodes to this one. Note that as we're removing this
-            // node, we don't need to remove its input edges
+            // Remove all edges from other nodes to this one. Note that as we're removing
+            // this node, we don't need to remove its input edges
             for input_edge in node_state.edges.input_edges() {
                 match input_edge {
-                    Edge::SlotEdge { output_node, .. }
-                    | Edge::NodeEdge {
+                    | Edge::SlotEdge { output_node, .. } |
+                    Edge::NodeEdge {
                         input_node: _,
                         output_node,
                     } => {
                         if let Ok(output_node) = self.get_node_state_mut(*output_node) {
                             output_node.edges.remove_output_edge(input_edge.clone())?;
                         }
-                    }
+                    },
                 }
             }
-            // Remove all edges from this node to other nodes. Note that as we're removing this
-            // node, we don't need to remove its output edges
+            // Remove all edges from this node to other nodes. Note that as we're removing
+            // this node, we don't need to remove its output edges
             for output_edge in node_state.edges.output_edges() {
                 match output_edge {
-                    Edge::SlotEdge {
+                    | Edge::SlotEdge {
                         output_node: _,
                         output_index: _,
                         input_node,
                         input_index: _,
-                    }
-                    | Edge::NodeEdge {
+                    } |
+                    Edge::NodeEdge {
                         output_node: _,
                         input_node,
                     } => {
                         if let Ok(input_node) = self.get_node_state_mut(*input_node) {
                             input_node.edges.remove_input_edge(output_edge.clone())?;
                         }
-                    }
+                    },
                 }
             }
         }
@@ -229,21 +253,20 @@ impl RenderGraph {
     /// Retrieves the [`Node`] referenced by the `label`.
     pub fn get_node<T>(&self, label: impl RenderLabel) -> Result<&T, RenderGraphError>
     where
-        T: Node,
-    {
+        T: Node, {
         self.get_node_state(label).and_then(|n| n.node())
     }
 
     /// Retrieves the [`Node`] referenced by the `label` mutably.
     pub fn get_node_mut<T>(&mut self, label: impl RenderLabel) -> Result<&mut T, RenderGraphError>
     where
-        T: Node,
-    {
+        T: Node, {
         self.get_node_state_mut(label).and_then(|n| n.node_mut())
     }
 
-    /// Adds the [`Edge::SlotEdge`] to the graph. This guarantees that the `output_node`
-    /// is run before the `input_node` and also connects the `output_slot` to the `input_slot`.
+    /// Adds the [`Edge::SlotEdge`] to the graph. This guarantees that the
+    /// `output_node` is run before the `input_node` and also connects the
+    /// `output_slot` to the `input_slot`.
     ///
     /// Fails if any invalid [`RenderLabel`]s or [`SlotLabel`]s are given.
     ///
@@ -293,8 +316,9 @@ impl RenderGraph {
         Ok(())
     }
 
-    /// Adds the [`Edge::SlotEdge`] to the graph. This guarantees that the `output_node`
-    /// is run before the `input_node` and also connects the `output_slot` to the `input_slot`.
+    /// Adds the [`Edge::SlotEdge`] to the graph. This guarantees that the
+    /// `output_node` is run before the `input_node` and also connects the
+    /// `output_slot` to the `input_slot`.
     ///
     /// # Panics
     ///
@@ -314,8 +338,8 @@ impl RenderGraph {
             .unwrap();
     }
 
-    /// Removes the [`Edge::SlotEdge`] from the graph. If any nodes or slots do not exist then
-    /// nothing happens.
+    /// Removes the [`Edge::SlotEdge`] from the graph. If any nodes or slots do
+    /// not exist then nothing happens.
     pub fn remove_slot_edge(
         &mut self,
         output_node: impl RenderLabel,
@@ -359,8 +383,8 @@ impl RenderGraph {
         Ok(())
     }
 
-    /// Adds the [`Edge::NodeEdge`] to the graph. This guarantees that the `output_node`
-    /// is run before the `input_node`.
+    /// Adds the [`Edge::NodeEdge`] to the graph. This guarantees that the
+    /// `output_node` is run before the `input_node`.
     ///
     /// Fails if any invalid [`RenderLabel`] is given.
     ///
@@ -392,8 +416,8 @@ impl RenderGraph {
         Ok(())
     }
 
-    /// Adds the [`Edge::NodeEdge`] to the graph. This guarantees that the `output_node`
-    /// is run before the `input_node`.
+    /// Adds the [`Edge::NodeEdge`] to the graph. This guarantees that the
+    /// `output_node` is run before the `input_node`.
     ///
     /// # Panics
     ///
@@ -406,8 +430,8 @@ impl RenderGraph {
         self.try_add_node_edge(output_node, input_node).unwrap();
     }
 
-    /// Removes the [`Edge::NodeEdge`] from the graph. If either node does not exist then nothing
-    /// happens.
+    /// Removes the [`Edge::NodeEdge`] from the graph. If either node does not
+    /// exist then nothing happens.
     pub fn remove_node_edge(
         &mut self,
         output_node: impl RenderLabel,
@@ -447,7 +471,7 @@ impl RenderGraph {
         }
 
         match *edge {
-            Edge::SlotEdge {
+            | Edge::SlotEdge {
                 output_node,
                 output_index,
                 input_node,
@@ -496,8 +520,8 @@ impl RenderGraph {
                         input_slot: input_index,
                     });
                 }
-            }
-            Edge::NodeEdge { .. } => { /* nothing to validate here */ }
+            },
+            | Edge::NodeEdge { .. } => { /* nothing to validate here */ },
         }
 
         Ok(())
@@ -507,10 +531,10 @@ impl RenderGraph {
     pub fn has_edge(&self, edge: &Edge) -> bool {
         let output_node_state = self.get_node_state(edge.get_output_node());
         let input_node_state = self.get_node_state(edge.get_input_node());
-        if let Ok(output_node_state) = output_node_state
-            && output_node_state.edges.output_edges().contains(edge)
-            && let Ok(input_node_state) = input_node_state
-            && input_node_state.edges.input_edges().contains(edge)
+        if let Ok(output_node_state) = output_node_state &&
+            output_node_state.edges.output_edges().contains(edge) &&
+            let Ok(input_node_state) = input_node_state &&
+            input_node_state.edges.input_edges().contains(edge)
         {
             return true;
         }
@@ -523,7 +547,8 @@ impl RenderGraph {
         self.nodes.values()
     }
 
-    /// Returns an iterator over the [`NodeStates`](NodeState), that allows modifying each value.
+    /// Returns an iterator over the [`NodeStates`](NodeState), that allows
+    /// modifying each value.
     pub fn iter_nodes_mut(&mut self) -> impl Iterator<Item = &mut NodeState> {
         self.nodes.values_mut()
     }
@@ -533,7 +558,8 @@ impl RenderGraph {
         self.sub_graphs.iter().map(|(name, graph)| (*name, graph))
     }
 
-    /// Returns an iterator over the sub graphs, that allows modifying each value.
+    /// Returns an iterator over the sub graphs, that allows modifying each
+    /// value.
     pub fn iter_sub_graphs_mut(
         &mut self,
     ) -> impl Iterator<Item = (InternedRenderSubGraph, &mut RenderGraph)> {
@@ -542,8 +568,8 @@ impl RenderGraph {
             .map(|(name, graph)| (*name, graph))
     }
 
-    /// Returns an iterator over a tuple of the input edges and the corresponding output nodes
-    /// for the node referenced by the label.
+    /// Returns an iterator over a tuple of the input edges and the
+    /// corresponding output nodes for the node referenced by the label.
     pub fn iter_node_inputs(
         &self,
         label: impl RenderLabel,
@@ -557,8 +583,8 @@ impl RenderGraph {
             .map(move |(edge, output_node)| (edge, self.get_node_state(output_node).unwrap())))
     }
 
-    /// Returns an iterator over a tuple of the output edges and the corresponding input nodes
-    /// for the node referenced by the label.
+    /// Returns an iterator over a tuple of the output edges and the
+    /// corresponding input nodes for the node referenced by the label.
     pub fn iter_node_outputs(
         &self,
         label: impl RenderLabel,
@@ -639,8 +665,9 @@ impl Debug for RenderGraph {
     }
 }
 
-/// A [`Node`] which acts as an entry point for a [`RenderGraph`] with custom inputs.
-/// It has the same input and output slots and simply copies them over when run.
+/// A [`Node`] which acts as an entry point for a [`RenderGraph`] with custom
+/// inputs. It has the same input and output slots and simply copies them over
+/// when run.
 pub struct GraphInputNode {
     inputs: Vec<SlotInfo>,
 }
@@ -670,15 +697,28 @@ impl Node for GraphInputNode {
 
 #[cfg(test)]
 mod tests {
+    use bevy_ecs::world::{
+        FromWorld,
+        World,
+    };
+    use bevy_platform::collections::HashSet;
+
     use crate::render::{
         render_graph::{
-            node::IntoRenderNodeArray, Edge, InternedRenderLabel, Node, NodeRunError, RenderGraph,
-            RenderGraphContext, RenderGraphError, RenderLabel, SlotInfo, SlotType,
+            Edge,
+            InternedRenderLabel,
+            Node,
+            NodeRunError,
+            RenderGraph,
+            RenderGraphContext,
+            RenderGraphError,
+            RenderLabel,
+            SlotInfo,
+            SlotType,
+            node::IntoRenderNodeArray,
         },
         renderer::RenderContext,
     };
-    use bevy_ecs::world::{FromWorld, World};
-    use bevy_platform::collections::HashSet;
 
     #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
     enum TestLabel {

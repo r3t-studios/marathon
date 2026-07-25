@@ -4,30 +4,70 @@
 // This code is vendored from bevy_egui: https://github.com/vladbat00/bevy_egui
 // Original author: Vladyslav Batyrenko <vladyslav.batyrenko@gmail.com>
 
-use super::{
-    EguiContext, EguiContextSettings, EguiGlobalSettings, EguiInput, EguiOutput,
-    helpers::{QueryHelper, vec2_into_egui_pos2},
+use bevy::{
+    ecs::{
+        message::MessageIterator,
+        prelude::*,
+        system::{
+            NonSendMarker,
+            SystemParam,
+        },
+    },
+    input::{
+        ButtonInput,
+        ButtonState,
+        keyboard::{
+            Key,
+            KeyCode,
+            KeyboardFocusLost,
+            KeyboardInput,
+        },
+        mouse::{
+            MouseButton,
+            MouseButtonInput,
+            MouseScrollUnit,
+            MouseWheel,
+        },
+        touch::TouchInput,
+    },
+    log::{
+        self as log,
+    },
+    time::{
+        Real,
+        Time,
+    },
+    window::{
+        CursorMoved,
+        FileDragAndDrop,
+        Ime,
+        Window,
+    },
 };
-use bevy::ecs::{
-    message::MessageIterator,
-    prelude::*,
-    system::{NonSendMarker, SystemParam},
-};
-use bevy::input::{
-    ButtonInput, ButtonState,
-    keyboard::{Key, KeyCode, KeyboardFocusLost, KeyboardInput},
-    mouse::{MouseButton, MouseButtonInput, MouseScrollUnit, MouseWheel},
-    touch::TouchInput,
-};
-use bevy::log::{self as log};
-use bevy::time::{Real, Time};
-use bevy::window::{CursorMoved, FileDragAndDrop, Ime, Window};
 use egui::Modifiers;
 
+use super::{
+    EguiContext,
+    EguiContextSettings,
+    EguiGlobalSettings,
+    EguiInput,
+    EguiOutput,
+    helpers::{
+        QueryHelper,
+        vec2_into_egui_pos2,
+    },
+};
 // Import engine InputEvent types for custom input system
-use crate::platform::input::{InputEvent, InputEventBuffer, TouchPhase, MouseButton as EngineMouseButton, KeyCode as EngineKeyCode};
+use crate::platform::input::{
+    InputEvent,
+    InputEventBuffer,
+    KeyCode as EngineKeyCode,
+    MouseButton as EngineMouseButton,
+    TouchPhase,
+};
 
-/// Cached pointer position, used to populate [`egui::Event::PointerButton`] messages.
+/// Cached pointer position, used to populate [`egui::Event::PointerButton`]
+/// messages.
 #[derive(Component, Default)]
 pub struct EguiContextPointerPosition {
     /// Pointer position.
@@ -46,7 +86,8 @@ pub struct EguiContextPointerTouchId {
 pub struct EguiContextImeState {
     /// Indicates whether IME is enabled.
     pub has_sent_ime_enabled: bool,
-    /// Indicates whether IME is currently allowed, i.e. if the virtual keyboard is shown.
+    /// Indicates whether IME is currently allowed, i.e. if the virtual keyboard
+    /// is shown.
     pub is_ime_allowed: bool,
     /// Corresponds to where an active egui text edit is located on the screen.
     pub ime_rect: Option<egui::Rect>,
@@ -62,7 +103,8 @@ pub struct EguiInputEvent {
 }
 
 #[derive(Message)]
-/// Wraps [`bevy::FileDragAndDrop`](bevy::window::FileDragAndDrop) messages emitted by [`crate::EguiInputSet`] systems.
+/// Wraps [`bevy::FileDragAndDrop`](bevy::window::FileDragAndDrop) messages
+/// emitted by [`crate::EguiInputSet`] systems.
 pub struct EguiFileDragAndDropMessage {
     /// Context to pass an event to.
     pub context: Entity,
@@ -71,26 +113,34 @@ pub struct EguiFileDragAndDropMessage {
 }
 
 #[derive(Resource, Clone)]
-/// Insert this resource when a pointer hovers over a non-window (e.g. world-space) [`EguiContext`] entity.
-/// Also, make sure to update an [`EguiContextPointerPosition`] component of a hovered entity.
-/// Both updates should happen during [`crate::EguiInputSet::InitReading`].
+/// Insert this resource when a pointer hovers over a non-window (e.g.
+/// world-space) [`EguiContext`] entity. Also, make sure to update an
+/// [`EguiContextPointerPosition`] component of a hovered entity. Both updates
+/// should happen during [`crate::EguiInputSet::InitReading`].
 ///
-/// To learn how `bevy_egui` uses this resource, see the [`FocusedNonWindowEguiContext`] documentation.
+/// To learn how `bevy_egui` uses this resource, see the
+/// [`FocusedNonWindowEguiContext`] documentation.
 pub struct HoveredNonWindowEguiContext(pub Entity);
 
-/// Stores an entity of a focused non-window context (to push keyboard messages to).
+/// Stores an entity of a focused non-window context (to push keyboard messages
+/// to).
 ///
-/// The resource won't exist if no context is focused, [`Option<Res<FocusedNonWindowEguiContext>>`] must be used to read from it.
-/// If the [`HoveredNonWindowEguiContext`] resource exists, the [`FocusedNonWindowEguiContext`]
-/// resource will get inserted on mouse button press or touch start message
-/// (and removed if no hovered non-window context exists respectively).
+/// The resource won't exist if no context is focused,
+/// [`Option<Res<FocusedNonWindowEguiContext>>`] must be used to read from it.
+/// If the [`HoveredNonWindowEguiContext`] resource exists, the
+/// [`FocusedNonWindowEguiContext`] resource will get inserted on mouse button
+/// press or touch start message (and removed if no hovered non-window context
+/// exists respectively).
 ///
-/// Atm, it's up to users to update [`HoveredNonWindowEguiContext`] and [`EguiContextPointerPosition`].
-/// We might be able to add proper `bevy_picking` support for world space UI once [`bevy_picking::backend::HitData`]
-/// starts exposing triangle index or UV.
+/// Atm, it's up to users to update [`HoveredNonWindowEguiContext`] and
+/// [`EguiContextPointerPosition`]. We might be able to add proper
+/// `bevy_picking` support for world space UI once
+/// [`bevy_picking::backend::HitData`] starts exposing triangle index or UV.
 ///
-/// Updating focused contexts happens during [`crate::EguiInputSet::FocusContext`],
-/// see [`write_pointer_button_messages_system`] and [`write_window_touch_messages_system`].
+/// Updating focused contexts happens during
+/// [`crate::EguiInputSet::FocusContext`],
+/// see [`write_pointer_button_messages_system`] and
+/// [`write_window_touch_messages_system`].
 #[derive(Resource, Clone)]
 pub struct FocusedNonWindowEguiContext(pub Entity);
 
@@ -124,9 +174,9 @@ impl Default for ModifierKeysState {
         }
 
         #[cfg(target_arch = "wasm32")]
-        if let Some(window) = web_sys::window()
-            && let Ok(user_agent) = window.navigator().user_agent()
-            && user_agent.to_ascii_lowercase().contains("mac")
+        if let Some(window) = web_sys::window() &&
+            let Ok(user_agent) = window.navigator().user_agent() &&
+            user_agent.to_ascii_lowercase().contains("mac")
         {
             state.is_macos = true;
         }
@@ -147,7 +197,8 @@ impl ModifierKeysState {
         }
     }
 
-    /// Returns `true` if modifiers shouldn't prmessage text input (we don't want to put characters on pressing Ctrl+A, etc).
+    /// Returns `true` if modifiers shouldn't prmessage text input (we don't
+    /// want to put characters on pressing Ctrl+A, etc).
     pub fn text_input_is_allowed(&self) -> bool {
         // Ctrl + Alt enables AltGr which is used to print special characters.
         !self.win && !self.ctrl || !self.is_macos && self.ctrl && self.alt
@@ -176,14 +227,17 @@ impl WindowToEguiContextMap {
     /// Adds a context to the map on creation.
     pub fn on_egui_context_added_system(
         mut res: ResMut<Self>,
-        added_contexts: Query<(Entity, &bevy::camera::Camera, &mut EguiContext), Added<EguiContext>>,
+        added_contexts: Query<
+            (Entity, &bevy::camera::Camera, &mut EguiContext),
+            Added<EguiContext>,
+        >,
         primary_window: Query<Entity, With<bevy::window::PrimaryWindow>>,
         // NOTE: We don't use bevy_winit since we own the event loop
         // event_loop_proxy: Res<bevy_winit::EventLoopProxyWrapper<bevy_winit::WakeUp>>,
     ) {
         for (egui_context_entity, camera, _egui_context) in added_contexts {
-            if let bevy::camera::RenderTarget::Window(window_ref) = camera.target
-                && let Some(window_ref) = window_ref.normalize(primary_window.single().ok())
+            if let bevy::camera::RenderTarget::Window(window_ref) = camera.target &&
+                let Some(window_ref) = window_ref.normalize(primary_window.single().ok())
             {
                 res.window_to_contexts
                     .entry(window_ref.entity())
@@ -192,8 +246,9 @@ impl WindowToEguiContextMap {
                 res.context_to_window
                     .insert(egui_context_entity, window_ref.entity());
 
-                // NOTE: Removed repaint callback since we own winit and always repaint
-                // The executor continuously requests redraws anyway
+                // NOTE: Removed repaint callback since we own winit and always
+                // repaint The executor continuously requests
+                // redraws anyway
             }
         }
     }
@@ -220,7 +275,8 @@ impl WindowToEguiContextMap {
     }
 }
 
-/// Iterates over pairs of `(Message, Entity)`, where the entity points to the context that the message is related to.
+/// Iterates over pairs of `(Message, Entity)`, where the entity points to the
+/// context that the message is related to.
 pub struct EguiContextsMessageIterator<'a, M: Message, F> {
     message_iter: MessageIterator<'a, M>,
     map_message_to_window_id_f: F,
@@ -245,8 +301,8 @@ impl<'a, M: Message, F: FnMut(&'a M) -> Entity> Iterator for EguiContextsMessage
                 return self.current_message.zip(self.non_window_context);
             }
 
-            if let Some(current) = self.current_message
-                && let Some(contexts) = self
+            if let Some(current) = self.current_message &&
+                let Some(contexts) = self
                     .map
                     .window_to_contexts
                     .get(&(self.map_message_to_window_id_f)(current))
@@ -261,7 +317,8 @@ impl<'a, M: Message, F: FnMut(&'a M) -> Entity> Iterator for EguiContextsMessage
 }
 
 #[derive(SystemParam)]
-/// A helper system param to iterate over pairs of messages and Egui contexts, see [`EguiContextsMessageIterator`].
+/// A helper system param to iterate over pairs of messages and Egui contexts,
+/// see [`EguiContextsMessageIterator`].
 pub struct EguiContextMessageReader<'w, 's, M: Message> {
     message_reader: MessageReader<'w, 's, M>,
     map: Res<'w, WindowToEguiContextMap>,
@@ -270,7 +327,8 @@ pub struct EguiContextMessageReader<'w, 's, M: Message> {
 }
 
 impl<'w, 's, M: Message> EguiContextMessageReader<'w, 's, M> {
-    /// Returns [`EguiContextsMessageIterator`] that iterates only over window messages (i.e. skips contexts that render to images, etc.),
+    /// Returns [`EguiContextsMessageIterator`] that iterates only over window
+    /// messages (i.e. skips contexts that render to images, etc.),
     /// expects a lambda that extracts a window id from an message.
     pub fn read<'a, F>(
         &'a mut self,
@@ -278,8 +336,7 @@ impl<'w, 's, M: Message> EguiContextMessageReader<'w, 's, M> {
     ) -> EguiContextsMessageIterator<'a, M, F>
     where
         F: FnMut(&'a M) -> Entity,
-        M: Message,
-    {
+        M: Message, {
         EguiContextsMessageIterator {
             message_iter: self.message_reader.read(),
             map_message_to_window_id_f,
@@ -290,15 +347,17 @@ impl<'w, 's, M: Message> EguiContextMessageReader<'w, 's, M> {
         }
     }
 
-    /// Returns [`EguiContextsMessageIterator`] that iterates over window messages but might substitute contexts with a currently hovered non-window context (see [`HoveredNonWindowEguiContext`]), expects a lambda that extracts a window id from an message.
+    /// Returns [`EguiContextsMessageIterator`] that iterates over window
+    /// messages but might substitute contexts with a currently hovered
+    /// non-window context (see [`HoveredNonWindowEguiContext`]), expects a
+    /// lambda that extracts a window id from an message.
     pub fn read_with_non_window_hovered<'a, F>(
         &'a mut self,
         map_message_to_window_id_f: F,
     ) -> EguiContextsMessageIterator<'a, M, F>
     where
         F: FnMut(&'a M) -> Entity,
-        M: Message,
-    {
+        M: Message, {
         EguiContextsMessageIterator {
             message_iter: self.message_reader.read(),
             map_message_to_window_id_f,
@@ -312,15 +371,17 @@ impl<'w, 's, M: Message> EguiContextMessageReader<'w, 's, M> {
         }
     }
 
-    /// Returns [`EguiContextsMessageIterator`] that iterates over window messages but might substitute contexts with a currently focused non-window context (see [`FocusedNonWindowEguiContext`]), expects a lambda that extracts a window id from an message.
+    /// Returns [`EguiContextsMessageIterator`] that iterates over window
+    /// messages but might substitute contexts with a currently focused
+    /// non-window context (see [`FocusedNonWindowEguiContext`]), expects a
+    /// lambda that extracts a window id from an message.
     pub fn read_with_non_window_focused<'a, F>(
         &'a mut self,
         map_message_to_window_id_f: F,
     ) -> EguiContextsMessageIterator<'a, M, F>
     where
         F: FnMut(&'a M) -> Entity,
-        M: Message,
-    {
+        M: Message, {
         EguiContextsMessageIterator {
             message_iter: self.message_reader.read(),
             map_message_to_window_id_f,
@@ -335,7 +396,8 @@ impl<'w, 's, M: Message> EguiContextMessageReader<'w, 's, M> {
     }
 }
 
-/// Reads [`KeyboardInput`] messages to update the [`ModifierKeysState`] resource.
+/// Reads [`KeyboardInput`] messages to update the [`ModifierKeysState`]
+/// resource.
 pub fn write_modifiers_keys_state_system(
     mut keyboard_input_reader: MessageReader<KeyboardInput>,
     mut focus_reader: MessageReader<KeyboardFocusLost>,
@@ -352,24 +414,25 @@ pub fn write_modifiers_keys_state_system(
             logical_key, state, ..
         } = message;
         match logical_key {
-            Key::Shift => {
+            | Key::Shift => {
                 modifier_keys_state.shift = state.is_pressed();
-            }
-            Key::Control => {
+            },
+            | Key::Control => {
                 modifier_keys_state.ctrl = state.is_pressed();
-            }
-            Key::Alt => {
+            },
+            | Key::Alt => {
                 modifier_keys_state.alt = state.is_pressed();
-            }
-            Key::Super | Key::Meta => {
+            },
+            | Key::Super | Key::Meta => {
                 modifier_keys_state.win = state.is_pressed();
-            }
-            _ => {}
+            },
+            | _ => {},
         };
     }
 }
 
-/// Reads [`MouseButtonInput`] messages and wraps them into [`EguiInputEvent`] (only for window contexts).
+/// Reads [`MouseButtonInput`] messages and wraps them into [`EguiInputEvent`]
+/// (only for window contexts).
 pub fn write_window_pointer_moved_messages_system(
     mut cursor_moved_reader: EguiContextMessageReader<CursorMoved>,
     mut egui_input_message_writer: MessageWriter<EguiInputEvent>,
@@ -402,8 +465,10 @@ pub fn write_window_pointer_moved_messages_system(
     }
 }
 
-/// Reads [`MouseButtonInput`] messages and wraps them into [`EguiInputEvent`], can redirect messages to [`HoveredNonWindowEguiContext`],
-/// inserts, updates or removes the [`FocusedNonWindowEguiContext`] resource based on a hovered context.
+/// Reads [`MouseButtonInput`] messages and wraps them into [`EguiInputEvent`],
+/// can redirect messages to [`HoveredNonWindowEguiContext`], inserts, updates
+/// or removes the [`FocusedNonWindowEguiContext`] resource based on a hovered
+/// context.
 pub fn write_pointer_button_messages_system(
     egui_global_settings: Res<EguiGlobalSettings>,
     mut commands: Commands,
@@ -433,19 +498,19 @@ pub fn write_pointer_button_messages_system(
         }
 
         let button = match message.button {
-            MouseButton::Left => Some(egui::PointerButton::Primary),
-            MouseButton::Right => Some(egui::PointerButton::Secondary),
-            MouseButton::Middle => Some(egui::PointerButton::Middle),
-            MouseButton::Back => Some(egui::PointerButton::Extra1),
-            MouseButton::Forward => Some(egui::PointerButton::Extra2),
-            _ => None,
+            | MouseButton::Left => Some(egui::PointerButton::Primary),
+            | MouseButton::Right => Some(egui::PointerButton::Secondary),
+            | MouseButton::Middle => Some(egui::PointerButton::Middle),
+            | MouseButton::Back => Some(egui::PointerButton::Extra1),
+            | MouseButton::Forward => Some(egui::PointerButton::Extra2),
+            | _ => None,
         };
         let Some(button) = button else {
             continue;
         };
         let pressed = match message.state {
-            ButtonState::Pressed => true,
-            ButtonState::Released => false,
+            | ButtonState::Pressed => true,
+            | ButtonState::Released => false,
         };
         egui_input_message_writer.write(EguiInputEvent {
             context,
@@ -457,7 +522,8 @@ pub fn write_pointer_button_messages_system(
             },
         });
 
-        // If we are hovering over some UI in world space, we want to mark it as focused on mouse click.
+        // If we are hovering over some UI in world space, we want to mark it as focused
+        // on mouse click.
         if egui_global_settings.enable_focused_non_window_context_updates && pressed {
             if let Some(hovered_non_window_egui_context) = &hovered_non_window_egui_context {
                 commands.insert_resource(FocusedNonWindowEguiContext(
@@ -470,7 +536,8 @@ pub fn write_pointer_button_messages_system(
     }
 }
 
-/// Reads [`CursorMoved`] messages and wraps them into [`EguiInputEvent`] for a [`HoveredNonWindowEguiContext`] context (if one exists).
+/// Reads [`CursorMoved`] messages and wraps them into [`EguiInputEvent`] for a
+/// [`HoveredNonWindowEguiContext`] context (if one exists).
 pub fn write_non_window_pointer_moved_messages_system(
     hovered_non_window_egui_context: Option<Res<HoveredNonWindowEguiContext>>,
     mut cursor_moved_reader: MessageReader<CursorMoved>,
@@ -507,7 +574,8 @@ pub fn write_non_window_pointer_moved_messages_system(
     });
 }
 
-/// Reads [`MouseWheel`] messages and wraps them into [`EguiInputEvent`], can redirect messages to [`HoveredNonWindowEguiContext`].
+/// Reads [`MouseWheel`] messages and wraps them into [`EguiInputEvent`], can
+/// redirect messages to [`HoveredNonWindowEguiContext`].
 pub fn write_mouse_wheel_messages_system(
     modifier_keys_state: Res<ModifierKeysState>,
     mut mouse_wheel_reader: EguiContextMessageReader<MouseWheel>,
@@ -520,8 +588,8 @@ pub fn write_mouse_wheel_messages_system(
     {
         let delta = egui::vec2(message.x, message.y);
         let unit = match message.unit {
-            MouseScrollUnit::Line => egui::MouseWheelUnit::Line,
-            MouseScrollUnit::Pixel => egui::MouseWheelUnit::Point,
+            | MouseScrollUnit::Line => egui::MouseWheelUnit::Line,
+            | MouseScrollUnit::Pixel => egui::MouseWheelUnit::Point,
         };
 
         let Some(context_settings) = egui_contexts.get_some(context) else {
@@ -546,7 +614,8 @@ pub fn write_mouse_wheel_messages_system(
     }
 }
 
-/// Reads [`KeyboardInput`] messages and wraps them into [`EguiInputEvent`], can redirect messages to [`FocusedNonWindowEguiContext`].
+/// Reads [`KeyboardInput`] messages and wraps them into [`EguiInputEvent`], can
+/// redirect messages to [`FocusedNonWindowEguiContext`].
 pub fn write_keyboard_input_messages_system(
     modifier_keys_state: Res<ModifierKeysState>,
     #[cfg(all(
@@ -576,27 +645,27 @@ pub fn write_keyboard_input_messages_system(
 
         if modifier_keys_state.text_input_is_allowed() && message.state.is_pressed() {
             match &message.logical_key {
-                Key::Character(char) if char.matches(char::is_control).count() == 0 => {
+                | Key::Character(char) if char.matches(char::is_control).count() == 0 => {
                     egui_input_message_writer.write(EguiInputEvent {
                         context,
                         event: egui::Event::Text(char.to_string()),
                     });
-                }
-                Key::Space => {
+                },
+                | Key::Space => {
                     egui_input_message_writer.write(EguiInputEvent {
                         context,
                         event: egui::Event::Text(" ".to_string()),
                     });
-                }
-                _ => (),
+                },
+                | _ => (),
             }
         }
 
         let key = super::helpers::bevy_to_egui_key(&message.logical_key);
         let physical_key = super::helpers::bevy_to_egui_physical_key(&message.key_code);
 
-        // "Logical OR physical key" is a fallback mechanism for keyboard layouts without Latin characters
-        // See: https://github.com/emilk/egui/blob/66c73b9cbfbd4d44489fc6f6a840d7d82bc34389/crates/egui-winit/src/lib.rs#L760
+        // "Logical OR physical key" is a fallback mechanism for keyboard layouts
+        // without Latin characters See: https://github.com/emilk/egui/blob/66c73b9cbfbd4d44489fc6f6a840d7d82bc34389/crates/egui-winit/src/lib.rs#L760
         let (Some(key), physical_key) = (key.or(physical_key), physical_key) else {
             continue;
         };
@@ -622,33 +691,34 @@ pub fn write_keyboard_input_messages_system(
         ))]
         if modifiers.command && message.state.is_pressed() {
             match key {
-                egui::Key::C => {
+                | egui::Key::C => {
                     egui_input_message_writer.write(EguiInputEvent {
                         context,
                         event: egui::Event::Copy,
                     });
-                }
-                egui::Key::X => {
+                },
+                | egui::Key::X => {
                     egui_input_message_writer.write(EguiInputEvent {
                         context,
                         event: egui::Event::Cut,
                     });
-                }
-                egui::Key::V => {
+                },
+                | egui::Key::V => {
                     if let Some(contents) = egui_clipboard.get_text() {
                         egui_input_message_writer.write(EguiInputEvent {
                             context,
                             event: egui::Event::Text(contents),
                         });
                     }
-                }
-                _ => {}
+                },
+                | _ => {},
             }
         }
     }
 }
 
-/// Reads [`Ime`] messages and wraps them into [`EguiInputEvent`], can redirect messages to [`FocusedNonWindowEguiContext`].
+/// Reads [`Ime`] messages and wraps them into [`EguiInputEvent`], can redirect
+/// messages to [`FocusedNonWindowEguiContext`].
 pub fn write_ime_messages_system(
     mut ime_reader: EguiContextMessageReader<Ime>,
     mut egui_input_message_writer: MessageWriter<EguiInputEvent>,
@@ -663,10 +733,10 @@ pub fn write_ime_messages_system(
     >,
 ) {
     for (message, context) in ime_reader.read_with_non_window_focused(|message| match &message {
-        Ime::Preedit { window, .. }
-        | Ime::Commit { window, .. }
-        | Ime::Disabled { window }
-        | Ime::Enabled { window } => *window,
+        | Ime::Preedit { window, .. } |
+        Ime::Commit { window, .. } |
+        Ime::Disabled { window } |
+        Ime::Enabled { window } => *window,
     }) {
         let Some((_entity, context_settings, mut ime_state, _egui_output)) =
             egui_contexts.get_some_mut(context)
@@ -676,8 +746,8 @@ pub fn write_ime_messages_system(
 
         if !context_settings
             .input_system_settings
-            .run_write_ime_messages_system
-            || !context_settings.enable_ime
+            .run_write_ime_messages_system ||
+            !context_settings.enable_ime
         {
             continue;
         }
@@ -708,10 +778,10 @@ pub fn write_ime_messages_system(
 
         // Aligned with the egui-winit implementation: https://github.com/emilk/egui/blob/0f2b427ff4c0a8c68f6622ec7d0afb7ba7e71bba/crates/egui-winit/src/lib.rs#L348
         match message {
-            Ime::Enabled { window: _ } => {
+            | Ime::Enabled { window: _ } => {
                 ime_message_enable(&mut ime_state, &mut egui_input_message_writer);
-            }
-            Ime::Preedit {
+            },
+            | Ime::Preedit {
                 value,
                 window: _,
                 cursor: Some(_),
@@ -721,28 +791,29 @@ pub fn write_ime_messages_system(
                     context,
                     event: egui::Event::Ime(egui::ImeEvent::Preedit(value.clone())),
                 });
-            }
-            Ime::Commit { value, window: _ } => {
+            },
+            | Ime::Commit { value, window: _ } => {
                 egui_input_message_writer.write(EguiInputEvent {
                     context,
                     event: egui::Event::Ime(egui::ImeEvent::Commit(value.clone())),
                 });
                 ime_message_disable(&mut ime_state, &mut egui_input_message_writer);
-            }
-            Ime::Disabled { window: _ }
-            | Ime::Preedit {
+            },
+            | Ime::Disabled { window: _ } |
+            Ime::Preedit {
                 cursor: None,
                 window: _,
                 value: _,
             } => {
                 ime_message_disable(&mut ime_state, &mut egui_input_message_writer);
-            }
+            },
         }
     }
 }
 
 /// Show the virtual keyboard when a text input is focused.
-/// Works by reading [`EguiOutput`] and calling `Window::set_ime_allowed` if the `ime` field is set.
+/// Works by reading [`EguiOutput`] and calling `Window::set_ime_allowed` if the
+/// `ime` field is set.
 pub fn process_ime_system(
     mut egui_context_query: Query<(
         Entity,
@@ -768,7 +839,8 @@ pub fn process_ime_system(
         }
 
         // TODO: Implement IME support using your custom winit integration
-        // let Some(window_entity) = window_to_egui_context_map.context_to_window.get(&entity) else {
+        // let Some(window_entity) =
+        // window_to_egui_context_map.context_to_window.get(&entity) else {
         //     continue;
         // };
 
@@ -812,16 +884,18 @@ pub fn process_ime_system(
     }
 }
 
-/// Reads [`FileDragAndDrop`] messages and wraps them into [`EguiFileDragAndDropMessage`], can redirect messages to [`HoveredNonWindowEguiContext`].
+/// Reads [`FileDragAndDrop`] messages and wraps them into
+/// [`EguiFileDragAndDropMessage`], can redirect messages to
+/// [`HoveredNonWindowEguiContext`].
 pub fn write_file_dnd_messages_system(
     mut dnd_reader: EguiContextMessageReader<FileDragAndDrop>,
     mut egui_file_dnd_message_writer: MessageWriter<EguiFileDragAndDropMessage>,
     egui_contexts: Query<&EguiContextSettings, With<EguiContext>>,
 ) {
     for (message, context) in dnd_reader.read_with_non_window_hovered(|message| match &message {
-        FileDragAndDrop::DroppedFile { window, .. }
-        | FileDragAndDrop::HoveredFile { window, .. }
-        | FileDragAndDrop::HoveredFileCanceled { window } => *window,
+        | FileDragAndDrop::DroppedFile { window, .. } |
+        FileDragAndDrop::HoveredFile { window, .. } |
+        FileDragAndDrop::HoveredFileCanceled { window } => *window,
     }) {
         let Some(context_settings) = egui_contexts.get_some(context) else {
             continue;
@@ -835,7 +909,7 @@ pub fn write_file_dnd_messages_system(
         }
 
         match message {
-            FileDragAndDrop::DroppedFile { window, path_buf } => {
+            | FileDragAndDrop::DroppedFile { window, path_buf } => {
                 egui_file_dnd_message_writer.write(EguiFileDragAndDropMessage {
                     context,
                     message: FileDragAndDrop::DroppedFile {
@@ -843,8 +917,8 @@ pub fn write_file_dnd_messages_system(
                         path_buf: path_buf.clone(),
                     },
                 });
-            }
-            FileDragAndDrop::HoveredFile { window, path_buf } => {
+            },
+            | FileDragAndDrop::HoveredFile { window, path_buf } => {
                 egui_file_dnd_message_writer.write(EguiFileDragAndDropMessage {
                     context,
                     message: FileDragAndDrop::HoveredFile {
@@ -852,13 +926,13 @@ pub fn write_file_dnd_messages_system(
                         path_buf: path_buf.clone(),
                     },
                 });
-            }
-            FileDragAndDrop::HoveredFileCanceled { window } => {
+            },
+            | FileDragAndDrop::HoveredFileCanceled { window } => {
                 egui_file_dnd_message_writer.write(EguiFileDragAndDropMessage {
                     context,
                     message: FileDragAndDrop::HoveredFileCanceled { window: *window },
                 });
-            }
+            },
         }
     }
 }
@@ -897,8 +971,8 @@ pub fn write_window_touch_messages_system(
             continue;
         };
 
-        if egui_global_settings.enable_focused_non_window_context_updates
-            && let bevy::input::touch::TouchPhase::Started = message.phase
+        if egui_global_settings.enable_focused_non_window_context_updates &&
+            let bevy::input::touch::TouchPhase::Started = message.phase
         {
             if let Some(hovered_non_window_egui_context) = &hovered_non_window_egui_context {
                 if let bevy::input::touch::TouchPhase::Started = message.phase {
@@ -935,7 +1009,8 @@ pub fn write_window_touch_messages_system(
     }
 }
 
-/// Reads [`TouchInput`] messages and wraps them into [`EguiInputEvent`] for a [`HoveredNonWindowEguiContext`] context (if one exists).
+/// Reads [`TouchInput`] messages and wraps them into [`EguiInputEvent`] for a
+/// [`HoveredNonWindowEguiContext`] context (if one exists).
 pub fn write_non_window_touch_messages_system(
     focused_non_window_egui_context: Option<Res<FocusedNonWindowEguiContext>>,
     mut touch_input_reader: MessageReader<TouchInput>,
@@ -1006,32 +1081,32 @@ fn write_touch_message(
             device_id: egui::TouchDeviceId(message.window.to_bits()),
             id: touch_id,
             phase: match message.phase {
-                bevy::input::touch::TouchPhase::Started => egui::TouchPhase::Start,
-                bevy::input::touch::TouchPhase::Moved => egui::TouchPhase::Move,
-                bevy::input::touch::TouchPhase::Ended => egui::TouchPhase::End,
-                bevy::input::touch::TouchPhase::Canceled => egui::TouchPhase::Cancel,
+                | bevy::input::touch::TouchPhase::Started => egui::TouchPhase::Start,
+                | bevy::input::touch::TouchPhase::Moved => egui::TouchPhase::Move,
+                | bevy::input::touch::TouchPhase::Ended => egui::TouchPhase::End,
+                | bevy::input::touch::TouchPhase::Canceled => egui::TouchPhase::Cancel,
             },
             pos: pointer_position,
             force: match message.force {
-                Some(bevy::input::touch::ForceTouch::Normalized(force)) => Some(force as f32),
-                Some(bevy::input::touch::ForceTouch::Calibrated {
+                | Some(bevy::input::touch::ForceTouch::Normalized(force)) => Some(force as f32),
+                | Some(bevy::input::touch::ForceTouch::Calibrated {
                     force,
                     max_possible_force,
                     ..
                 }) => Some((force / max_possible_force) as f32),
-                None => None,
+                | None => None,
             },
         },
     });
 
     // If we're not yet translating a touch, or we're translating this very
     // touch, …
-    if context_pointer_touch_id.pointer_touch_id.is_none()
-        || context_pointer_touch_id.pointer_touch_id.unwrap() == message.id
+    if context_pointer_touch_id.pointer_touch_id.is_none() ||
+        context_pointer_touch_id.pointer_touch_id.unwrap() == message.id
     {
         // … emit PointerButton resp. PointerMoved messages to emulate mouse.
         match message.phase {
-            bevy::input::touch::TouchPhase::Started => {
+            | bevy::input::touch::TouchPhase::Started => {
                 context_pointer_touch_id.pointer_touch_id = Some(message.id);
                 // First move the pointer to the right location.
                 egui_input_message_writer.write(EguiInputEvent {
@@ -1048,14 +1123,14 @@ fn write_touch_message(
                         modifiers,
                     },
                 });
-            }
-            bevy::input::touch::TouchPhase::Moved => {
+            },
+            | bevy::input::touch::TouchPhase::Moved => {
                 egui_input_message_writer.write(EguiInputEvent {
                     context,
                     event: egui::Event::PointerMoved(pointer_position),
                 });
-            }
-            bevy::input::touch::TouchPhase::Ended => {
+            },
+            | bevy::input::touch::TouchPhase::Ended => {
                 context_pointer_touch_id.pointer_touch_id = None;
                 egui_input_message_writer.write(EguiInputEvent {
                     context,
@@ -1074,23 +1149,24 @@ fn write_touch_message(
                 #[cfg(target_arch = "wasm32")]
                 if !is_mobile_safari() {
                     update_text_agent(
-                        _output.platform_output.ime.is_some()
-                            || _output.platform_output.mutable_text_under_cursor,
+                        _output.platform_output.ime.is_some() ||
+                            _output.platform_output.mutable_text_under_cursor,
                     );
                 }
-            }
-            bevy::input::touch::TouchPhase::Canceled => {
+            },
+            | bevy::input::touch::TouchPhase::Canceled => {
                 context_pointer_touch_id.pointer_touch_id = None;
                 egui_input_message_writer.write(EguiInputEvent {
                     context,
                     event: egui::Event::PointerGone,
                 });
-            }
+            },
         }
     }
 }
 
-/// Reads both [`EguiFileDragAndDropMessage`] and [`EguiInputEvent`] messages and feeds them to Egui.
+/// Reads both [`EguiFileDragAndDropMessage`] and [`EguiInputEvent`] messages
+/// and feeds them to Egui.
 #[allow(clippy::too_many_arguments)]
 pub fn write_egui_input_system(
     focused_non_window_egui_context: Option<Res<FocusedNonWindowEguiContext>>,
@@ -1104,7 +1180,10 @@ pub fn write_egui_input_system(
 ) {
     let event_count = egui_input_reader.len();
     if event_count > 0 {
-        log::info!("write_egui_input_system processing {} input events", event_count);
+        log::info!(
+            "write_egui_input_system processing {} input events",
+            event_count
+        );
     }
 
     for EguiInputEvent { context, event } in egui_input_reader.read() {
@@ -1112,13 +1191,13 @@ pub fn write_egui_input_system(
         log::warn!("{context:?}: {message:?}");
 
         let (_, mut egui_input) = match egui_contexts.get_mut(*context) {
-            Ok(egui_input) => egui_input,
-            Err(err) => {
+            | Ok(egui_input) => egui_input,
+            | Err(err) => {
                 log::error!(
                     "Failed to get an Egui context ({context:?}) for an event ({event:?}): {err:?}"
                 );
                 continue;
-            }
+            },
         };
 
         egui_input.events.push(event.clone());
@@ -1129,17 +1208,17 @@ pub fn write_egui_input_system(
         log::warn!("{context:?}: {message:?}");
 
         let (_, mut egui_input) = match egui_contexts.get_mut(*context) {
-            Ok(egui_input) => egui_input,
-            Err(err) => {
+            | Ok(egui_input) => egui_input,
+            | Err(err) => {
                 log::error!(
                     "Failed to get an Egui context ({context:?}) for an message ({message:?}): {err:?}"
                 );
                 continue;
-            }
+            },
         };
 
         match message {
-            FileDragAndDrop::DroppedFile {
+            | FileDragAndDrop::DroppedFile {
                 window: _,
                 path_buf,
             } => {
@@ -1148,8 +1227,8 @@ pub fn write_egui_input_system(
                     path: Some(path_buf.clone()),
                     ..Default::default()
                 });
-            }
-            FileDragAndDrop::HoveredFile {
+            },
+            | FileDragAndDrop::HoveredFile {
                 window: _,
                 path_buf,
             } => {
@@ -1157,10 +1236,10 @@ pub fn write_egui_input_system(
                     path: Some(path_buf.clone()),
                     ..Default::default()
                 });
-            }
-            FileDragAndDrop::HoveredFileCanceled { window: _ } => {
+            },
+            | FileDragAndDrop::HoveredFileCanceled { window: _ } => {
                 egui_input.hovered_files.clear();
-            }
+            },
         }
     }
 
@@ -1180,23 +1259,29 @@ pub fn write_egui_input_system(
     }
 }
 
-/// Clears Bevy input message buffers and resets [`ButtonInput`] resources if Egui
-/// is using pointer or keyboard (see the [`write_egui_wants_input_system`] run condition).
+/// Clears Bevy input message buffers and resets [`ButtonInput`] resources if
+/// Egui is using pointer or keyboard (see the [`write_egui_wants_input_system`]
+/// run condition).
 ///
-/// This system isn't run by default, set [`EguiGlobalSettings::enable_absorb_bevy_input_system`]
-/// to `true` to enable it.
+/// This system isn't run by default, set
+/// [`EguiGlobalSettings::enable_absorb_bevy_input_system`] to `true` to enable
+/// it.
 ///
 /// ## Considerations
 ///
-/// Enabling this system makes an assumption that `bevy_egui` takes priority in input handling
-/// over other plugins and systems. This should work ok as long as there's no other system
-/// clearing messages the same way that might be in conflict with `bevy_egui`, and there's
-/// no other system that needs a non-interrupted flow of messages.
+/// Enabling this system makes an assumption that `bevy_egui` takes priority in
+/// input handling over other plugins and systems. This should work ok as long
+/// as there's no other system clearing messages the same way that might be in
+/// conflict with `bevy_egui`, and there's no other system that needs a
+/// non-interrupted flow of messages.
 ///
 /// ## Alternative
 ///
-/// A safer alternative is to apply `run_if(not(egui_wants_any_pointer_input))` or `run_if(not(egui_wants_any_keyboard_input))` to your systems
-/// that need to be disabled while Egui is using input (see the [`egui_wants_any_pointer_input`], [`egui_wants_any_keyboard_input`] run conditions).
+/// A safer alternative is to apply `run_if(not(egui_wants_any_pointer_input))`
+/// or `run_if(not(egui_wants_any_keyboard_input))` to your systems that need to
+/// be disabled while Egui is using input (see the
+/// [`egui_wants_any_pointer_input`], [`egui_wants_any_keyboard_input`] run
+/// conditions).
 pub fn absorb_bevy_input_system(
     egui_wants_input: Res<EguiWantsInput>,
     mut mouse_input: ResMut<ButtonInput<MouseButton>>,
@@ -1218,8 +1303,8 @@ pub fn absorb_bevy_input_system(
 
     let pressed = modifiers.map(|key| keyboard_input.pressed(key).then_some(key));
 
-    // TODO: the list of messages is definitely not comprehensive, but it should at least cover
-    //  the most popular use-cases. We can add more on request.
+    // TODO: the list of messages is definitely not comprehensive, but it should at
+    // least cover  the most popular use-cases. We can add more on request.
     if egui_wants_input.wants_any_keyboard_input() {
         keyboard_input.reset_all();
         keyboard_input_messages.clear();
@@ -1253,22 +1338,25 @@ impl EguiWantsInput {
 
     /// True if egui is currently interested in the pointer (mouse or touch).
     ///
-    /// Could be the pointer is hovering over a [`egui::Window`] or the user is dragging a widget.
-    /// If `false`, the pointer is outside of any egui area and so
-    /// you may be interested in what it is doing (e.g. controlling your game).
-    /// Returns `false` if a drag started outside of egui and then moved over an egui area.
+    /// Could be the pointer is hovering over a [`egui::Window`] or the user is
+    /// dragging a widget. If `false`, the pointer is outside of any egui
+    /// area and so you may be interested in what it is doing (e.g.
+    /// controlling your game). Returns `false` if a drag started outside of
+    /// egui and then moved over an egui area.
     pub fn wants_pointer_input(&self) -> bool {
         self.wants_pointer_input
     }
 
     /// Is egui currently using the pointer position (e.g. dragging a slider)?
     ///
-    /// NOTE: this will return `false` if the pointer is just hovering over an egui area.
+    /// NOTE: this will return `false` if the pointer is just hovering over an
+    /// egui area.
     pub fn is_using_pointer(&self) -> bool {
         self.is_using_pointer
     }
 
-    /// If `true`, egui is currently listening on text input (e.g. typing text in a [`egui::TextEdit`]).
+    /// If `true`, egui is currently listening on text input (e.g. typing text
+    /// in a [`egui::TextEdit`]).
     pub fn wants_keyboard_input(&self) -> bool {
         self.wants_keyboard_input
     }
@@ -1285,22 +1373,27 @@ impl EguiWantsInput {
     }
 
     /// Returns `true` if any of the following is true:
-    /// [`EguiWantsInput::is_pointer_over_area`], [`EguiWantsInput::wants_pointer_input`], [`EguiWantsInput::is_using_pointer`], [`EguiWantsInput::is_context_menu_open`].
+    /// [`EguiWantsInput::is_pointer_over_area`],
+    /// [`EguiWantsInput::wants_pointer_input`],
+    /// [`EguiWantsInput::is_using_pointer`],
+    /// [`EguiWantsInput::is_context_menu_open`].
     pub fn wants_any_pointer_input(&self) -> bool {
-        self.is_pointer_over_area
-            || self.wants_pointer_input
-            || self.is_using_pointer
-            || self.is_popup_open
+        self.is_pointer_over_area ||
+            self.wants_pointer_input ||
+            self.is_using_pointer ||
+            self.is_popup_open
     }
 
     /// Returns `true` if any of the following is true:
-    /// [`EguiWantsInput::wants_keyboard_input`], [`EguiWantsInput::is_context_menu_open`].
+    /// [`EguiWantsInput::wants_keyboard_input`],
+    /// [`EguiWantsInput::is_context_menu_open`].
     pub fn wants_any_keyboard_input(&self) -> bool {
         self.wants_keyboard_input || self.is_popup_open
     }
 
     /// Returns `true` if any of the following is true:
-    /// [`EguiWantsInput::wants_any_pointer_input`], [`EguiWantsInput::wants_any_keyboard_input`].
+    /// [`EguiWantsInput::wants_any_pointer_input`],
+    /// [`EguiWantsInput::wants_any_keyboard_input`].
     pub fn wants_any_input(&self) -> bool {
         self.wants_any_pointer_input() || self.wants_any_keyboard_input()
     }
@@ -1336,28 +1429,34 @@ pub fn write_egui_wants_input_system(
 }
 
 /// Returns `true` if any of the following is true:
-/// [`EguiWantsInput::is_pointer_over_area`], [`EguiWantsInput::wants_pointer_input`], [`EguiWantsInput::is_using_pointer`], [`EguiWantsInput::is_context_menu_open`].
+/// [`EguiWantsInput::is_pointer_over_area`],
+/// [`EguiWantsInput::wants_pointer_input`],
+/// [`EguiWantsInput::is_using_pointer`],
+/// [`EguiWantsInput::is_context_menu_open`].
 pub fn egui_wants_any_pointer_input(egui_wants_input_resource: Res<EguiWantsInput>) -> bool {
     egui_wants_input_resource.wants_any_pointer_input()
 }
 
 /// Returns `true` if any of the following is true:
-/// [`EguiWantsInput::wants_keyboard_input`], [`EguiWantsInput::is_context_menu_open`].
+/// [`EguiWantsInput::wants_keyboard_input`],
+/// [`EguiWantsInput::is_context_menu_open`].
 pub fn egui_wants_any_keyboard_input(egui_wants_input_resource: Res<EguiWantsInput>) -> bool {
     egui_wants_input_resource.wants_any_keyboard_input()
 }
 
 /// Returns `true` if any of the following is true:
-/// [`EguiWantsInput::wants_any_pointer_input`], [`EguiWantsInput::wants_any_keyboard_input`].
+/// [`EguiWantsInput::wants_any_pointer_input`],
+/// [`EguiWantsInput::wants_any_keyboard_input`].
 pub fn egui_wants_any_input(egui_wants_input_resource: Res<EguiWantsInput>) -> bool {
     egui_wants_input_resource.wants_any_input()
 }
 
 /// Custom input system for Marathon's vendored bevy_egui integration.
 ///
-/// This system reads from `InputEventBuffer` instead of Bevy's standard input messages.
-/// Since Marathon owns the winit event loop and doesn't use Bevy's `InputPlugin`,
-/// we provide input events through a custom buffer filled by the executor.
+/// This system reads from `InputEventBuffer` instead of Bevy's standard input
+/// messages. Since Marathon owns the winit event loop and doesn't use Bevy's
+/// `InputPlugin`, we provide input events through a custom buffer filled by the
+/// executor.
 ///
 /// Replaces bevy_egui's original systems:
 /// - `write_window_pointer_moved_messages_system`
@@ -1367,14 +1466,21 @@ pub fn egui_wants_any_input(egui_wants_input_resource: Res<EguiWantsInput>) -> b
 /// - `write_modifiers_keys_state_system`
 pub fn custom_input_system(
     input_buffer: Res<InputEventBuffer>,
-    mut egui_contexts: Query<(Entity, &EguiContextSettings, &mut EguiContextPointerPosition)>,
+    mut egui_contexts: Query<(
+        Entity,
+        &EguiContextSettings,
+        &mut EguiContextPointerPosition,
+    )>,
     mut egui_input_message_writer: MessageWriter<EguiInputEvent>,
     mut modifier_keys_state: ResMut<ModifierKeysState>,
 ) {
     let context_count = egui_contexts.iter().count();
     if !input_buffer.events.is_empty() {
-        log::info!("custom_input_system: {} events from buffer, {} egui contexts found",
-            input_buffer.events.len(), context_count);
+        log::info!(
+            "custom_input_system: {} events from buffer, {} egui contexts found",
+            input_buffer.events.len(),
+            context_count
+        );
     }
 
     // Track current pointer position for button events
@@ -1383,7 +1489,7 @@ pub fn custom_input_system(
 
     for event in input_buffer.events.iter() {
         match event {
-            InputEvent::MouseMove { pos } => {
+            | InputEvent::MouseMove { pos } => {
                 // Mouse cursor moved (hover, no button pressed)
                 current_pointer_pos = egui::Pos2::new(pos.x, pos.y);
 
@@ -1400,9 +1506,9 @@ pub fn custom_input_system(
                     });
                     messages_written += 1;
                 }
-            }
+            },
 
-            InputEvent::Mouse { pos, button, phase } => {
+            | InputEvent::Mouse { pos, button, phase } => {
                 // Mouse button event (press/release/drag)
                 // Update current pointer position
                 current_pointer_pos = egui::Pos2::new(pos.x, pos.y);
@@ -1414,13 +1520,13 @@ pub fn custom_input_system(
 
                 // Convert engine button to egui button
                 let egui_button = match button {
-                    EngineMouseButton::Left => egui::PointerButton::Primary,
-                    EngineMouseButton::Right => egui::PointerButton::Secondary,
-                    EngineMouseButton::Middle => egui::PointerButton::Middle,
+                    | EngineMouseButton::Left => egui::PointerButton::Primary,
+                    | EngineMouseButton::Right => egui::PointerButton::Secondary,
+                    | EngineMouseButton::Middle => egui::PointerButton::Middle,
                 };
 
                 match phase {
-                    TouchPhase::Started => {
+                    | TouchPhase::Started => {
                         // Mouse button pressed
                         for (entity, _settings, pointer_pos) in egui_contexts.iter() {
                             egui_input_message_writer.write(EguiInputEvent {
@@ -1434,8 +1540,8 @@ pub fn custom_input_system(
                             });
                             messages_written += 1;
                         }
-                    }
-                    TouchPhase::Ended => {
+                    },
+                    | TouchPhase::Ended => {
                         // Mouse button released
                         for (entity, _settings, pointer_pos) in egui_contexts.iter() {
                             egui_input_message_writer.write(EguiInputEvent {
@@ -1449,8 +1555,8 @@ pub fn custom_input_system(
                             });
                             messages_written += 1;
                         }
-                    }
-                    TouchPhase::Moved => {
+                    },
+                    | TouchPhase::Moved => {
                         // Mouse moved during drag
                         for (entity, _settings, _pointer_pos) in egui_contexts.iter() {
                             egui_input_message_writer.write(EguiInputEvent {
@@ -1459,12 +1565,12 @@ pub fn custom_input_system(
                             });
                             messages_written += 1;
                         }
-                    }
-                    _ => {}
+                    },
+                    | _ => {},
                 }
-            }
+            },
 
-            InputEvent::MouseWheel { delta, pos: _ } => {
+            | InputEvent::MouseWheel { delta, pos: _ } => {
                 // Mouse wheel scroll
                 for (entity, settings, _pointer_pos) in egui_contexts.iter() {
                     let scale_factor = settings.scale_factor;
@@ -1478,9 +1584,9 @@ pub fn custom_input_system(
                     });
                     messages_written += 1;
                 }
-            }
+            },
 
-            InputEvent::Keyboard {
+            | InputEvent::Keyboard {
                 key,
                 pressed,
                 modifiers,
@@ -1507,9 +1613,9 @@ pub fn custom_input_system(
                         messages_written += 1;
                     }
                 }
-            }
+            },
 
-            InputEvent::Text { text } => {
+            | InputEvent::Text { text } => {
                 // Send text input to egui
                 for (entity, _settings, _pointer_pos) in egui_contexts.iter() {
                     egui_input_message_writer.write(EguiInputEvent {
@@ -1518,70 +1624,73 @@ pub fn custom_input_system(
                     });
                     messages_written += 1;
                 }
-            }
+            },
 
-            _ => {
+            | _ => {
                 // Ignore stylus and touch events for now
-            }
+            },
         }
     }
 
     if messages_written > 0 {
-        log::info!("custom_input_system: wrote {} EguiInputEvent messages", messages_written);
+        log::info!(
+            "custom_input_system: wrote {} EguiInputEvent messages",
+            messages_written
+        );
     }
 }
 
 /// Convert engine KeyCode to egui Key
 fn engine_keycode_to_egui(key: EngineKeyCode) -> Option<egui::Key> {
-    use egui::Key as E;
     use EngineKeyCode as K;
+    use egui::Key as E;
 
     Some(match key {
-        K::KeyA => E::A,
-        K::KeyB => E::B,
-        K::KeyC => E::C,
-        K::KeyD => E::D,
-        K::KeyE => E::E,
-        K::KeyF => E::F,
-        K::KeyG => E::G,
-        K::KeyH => E::H,
-        K::KeyI => E::I,
-        K::KeyJ => E::J,
-        K::KeyK => E::K,
-        K::KeyL => E::L,
-        K::KeyM => E::M,
-        K::KeyN => E::N,
-        K::KeyO => E::O,
-        K::KeyP => E::P,
-        K::KeyQ => E::Q,
-        K::KeyR => E::R,
-        K::KeyS => E::S,
-        K::KeyT => E::T,
-        K::KeyU => E::U,
-        K::KeyV => E::V,
-        K::KeyW => E::W,
-        K::KeyX => E::X,
-        K::KeyY => E::Y,
-        K::KeyZ => E::Z,
-        K::Digit1 => E::Num1,
-        K::Digit2 => E::Num2,
-        K::Digit3 => E::Num3,
-        K::Digit4 => E::Num4,
-        K::Digit5 => E::Num5,
-        K::Digit6 => E::Num6,
-        K::Digit7 => E::Num7,
-        K::Digit8 => E::Num8,
-        K::Digit9 => E::Num9,
-        K::Digit0 => E::Num0,
-        K::Space => E::Space,
-        K::Enter => E::Enter,
-        K::Escape => E::Escape,
-        K::Backspace => E::Backspace,
-        K::Tab => E::Tab,
-        K::ArrowUp => E::ArrowUp,
-        K::ArrowDown => E::ArrowDown,
-        K::ArrowLeft => E::ArrowLeft,
-        K::ArrowRight => E::ArrowRight,
-        _ => return None, // Unmapped keys
+        | K::KeyA => E::A,
+        | K::KeyB => E::B,
+        | K::KeyC => E::C,
+        | K::KeyD => E::D,
+        | K::KeyE => E::E,
+        | K::KeyF => E::F,
+        | K::KeyG => E::G,
+        | K::KeyH => E::H,
+        | K::KeyI => E::I,
+        | K::KeyJ => E::J,
+        | K::KeyK => E::K,
+        | K::KeyL => E::L,
+        | K::KeyM => E::M,
+        | K::KeyN => E::N,
+        | K::KeyO => E::O,
+        | K::KeyP => E::P,
+        | K::KeyQ => E::Q,
+        | K::KeyR => E::R,
+        | K::KeyS => E::S,
+        | K::KeyT => E::T,
+        | K::KeyU => E::U,
+        | K::KeyV => E::V,
+        | K::KeyW => E::W,
+        | K::KeyX => E::X,
+        | K::KeyY => E::Y,
+        | K::KeyZ => E::Z,
+        | K::Digit1 => E::Num1,
+        | K::Digit2 => E::Num2,
+        | K::Digit3 => E::Num3,
+        | K::Digit4 => E::Num4,
+        | K::Digit5 => E::Num5,
+        | K::Digit6 => E::Num6,
+        | K::Digit7 => E::Num7,
+        | K::Digit8 => E::Num8,
+        | K::Digit9 => E::Num9,
+        | K::Digit0 => E::Num0,
+        | K::Space => E::Space,
+        | K::Enter => E::Enter,
+        | K::Escape => E::Escape,
+        | K::Backspace => E::Backspace,
+        | K::Tab => E::Tab,
+        | K::ArrowUp => E::ArrowUp,
+        | K::ArrowDown => E::ArrowDown,
+        | K::ArrowLeft => E::ArrowLeft,
+        | K::ArrowRight => E::ArrowRight,
+        | _ => return None, // Unmapped keys
     })
 }

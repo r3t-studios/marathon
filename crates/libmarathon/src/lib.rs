@@ -14,11 +14,17 @@
 //!
 //! ```no_run
 //! use bevy::prelude::*;
-//! use libmarathon::{MarathonPlugin, persistence::PersistenceConfig};
+//! use libmarathon::{
+//!     MarathonPlugin,
+//!     persistence::PersistenceConfig,
+//! };
 //!
 //! fn main() {
 //!     App::new()
-//!         .add_plugins(MarathonPlugin::new("my_app.db", PersistenceConfig::default()))
+//!         .add_plugins(MarathonPlugin::new(
+//!             "my_app.db",
+//!             PersistenceConfig::default(),
+//!         ))
 //!         .run();
 //! }
 //! ```
@@ -28,10 +34,10 @@ pub mod engine;
 pub mod networking;
 pub mod persistence;
 pub mod platform;
-pub mod render;  // Vendored Bevy rendering (bevy_render + bevy_core_pipeline + bevy_pbr)
-pub mod transform;  // Vendored Transform with rkyv support
-pub mod utils;
+pub mod render; // Vendored Bevy rendering (bevy_render + bevy_core_pipeline + bevy_pbr)
 pub mod sync;
+pub mod transform; // Vendored Transform with rkyv support
+pub mod utils;
 
 /// Unified Marathon plugin that bundles all core functionality.
 ///
@@ -69,7 +75,11 @@ impl MarathonPlugin {
     }
 
     /// Create a new MarathonPlugin with custom database path and config
-    pub fn with_custom_db(app_name: impl Into<String>, db_path: impl Into<std::path::PathBuf>, config: persistence::PersistenceConfig) -> Self {
+    pub fn with_custom_db(
+        app_name: impl Into<String>,
+        db_path: impl Into<std::path::PathBuf>,
+        config: persistence::PersistenceConfig,
+    ) -> Self {
         Self {
             app_name: app_name.into(),
             db_path: db_path.into(),

@@ -1,13 +1,34 @@
+use bevy_camera::{
+    ClearColor,
+    NormalizedRenderTarget,
+};
+use bevy_ecs::{
+    entity::ContainsEntity,
+    prelude::QueryState,
+    world::World,
+};
+use bevy_platform::collections::HashSet;
+use wgpu::{
+    LoadOp,
+    Operations,
+    RenderPassColorAttachment,
+    RenderPassDescriptor,
+    StoreOp,
+};
+
 use crate::render::{
-    camera::{ExtractedCamera, SortedCameras},
-    render_graph::{Node, NodeRunError, RenderGraphContext},
+    camera::{
+        ExtractedCamera,
+        SortedCameras,
+    },
+    render_graph::{
+        Node,
+        NodeRunError,
+        RenderGraphContext,
+    },
     renderer::RenderContext,
     view::ExtractedWindows,
 };
-use bevy_camera::{ClearColor, NormalizedRenderTarget};
-use bevy_ecs::{entity::ContainsEntity, prelude::QueryState, world::World};
-use bevy_platform::collections::HashSet;
-use wgpu::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp};
 
 pub struct CameraDriverNode {
     cameras: QueryState<&'static ExtractedCamera>,
@@ -25,6 +46,7 @@ impl Node for CameraDriverNode {
     fn update(&mut self, world: &mut World) {
         self.cameras.update_archetypes(world);
     }
+
     fn run(
         &self,
         graph: &mut RenderGraphContext,
@@ -49,7 +71,8 @@ impl Node for CameraDriverNode {
                 {
                     camera_windows.insert(window_entity);
                 } else {
-                    // The window doesn't exist anymore or zero-sized so we don't need to run the graph
+                    // The window doesn't exist anymore or zero-sized so we don't need to run the
+                    // graph
                     run_graph = false;
                 }
             }
@@ -60,8 +83,10 @@ impl Node for CameraDriverNode {
 
         let clear_color_global = world.resource::<ClearColor>();
 
-        // wgpu (and some backends) require doing work for swap chains if you call `get_current_texture()` and `present()`
-        // This ensures that Bevy doesn't crash, even when there are no cameras (and therefore no work submitted).
+        // wgpu (and some backends) require doing work for swap chains if you call
+        // `get_current_texture()` and `present()` This ensures that Bevy
+        // doesn't crash, even when there are no cameras (and therefore no work
+        // submitted).
         for (id, window) in world.resource::<ExtractedWindows>().iter() {
             if camera_windows.contains(id) && render_context.has_commands() {
                 continue;

@@ -1,29 +1,50 @@
-use crate::render::{
-    render_graph::{NodeState, RenderGraph, SlotInfos, SlotLabel, SlotType, SlotValue},
-    render_resource::{Buffer, Sampler, TextureView},
-};
 use std::borrow::Cow;
-use bevy_ecs::{entity::Entity, intern::Interned};
+
+use bevy_ecs::{
+    entity::Entity,
+    intern::Interned,
+};
 use thiserror::Error;
 
-use super::{InternedRenderSubGraph, RenderLabel, RenderSubGraph};
+use super::{
+    InternedRenderSubGraph,
+    RenderLabel,
+    RenderSubGraph,
+};
+use crate::render::{
+    render_graph::{
+        NodeState,
+        RenderGraph,
+        SlotInfos,
+        SlotLabel,
+        SlotType,
+        SlotValue,
+    },
+    render_resource::{
+        Buffer,
+        Sampler,
+        TextureView,
+    },
+};
 
-/// A command that signals the graph runner to run the sub graph corresponding to the `sub_graph`
-/// with the specified `inputs` next.
+/// A command that signals the graph runner to run the sub graph corresponding
+/// to the `sub_graph` with the specified `inputs` next.
 pub struct RunSubGraph {
     pub sub_graph: InternedRenderSubGraph,
     pub inputs: Vec<SlotValue>,
     pub view_entity: Option<Entity>,
 }
 
-/// The context with all graph information required to run a [`Node`](super::Node).
-/// This context is created for each node by the render graph runner.
+/// The context with all graph information required to run a
+/// [`Node`](super::Node). This context is created for each node by the render
+/// graph runner.
 ///
-/// The slot input can be read from here and the outputs must be written back to the context for
-/// passing them onto the next node.
+/// The slot input can be read from here and the outputs must be written back to
+/// the context for passing them onto the next node.
 ///
-/// Sub graphs can be queued for running by adding a [`RunSubGraph`] command to the context.
-/// After the node has finished running the graph runner is responsible for executing the sub graphs.
+/// Sub graphs can be queued for running by adding a [`RunSubGraph`] command to
+/// the context. After the node has finished running the graph runner is
+/// responsible for executing the sub graphs.
 pub struct RenderGraphContext<'a> {
     graph: &'a RenderGraph,
     node: &'a NodeState,
@@ -31,8 +52,8 @@ pub struct RenderGraphContext<'a> {
     outputs: &'a mut [Option<SlotValue>],
     run_sub_graphs: Vec<RunSubGraph>,
     /// The `view_entity` associated with the render graph being executed
-    /// This is optional because you aren't required to have a `view_entity` for a node.
-    /// For example, compute shader nodes don't have one.
+    /// This is optional because you aren't required to have a `view_entity` for
+    /// a node. For example, compute shader nodes don't have one.
     /// It should always be set when the [`RenderGraph`] is running on a View.
     view_entity: Option<Entity>,
 }
@@ -82,15 +103,16 @@ impl<'a> RenderGraphContext<'a> {
     }
 
     // TODO: should this return an Arc or a reference?
-    /// Retrieves the input slot value referenced by the `label` as a [`TextureView`].
+    /// Retrieves the input slot value referenced by the `label` as a
+    /// [`TextureView`].
     pub fn get_input_texture(
         &self,
         label: impl Into<SlotLabel>,
     ) -> Result<&TextureView, InputSlotError> {
         let label = label.into();
         match self.get_input(label.clone())? {
-            SlotValue::TextureView(value) => Ok(value),
-            value => Err(InputSlotError::MismatchedSlotType {
+            | SlotValue::TextureView(value) => Ok(value),
+            | value => Err(InputSlotError::MismatchedSlotType {
                 label,
                 actual: value.slot_type(),
                 expected: SlotType::TextureView,
@@ -98,15 +120,16 @@ impl<'a> RenderGraphContext<'a> {
         }
     }
 
-    /// Retrieves the input slot value referenced by the `label` as a [`Sampler`].
+    /// Retrieves the input slot value referenced by the `label` as a
+    /// [`Sampler`].
     pub fn get_input_sampler(
         &self,
         label: impl Into<SlotLabel>,
     ) -> Result<&Sampler, InputSlotError> {
         let label = label.into();
         match self.get_input(label.clone())? {
-            SlotValue::Sampler(value) => Ok(value),
-            value => Err(InputSlotError::MismatchedSlotType {
+            | SlotValue::Sampler(value) => Ok(value),
+            | value => Err(InputSlotError::MismatchedSlotType {
                 label,
                 actual: value.slot_type(),
                 expected: SlotType::Sampler,
@@ -114,12 +137,13 @@ impl<'a> RenderGraphContext<'a> {
         }
     }
 
-    /// Retrieves the input slot value referenced by the `label` as a [`Buffer`].
+    /// Retrieves the input slot value referenced by the `label` as a
+    /// [`Buffer`].
     pub fn get_input_buffer(&self, label: impl Into<SlotLabel>) -> Result<&Buffer, InputSlotError> {
         let label = label.into();
         match self.get_input(label.clone())? {
-            SlotValue::Buffer(value) => Ok(value),
-            value => Err(InputSlotError::MismatchedSlotType {
+            | SlotValue::Buffer(value) => Ok(value),
+            | value => Err(InputSlotError::MismatchedSlotType {
                 label,
                 actual: value.slot_type(),
                 expected: SlotType::Buffer,
@@ -127,12 +151,13 @@ impl<'a> RenderGraphContext<'a> {
         }
     }
 
-    /// Retrieves the input slot value referenced by the `label` as an [`Entity`].
+    /// Retrieves the input slot value referenced by the `label` as an
+    /// [`Entity`].
     pub fn get_input_entity(&self, label: impl Into<SlotLabel>) -> Result<Entity, InputSlotError> {
         let label = label.into();
         match self.get_input(label.clone())? {
-            SlotValue::Entity(value) => Ok(*value),
-            value => Err(InputSlotError::MismatchedSlotType {
+            | SlotValue::Entity(value) => Ok(*value),
+            | value => Err(InputSlotError::MismatchedSlotType {
                 label,
                 actual: value.slot_type(),
                 expected: SlotType::Entity,
@@ -242,7 +267,9 @@ pub enum RunSubGraphError {
     MissingSubGraph(InternedRenderSubGraph),
     #[error("attempted to pass inputs to sub-graph `{0:?}`, which has no input slots")]
     SubGraphHasNoInputs(InternedRenderSubGraph),
-    #[error("sub graph (name: `{graph_name:?}`) could not be run because slot `{slot_name}` at index {slot_index} has no value")]
+    #[error(
+        "sub graph (name: `{graph_name:?}`) could not be run because slot `{slot_name}` at index {slot_index} has no value"
+    )]
     MissingInput {
         slot_index: usize,
         slot_name: Cow<'static, str>,
@@ -262,7 +289,9 @@ pub enum RunSubGraphError {
 pub enum OutputSlotError {
     #[error("output slot `{0:?}` does not exist")]
     InvalidSlot(SlotLabel),
-    #[error("attempted to output a value of type `{actual}` to output slot `{label:?}`, which has type `{expected}`")]
+    #[error(
+        "attempted to output a value of type `{actual}` to output slot `{label:?}`, which has type `{expected}`"
+    )]
     MismatchedSlotType {
         label: SlotLabel,
         expected: SlotType,
@@ -274,7 +303,9 @@ pub enum OutputSlotError {
 pub enum InputSlotError {
     #[error("input slot `{0:?}` does not exist")]
     InvalidSlot(SlotLabel),
-    #[error("attempted to retrieve a value of type `{actual}` from input slot `{label:?}`, which has type `{expected}`")]
+    #[error(
+        "attempted to retrieve a value of type `{actual}` from input slot `{label:?}`, which has type `{expected}`"
+    )]
     MismatchedSlotType {
         label: SlotLabel,
         expected: SlotType,

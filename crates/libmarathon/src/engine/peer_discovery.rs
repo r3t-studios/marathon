@@ -1,11 +1,12 @@
 //! DHT-based peer discovery for session collaboration
 //!
-//! Each peer publishes their EndpointId to the DHT using a session-derived pkarr key.
-//! Other peers query the DHT to discover all peers in the session.
+//! Each peer publishes their EndpointId to the DHT using a session-derived
+//! pkarr key. Other peers query the DHT to discover all peers in the session.
+
+use std::time::Duration;
 
 use anyhow::Result;
 use iroh::EndpointId;
-use std::time::Duration;
 
 use crate::networking::SessionId;
 
@@ -14,15 +15,18 @@ pub async fn publish_peer_to_dht(
     our_endpoint_id: EndpointId,
     dht_client: &pkarr::Client,
 ) -> Result<()> {
-    use pkarr::dns::{self, rdata};
-    use pkarr::dns::rdata::RData;
+    use pkarr::dns::{
+        self,
+        rdata,
+        rdata::RData,
+    };
 
     let keypair = session_id.to_pkarr_keypair();
     let public_key = keypair.public_key();
 
     // Query DHT for existing peers in this session
     let existing_peers = match dht_client.resolve(&public_key).await {
-        Some(packet) => {
+        | Some(packet) => {
             let mut peers = Vec::new();
             for rr in packet.all_resource_records() {
                 if let RData::TXT(txt) = &rr.rdata {
@@ -30,7 +34,9 @@ pub async fn publish_peer_to_dht(
                         if let Some(hex) = txt_str.strip_prefix("peer=") {
                             if let Ok(bytes) = hex::decode(hex) {
                                 if bytes.len() == 32 {
-                                    if let Ok(endpoint_id) = EndpointId::from_bytes(&bytes.try_into().unwrap()) {
+                                    if let Ok(endpoint_id) =
+                                        EndpointId::from_bytes(&bytes.try_into().unwrap())
+                                    {
                                         // Don't include ourselves if we're already in the list
                                         if endpoint_id != our_endpoint_id {
                                             peers.push(endpoint_id);
@@ -43,8 +49,8 @@ pub async fn publish_peer_to_dht(
                 }
             }
             peers
-        }
-        None => Vec::new(),
+        },
+        | None => Vec::new(),
     };
 
     // Build packet with all peers (existing + ourselves)
@@ -87,22 +93,22 @@ pub async fn discover_peers_from_dht(
     dht_client: &pkarr::Client,
 ) -> Result<Vec<EndpointId>> {
     use pkarr::dns::rdata::RData;
-    
+
     let keypair = session_id.to_pkarr_keypair();
     let public_key = keypair.public_key();
-    
+
     // Query DHT for the session's public key
     let signed_packet = match dht_client.resolve(&public_key).await {
-        Some(packet) => packet,
-        None => {
+        | Some(packet) => packet,
+        | None => {
             tracing::debug!("No peers found in DHT for session {}", session_id.to_code());
             return Ok(vec![]);
-        }
+        },
     };
-    
+
     // Parse TXT records to extract peer endpoint IDs
     let mut peers = Vec::new();
-    
+
     for rr in signed_packet.all_resource_records() {
         if let RData::TXT(txt) = &rr.rdata {
             // Try to parse as a String
@@ -111,7 +117,9 @@ pub async fn discover_peers_from_dht(
                 if let Some(hex) = txt_str.strip_prefix("peer=") {
                     if let Ok(bytes) = hex::decode(hex) {
                         if bytes.len() == 32 {
-                            if let Ok(endpoint_id) = EndpointId::from_bytes(&bytes.try_into().unwrap()) {
+                            if let Ok(endpoint_id) =
+                                EndpointId::from_bytes(&bytes.try_into().unwrap())
+                            {
                                 peers.push(endpoint_id);
                             }
                         }
@@ -120,13 +128,13 @@ pub async fn discover_peers_from_dht(
             }
         }
     }
-    
+
     tracing::info!(
         "Discovered {} peers from DHT for session {}",
         peers.len(),
         session_id.to_code()
     );
-    
+
     Ok(peers)
 }
 

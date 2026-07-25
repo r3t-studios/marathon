@@ -1,32 +1,52 @@
-use crate::render::{
-    render_graph::{
-        Edge, InputSlotError, OutputSlotError, RenderGraphContext, RenderGraphError,
-        RunSubGraphError, SlotInfo, SlotInfos,
-    },
-    render_phase::DrawError,
-    renderer::RenderContext,
-};
+use core::fmt::Debug;
+
 pub use bevy_ecs::label::DynEq;
 use bevy_ecs::{
     define_label,
     intern::Interned,
-    query::{QueryItem, QueryState, ReadOnlyQueryData},
-    world::{FromWorld, World},
+    query::{
+        QueryItem,
+        QueryState,
+        ReadOnlyQueryData,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
-use core::fmt::Debug;
-use downcast_rs::{impl_downcast, Downcast};
+use downcast_rs::{
+    Downcast,
+    impl_downcast,
+};
+pub use libmarathon_macros::RenderLabel;
 use thiserror::Error;
 use variadics_please::all_tuples_with_size;
 
-pub use libmarathon_macros::RenderLabel;
-
-use super::{InternedRenderSubGraph, RenderSubGraph};
+use super::{
+    InternedRenderSubGraph,
+    RenderSubGraph,
+};
+use crate::render::{
+    render_graph::{
+        Edge,
+        InputSlotError,
+        OutputSlotError,
+        RenderGraphContext,
+        RenderGraphError,
+        RunSubGraphError,
+        SlotInfo,
+        SlotInfos,
+    },
+    render_phase::DrawError,
+    renderer::RenderContext,
+};
 
 define_label!(
     #[diagnostic::on_unimplemented(
         note = "consider annotating `{Self}` with `#[derive(RenderLabel)]`"
     )]
-    /// A strongly-typed class of labels used to identify a [`Node`] in a render graph.
+    /// A strongly-typed class of labels used to identify a [`Node`] in a render
+    /// graph.
     RenderLabel,
     RENDER_LABEL_INTERNER
 );
@@ -62,35 +82,39 @@ all_tuples_with_size!(
 
 /// A render node that can be added to a [`RenderGraph`](super::RenderGraph).
 ///
-/// Nodes are the fundamental part of the graph and used to extend its functionality, by
-/// generating draw calls and/or running subgraphs.
+/// Nodes are the fundamental part of the graph and used to extend its
+/// functionality, by generating draw calls and/or running subgraphs.
 /// They are added via the `render_graph::add_node(my_node)` method.
 ///
-/// To determine their position in the graph and ensure that all required dependencies (inputs)
-/// are already executed, [`Edges`](Edge) are used.
+/// To determine their position in the graph and ensure that all required
+/// dependencies (inputs) are already executed, [`Edges`](Edge) are used.
 ///
 /// A node can produce outputs used as dependencies by other nodes.
-/// Those inputs and outputs are called slots and are the default way of passing render data
-/// inside the graph. For more information see [`SlotType`](super::SlotType).
+/// Those inputs and outputs are called slots and are the default way of passing
+/// render data inside the graph. For more information see
+/// [`SlotType`](super::SlotType).
 pub trait Node: Downcast + Send + Sync + 'static {
     /// Specifies the required input slots for this node.
-    /// They will then be available during the run method inside the [`RenderGraphContext`].
+    /// They will then be available during the run method inside the
+    /// [`RenderGraphContext`].
     fn input(&self) -> Vec<SlotInfo> {
         Vec::new()
     }
 
     /// Specifies the produced output slots for this node.
-    /// They can then be passed one inside [`RenderGraphContext`] during the run method.
+    /// They can then be passed one inside [`RenderGraphContext`] during the run
+    /// method.
     fn output(&self) -> Vec<SlotInfo> {
         Vec::new()
     }
 
-    /// Updates internal node state using the current render [`World`] prior to the run method.
+    /// Updates internal node state using the current render [`World`] prior to
+    /// the run method.
     fn update(&mut self, _world: &mut World) {}
 
-    /// Runs the graph node logic, issues draw calls, updates the output slots and
-    /// optionally queues up subgraphs for execution. The graph data, input and output values are
-    /// passed via the [`RenderGraphContext`].
+    /// Runs the graph node logic, issues draw calls, updates the output slots
+    /// and optionally queues up subgraphs for execution. The graph data,
+    /// input and output values are passed via the [`RenderGraphContext`].
     fn run<'w>(
         &self,
         graph: &mut RenderGraphContext,
@@ -246,12 +270,11 @@ impl Debug for NodeState {
 }
 
 impl NodeState {
-    /// Creates an [`NodeState`] without edges, but the `input_slots` and `output_slots`
-    /// are provided by the `node`.
+    /// Creates an [`NodeState`] without edges, but the `input_slots` and
+    /// `output_slots` are provided by the `node`.
     pub fn new<T>(label: InternedRenderLabel, node: T) -> Self
     where
-        T: Node,
-    {
+        T: Node, {
         NodeState {
             label,
             input_slots: node.input().into(),
@@ -269,8 +292,7 @@ impl NodeState {
     /// Retrieves the [`Node`].
     pub fn node<T>(&self) -> Result<&T, RenderGraphError>
     where
-        T: Node,
-    {
+        T: Node, {
         self.node
             .downcast_ref::<T>()
             .ok_or(RenderGraphError::WrongNodeType)
@@ -279,8 +301,7 @@ impl NodeState {
     /// Retrieves the [`Node`] mutably.
     pub fn node_mut<T>(&mut self) -> Result<&mut T, RenderGraphError>
     where
-        T: Node,
-    {
+        T: Node, {
         self.node
             .downcast_mut::<T>()
             .ok_or(RenderGraphError::WrongNodeType)
@@ -305,8 +326,8 @@ impl NodeState {
     }
 }
 
-/// A [`Node`] without any inputs, outputs and subgraphs, which does nothing when run.
-/// Used (as a label) to bundle multiple dependencies into one inside
+/// A [`Node`] without any inputs, outputs and subgraphs, which does nothing
+/// when run. Used (as a label) to bundle multiple dependencies into one inside
 /// the [`RenderGraph`](super::RenderGraph).
 #[derive(Default)]
 pub struct EmptyNode;
@@ -322,8 +343,8 @@ impl Node for EmptyNode {
     }
 }
 
-/// A [`RenderGraph`](super::RenderGraph) [`Node`] that runs the configured subgraph once.
-/// This makes it easier to insert sub-graph runs into a graph.
+/// A [`RenderGraph`](super::RenderGraph) [`Node`] that runs the configured
+/// subgraph once. This makes it easier to insert sub-graph runs into a graph.
 pub struct RunGraphOnViewNode {
     sub_graph: InternedRenderSubGraph,
 }
@@ -348,20 +369,23 @@ impl Node for RunGraphOnViewNode {
     }
 }
 
-/// This trait should be used instead of the [`Node`] trait when making a render node that runs on a view.
+/// This trait should be used instead of the [`Node`] trait when making a render
+/// node that runs on a view.
 ///
 /// It is intended to be used with [`ViewNodeRunner`]
 pub trait ViewNode {
     /// The query that will be used on the view entity.
-    /// It is guaranteed to run on the view entity, so there's no need for a filter
+    /// It is guaranteed to run on the view entity, so there's no need for a
+    /// filter
     type ViewQuery: ReadOnlyQueryData;
 
-    /// Updates internal node state using the current render [`World`] prior to the run method.
+    /// Updates internal node state using the current render [`World`] prior to
+    /// the run method.
     fn update(&mut self, _world: &mut World) {}
 
-    /// Runs the graph node logic, issues draw calls, updates the output slots and
-    /// optionally queues up subgraphs for execution. The graph data, input and output values are
-    /// passed via the [`RenderGraphContext`].
+    /// Runs the graph node logic, issues draw calls, updates the output slots
+    /// and optionally queues up subgraphs for execution. The graph data,
+    /// input and output values are passed via the [`RenderGraphContext`].
     fn run<'w>(
         &self,
         graph: &mut RenderGraphContext,
@@ -372,9 +396,11 @@ pub trait ViewNode {
 }
 
 /// This [`Node`] can be used to run any [`ViewNode`].
-/// It will take care of updating the view query in `update()` and running the query in `run()`.
+/// It will take care of updating the view query in `update()` and running the
+/// query in `run()`.
 ///
-/// This [`Node`] exists to help reduce boilerplate when making a render node that runs on a view.
+/// This [`Node`] exists to help reduce boilerplate when making a render node
+/// that runs on a view.
 pub struct ViewNodeRunner<N: ViewNode> {
     view_query: QueryState<N::ViewQuery>,
     node: N,

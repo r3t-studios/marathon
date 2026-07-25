@@ -4,14 +4,21 @@
 //! `EngineBridge::poll_events()` every tick and dispatches EngineEvents to Bevy
 //! (spawn entities, update transforms, update locks, emit Bevy messages, etc.)
 //!
-//! NOTE: The bridge is ECS-agnostic. Later we can create adapters for other engines
-//! like Flecs once we're closer to release.
+//! NOTE: The bridge is ECS-agnostic. Later we can create adapters for other
+//! engines like Flecs once we're closer to release.
 
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use bevy::prelude::Resource;
 
-use super::{EngineCommand, EngineEvent};
+use bevy::prelude::Resource;
+use tokio::sync::{
+    Mutex,
+    mpsc,
+};
+
+use super::{
+    EngineCommand,
+    EngineEvent,
+};
 
 /// Shared bridge between Bevy and Core Engine
 #[derive(Clone, Resource)]
@@ -27,7 +34,8 @@ pub struct EngineHandle {
 }
 
 impl EngineBridge {
-    /// Create a new bridge and return both the Bevy-side bridge and Engine-side handle
+    /// Create a new bridge and return both the Bevy-side bridge and Engine-side
+    /// handle
     pub fn new() -> (Self, EngineHandle) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();

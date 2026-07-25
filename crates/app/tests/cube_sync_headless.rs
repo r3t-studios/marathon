@@ -14,19 +14,19 @@ use std::{
 use anyhow::Result;
 use app::CubeMarker;
 use bevy::{
+    MinimalPlugins,
     app::{
         App,
         ScheduleRunnerPlugin,
     },
     ecs::world::World,
     prelude::*,
-    MinimalPlugins,
 };
 use bytes::Bytes;
 use futures_lite::StreamExt;
 use iroh::{
-    protocol::Router,
     Endpoint,
+    protocol::Router,
 };
 use iroh_gossip::{
     api::{
@@ -306,7 +306,9 @@ mod test_utils {
                         "[Node {}] Sending message #{} via gossip",
                         node_id, msg_count
                     );
-                    match rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned_msg).map(|b| b.to_vec()) {
+                    match rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned_msg)
+                        .map(|b| b.to_vec())
+                    {
                         | Ok(bytes) => {
                             if let Err(e) = sender.broadcast(Bytes::from(bytes)).await {
                                 eprintln!("[Node {}] Failed to broadcast message: {}", node_id, e);
@@ -347,7 +349,9 @@ mod test_utils {
                                 "[Node {}] Received message #{} from gossip",
                                 node_id, msg_count
                             );
-                            match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content) {
+                            match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(
+                                &msg.content,
+                            ) {
                                 | Ok(versioned_msg) => {
                                     if let Err(e) = bridge_in.push_incoming(versioned_msg) {
                                         eprintln!(

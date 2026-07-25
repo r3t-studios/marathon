@@ -1,6 +1,11 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, parse_quote, DeriveInput, Path};
+use syn::{
+    DeriveInput,
+    Path,
+    parse_macro_input,
+    parse_quote,
+};
 
 pub fn derive_extract_component(input: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(input as DeriveInput);
@@ -23,8 +28,8 @@ pub fn derive_extract_component(input: TokenStream) -> TokenStream {
         .find(|a| a.path().is_ident("extract_component_filter"))
     {
         let filter = match attr.parse_args::<syn::Type>() {
-            Ok(filter) => filter,
-            Err(e) => return e.to_compile_error().into(),
+            | Ok(filter) => filter,
+            | Err(e) => return e.to_compile_error().into(),
         };
 
         quote! {

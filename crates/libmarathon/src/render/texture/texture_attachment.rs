@@ -1,13 +1,26 @@
-use super::CachedTexture;
-use crate::render::render_resource::{TextureFormat, TextureView};
+use core::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 use std::sync::Arc;
+
 use bevy_color::LinearRgba;
-use core::sync::atomic::{AtomicBool, Ordering};
 use wgpu::{
-    LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment, StoreOp,
+    LoadOp,
+    Operations,
+    RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment,
+    StoreOp,
 };
 
-/// A wrapper for a [`CachedTexture`] that is used as a [`RenderPassColorAttachment`].
+use super::CachedTexture;
+use crate::render::render_resource::{
+    TextureFormat,
+    TextureView,
+};
+
+/// A wrapper for a [`CachedTexture`] that is used as a
+/// [`RenderPassColorAttachment`].
 #[derive(Clone)]
 pub struct ColorAttachment {
     pub texture: CachedTexture,
@@ -30,10 +43,12 @@ impl ColorAttachment {
         }
     }
 
-    /// Get this texture view as an attachment. The attachment will be cleared with a value of
-    /// `clear_color` if this is the first time calling this function, otherwise it will be loaded.
+    /// Get this texture view as an attachment. The attachment will be cleared
+    /// with a value of `clear_color` if this is the first time calling this
+    /// function, otherwise it will be loaded.
     ///
-    /// The returned attachment will always have writing enabled (`store: StoreOp::Load`).
+    /// The returned attachment will always have writing enabled (`store:
+    /// StoreOp::Load`).
     pub fn get_attachment(&self) -> RenderPassColorAttachment<'_> {
         if let Some(resolve_target) = self.resolve_target.as_ref() {
             let first_call = self.is_first_call.fetch_and(false, Ordering::SeqCst);
@@ -44,8 +59,8 @@ impl ColorAttachment {
                 resolve_target: Some(&self.texture.default_view),
                 ops: Operations {
                     load: match (self.clear_color, first_call) {
-                        (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
-                        (None, _) | (Some(_), false) => LoadOp::Load,
+                        | (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
+                        | (None, _) | (Some(_), false) => LoadOp::Load,
                     },
                     store: StoreOp::Store,
                 },
@@ -55,10 +70,12 @@ impl ColorAttachment {
         }
     }
 
-    /// Get this texture view as an attachment, without the resolve target. The attachment will be cleared with
-    /// a value of `clear_color` if this is the first time calling this function, otherwise it will be loaded.
+    /// Get this texture view as an attachment, without the resolve target. The
+    /// attachment will be cleared with a value of `clear_color` if this is
+    /// the first time calling this function, otherwise it will be loaded.
     ///
-    /// The returned attachment will always have writing enabled (`store: StoreOp::Load`).
+    /// The returned attachment will always have writing enabled (`store:
+    /// StoreOp::Load`).
     pub fn get_unsampled_attachment(&self) -> RenderPassColorAttachment<'_> {
         let first_call = self.is_first_call.fetch_and(false, Ordering::SeqCst);
 
@@ -68,8 +85,8 @@ impl ColorAttachment {
             resolve_target: None,
             ops: Operations {
                 load: match (self.clear_color, first_call) {
-                    (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
-                    (None, _) | (Some(_), false) => LoadOp::Load,
+                    | (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
+                    | (None, _) | (Some(_), false) => LoadOp::Load,
                 },
                 store: StoreOp::Store,
             },
@@ -81,7 +98,8 @@ impl ColorAttachment {
     }
 }
 
-/// A wrapper for a [`TextureView`] that is used as a depth-only [`RenderPassDepthStencilAttachment`].
+/// A wrapper for a [`TextureView`] that is used as a depth-only
+/// [`RenderPassDepthStencilAttachment`].
 #[derive(Clone)]
 pub struct DepthAttachment {
     pub view: TextureView,
@@ -98,9 +116,10 @@ impl DepthAttachment {
         }
     }
 
-    /// Get this texture view as an attachment. The attachment will be cleared with a value of
-    /// `clear_value` if this is the first time calling this function with `store` == [`StoreOp::Store`],
-    /// and a clear value was provided, otherwise it will be loaded.
+    /// Get this texture view as an attachment. The attachment will be cleared
+    /// with a value of `clear_value` if this is the first time calling this
+    /// function with `store` == [`StoreOp::Store`], and a clear value was
+    /// provided, otherwise it will be loaded.
     pub fn get_attachment(&self, store: StoreOp) -> RenderPassDepthStencilAttachment<'_> {
         let first_call = self
             .is_first_call
@@ -110,7 +129,8 @@ impl DepthAttachment {
             view: &self.view,
             depth_ops: Some(Operations {
                 load: if first_call {
-                    // If first_call is true, then a clear value will always have been provided in the constructor
+                    // If first_call is true, then a clear value will always have been provided in
+                    // the constructor
                     LoadOp::Clear(self.clear_value.unwrap())
                 } else {
                     LoadOp::Load
@@ -122,8 +142,8 @@ impl DepthAttachment {
     }
 }
 
-/// A wrapper for a [`TextureView`] that is used as a [`RenderPassColorAttachment`] for a view
-/// target's final output texture.
+/// A wrapper for a [`TextureView`] that is used as a
+/// [`RenderPassColorAttachment`] for a view target's final output texture.
 #[derive(Clone)]
 pub struct OutputColorAttachment {
     pub view: TextureView,
@@ -140,9 +160,9 @@ impl OutputColorAttachment {
         }
     }
 
-    /// Get this texture view as an attachment. The attachment will be cleared with a value of
-    /// the provided `clear_color` if this is the first time calling this function, otherwise it
-    /// will be loaded.
+    /// Get this texture view as an attachment. The attachment will be cleared
+    /// with a value of the provided `clear_color` if this is the first time
+    /// calling this function, otherwise it will be loaded.
     pub fn get_attachment(&self, clear_color: Option<LinearRgba>) -> RenderPassColorAttachment<'_> {
         let first_call = self.is_first_call.fetch_and(false, Ordering::SeqCst);
 
@@ -152,8 +172,8 @@ impl OutputColorAttachment {
             resolve_target: None,
             ops: Operations {
                 load: match (clear_color, first_call) {
-                    (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
-                    (None, _) | (Some(_), false) => LoadOp::Load,
+                    | (Some(clear_color), true) => LoadOp::Clear(clear_color.into()),
+                    | (None, _) | (Some(_), false) => LoadOp::Load,
                 },
                 store: StoreOp::Store,
             },

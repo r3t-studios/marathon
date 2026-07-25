@@ -1,15 +1,16 @@
-//! The modular rendering abstraction responsible for queuing, preparing, sorting and drawing
-//! entities as part of separate render phases.
+//! The modular rendering abstraction responsible for queuing, preparing,
+//! sorting and drawing entities as part of separate render phases.
 //!
-//! In Bevy each view (camera, or shadow-casting light, etc.) has one or multiple render phases
-//! (e.g. opaque, transparent, shadow, etc).
+//! In Bevy each view (camera, or shadow-casting light, etc.) has one or
+//! multiple render phases (e.g. opaque, transparent, shadow, etc).
 //! They are used to queue entities for rendering.
-//! Multiple phases might be required due to different sorting/batching behaviors
-//! (e.g. opaque: front to back, transparent: back to front) or because one phase depends on
-//! the rendered texture of the previous phase (e.g. for screen-space reflections).
+//! Multiple phases might be required due to different sorting/batching
+//! behaviors (e.g. opaque: front to back, transparent: back to front) or
+//! because one phase depends on the rendered texture of the previous phase
+//! (e.g. for screen-space reflections).
 //!
-//! To draw an entity, a corresponding [`PhaseItem`] has to be added to one or multiple of these
-//! render phases for each view that it is visible in.
+//! To draw an entity, a corresponding [`PhaseItem`] has to be added to one or
+//! multiple of these render phases for each view that it is visible in.
 //! This must be done in the [`RenderSystems::Queue`].
 //! After that the render phase sorts them in the [`RenderSystems::PhaseSort`].
 //! Finally the items are rendered using a single [`TrackedRenderPass`], during
@@ -18,60 +19,103 @@
 //! Therefore each phase item is assigned a [`Draw`] function.
 //! These set up the state of the [`TrackedRenderPass`] (i.e. select the
 //! [`RenderPipeline`](crate::render_resource::RenderPipeline), configure the
-//! [`BindGroup`](crate::render_resource::BindGroup)s, etc.) and then issue a draw call,
-//! for the corresponding item.
+//! [`BindGroup`](crate::render_resource::BindGroup)s, etc.) and then issue a
+//! draw call, for the corresponding item.
 //!
-//! The [`Draw`] function trait can either be implemented directly or such a function can be
-//! created by composing multiple [`RenderCommand`]s.
+//! The [`Draw`] function trait can either be implemented directly or such a
+//! function can be created by composing multiple [`RenderCommand`]s.
 
 mod draw;
 mod draw_state;
 mod rangefinder;
 
-use bevy_app::{App, Plugin};
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::component::Tick;
-use bevy_ecs::entity::EntityHash;
-use bevy_platform::collections::{hash_map::Entry, HashMap};
+use core::{
+    fmt::Debug,
+    hash::Hash,
+    iter,
+    marker::PhantomData,
+    ops::Range,
+    slice::SliceIndex,
+};
+
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_ecs::{
+    component::Tick,
+    define_label,
+    entity::EntityHash,
+    intern::Interned,
+    prelude::*,
+    system::{
+        SystemParamItem,
+        lifetimeless::SRes,
+    },
+};
+use bevy_platform::collections::{
+    HashMap,
+    hash_map::Entry,
+};
 use bevy_utils::default;
 pub use draw::*;
 pub use draw_state::*;
-use encase::{internal::WriteInto, ShaderSize};
-use fixedbitset::{Block, FixedBitSet};
+use encase::{
+    ShaderSize,
+    internal::WriteInto,
+};
+use fixedbitset::{
+    Block,
+    FixedBitSet,
+};
 use indexmap::IndexMap;
+pub use libmarathon_macros::ShaderLabel;
 use nonmax::NonMaxU32;
 pub use rangefinder::*;
-use wgpu::Features;
-
-use crate::render::batching::gpu_preprocessing::{
-    GpuPreprocessingMode, GpuPreprocessingSupport, PhaseBatchedInstanceBuffers,
-    PhaseIndirectParametersBuffers,
-};
-use crate::render::renderer::RenderDevice;
-use crate::render::sync_world::{MainEntity, MainEntityHashMap};
-use crate::render::view::RetainedViewEntity;
-use crate::render::RenderDebugFlags;
-use crate::render::{
-    batching::{
-        self,
-        gpu_preprocessing::{self, BatchedInstanceBuffers},
-        no_gpu_preprocessing::{self, BatchedInstanceBuffer},
-        GetFullBatchData,
-    },
-    render_resource::{CachedRenderPipelineId, GpuArrayBufferIndex, PipelineCache},
-    Render, RenderApp, RenderSystems,
-};
-use bevy_ecs::intern::Interned;
-use bevy_ecs::{
-    define_label,
-    prelude::*,
-    system::{lifetimeless::SRes, SystemParamItem},
-};
-use crate::render::renderer::RenderAdapterInfo;
-pub use libmarathon_macros::ShaderLabel;
-use core::{fmt::Debug, hash::Hash, iter, marker::PhantomData, ops::Range, slice::SliceIndex};
 use smallvec::SmallVec;
 use tracing::warn;
+use wgpu::Features;
+
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderDebugFlags,
+    RenderSystems,
+    batching::{
+        self,
+        GetFullBatchData,
+        gpu_preprocessing::{
+            self,
+            BatchedInstanceBuffers,
+            GpuPreprocessingMode,
+            GpuPreprocessingSupport,
+            PhaseBatchedInstanceBuffers,
+            PhaseIndirectParametersBuffers,
+        },
+        no_gpu_preprocessing::{
+            self,
+            BatchedInstanceBuffer,
+        },
+    },
+    render_resource::{
+        CachedRenderPipelineId,
+        GpuArrayBufferIndex,
+        PipelineCache,
+    },
+    renderer::{
+        RenderAdapterInfo,
+        RenderDevice,
+    },
+    sync_world::{
+        MainEntity,
+        MainEntityHashMap,
+    },
+    view::RetainedViewEntity,
+};
 
 define_label!(
     #[diagnostic::on_unimplemented(
@@ -108,24 +152,24 @@ pub struct ViewBinnedRenderPhases<BPI>(pub HashMap<RetainedViewEntity, BinnedRen
 where
     BPI: BinnedPhaseItem;
 
-/// A collection of all rendering instructions, that will be executed by the GPU, for a
-/// single render phase for a single view.
+/// A collection of all rendering instructions, that will be executed by the
+/// GPU, for a single render phase for a single view.
 ///
-/// Each view (camera, or shadow-casting light, etc.) can have one or multiple render phases.
-/// They are used to queue entities for rendering.
-/// Multiple phases might be required due to different sorting/batching behaviors
-/// (e.g. opaque: front to back, transparent: back to front) or because one phase depends on
-/// the rendered texture of the previous phase (e.g. for screen-space reflections).
-/// All [`PhaseItem`]s are then rendered using a single [`TrackedRenderPass`].
-/// The render pass might be reused for multiple phases to reduce GPU overhead.
+/// Each view (camera, or shadow-casting light, etc.) can have one or multiple
+/// render phases. They are used to queue entities for rendering.
+/// Multiple phases might be required due to different sorting/batching
+/// behaviors (e.g. opaque: front to back, transparent: back to front) or
+/// because one phase depends on the rendered texture of the previous phase
+/// (e.g. for screen-space reflections). All [`PhaseItem`]s are then rendered
+/// using a single [`TrackedRenderPass`]. The render pass might be reused for
+/// multiple phases to reduce GPU overhead.
 ///
 /// This flavor of render phase is used for phases in which the ordering is less
 /// critical: for example, `Opaque3d`. It's generally faster than the
 /// alternative [`SortedRenderPhase`].
 pub struct BinnedRenderPhase<BPI>
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     /// The multidrawable bins.
     ///
     /// Each batch set key maps to a *batch set*, which in this case is a set of
@@ -195,8 +239,8 @@ where
     /// remove the entity from the old bin during
     /// [`BinnedRenderPhase::sweep_old_entities`].
     entities_that_changed_bins: Vec<EntityThatChangedBins<BPI>>,
-    /// The gpu preprocessing mode configured for the view this phase is associated
-    /// with.
+    /// The gpu preprocessing mode configured for the view this phase is
+    /// associated with.
     gpu_preprocessing_mode: GpuPreprocessingMode,
 }
 
@@ -213,8 +257,7 @@ pub struct RenderBin {
 /// previous frame and is in a different bin this frame.
 struct EntityThatChangedBins<BPI>
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     /// The entity.
     main_entity: MainEntity,
     /// The key that identifies the bin that this entity used to be in.
@@ -224,8 +267,7 @@ where
 /// Information that we keep about an entity currently within a bin.
 pub struct CachedBinnedEntity<BPI>
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     /// Information that we use to identify a cached entity in a bin.
     pub cached_bin_key: Option<CachedBinKey<BPI>>,
     /// The last modified tick of the entity.
@@ -237,8 +279,7 @@ where
 /// Information that we use to identify a cached entity in a bin.
 pub struct CachedBinKey<BPI>
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     /// The key of the batch set containing the entity.
     pub batch_set_key: BPI::BatchSetKey,
     /// The key of the bin containing the entity.
@@ -278,9 +319,9 @@ where
     BPI: BinnedPhaseItem,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.batch_set_key == other.batch_set_key
-            && self.bin_key == other.bin_key
-            && self.phase_type == other.phase_type
+        self.batch_set_key == other.batch_set_key &&
+            self.bin_key == other.bin_key &&
+            self.phase_type == other.phase_type
     }
 }
 
@@ -321,9 +362,9 @@ pub struct BinnedRenderPhaseBatchSet<BK> {
 impl<BK> BinnedRenderPhaseBatchSets<BK> {
     fn clear(&mut self) {
         match *self {
-            BinnedRenderPhaseBatchSets::DynamicUniforms(ref mut vec) => vec.clear(),
-            BinnedRenderPhaseBatchSets::Direct(ref mut vec) => vec.clear(),
-            BinnedRenderPhaseBatchSets::MultidrawIndirect(ref mut vec) => vec.clear(),
+            | BinnedRenderPhaseBatchSets::DynamicUniforms(ref mut vec) => vec.clear(),
+            | BinnedRenderPhaseBatchSets::Direct(ref mut vec) => vec.clear(),
+            | BinnedRenderPhaseBatchSets::MultidrawIndirect(ref mut vec) => vec.clear(),
         }
     }
 }
@@ -395,7 +436,8 @@ pub(crate) enum UnbatchableBinnedEntityIndexSet {
     Dense(Vec<UnbatchableBinnedEntityIndices>),
 }
 
-/// The instance index and dynamic offset (if present) for an unbatchable entity.
+/// The instance index and dynamic offset (if present) for an unbatchable
+/// entity.
 ///
 /// This is only useful on platforms that don't support storage buffers.
 #[derive(Clone)]
@@ -414,8 +456,8 @@ pub enum BinnedRenderPhaseType {
     /// can be batched with other meshes of the same type.
     MultidrawableMesh,
 
-    /// The item is a mesh that can be batched with other meshes of the same type and
-    /// drawn in a single draw call.
+    /// The item is a mesh that can be batched with other meshes of the same
+    /// type and drawn in a single draw call.
     BatchableMesh,
 
     /// The item is a mesh that's eligible for indirect rendering, but can't be
@@ -463,10 +505,10 @@ where
         gpu_preprocessing: GpuPreprocessingMode,
     ) {
         match self.entry(retained_view_entity) {
-            Entry::Occupied(mut entry) => entry.get_mut().prepare_for_new_frame(),
-            Entry::Vacant(entry) => {
+            | Entry::Occupied(mut entry) => entry.get_mut().prepare_for_new_frame(),
+            | Entry::Vacant(entry) => {
                 entry.insert(BinnedRenderPhase::<BPI>::new(gpu_preprocessing));
-            }
+            },
         }
     }
 }
@@ -504,82 +546,82 @@ where
     ) {
         // If the user has overridden indirect drawing for this view, we need to
         // force the phase type to be batchable instead.
-        if self.gpu_preprocessing_mode == GpuPreprocessingMode::PreprocessingOnly
-            && phase_type == BinnedRenderPhaseType::MultidrawableMesh
+        if self.gpu_preprocessing_mode == GpuPreprocessingMode::PreprocessingOnly &&
+            phase_type == BinnedRenderPhaseType::MultidrawableMesh
         {
             phase_type = BinnedRenderPhaseType::BatchableMesh;
         }
 
         match phase_type {
-            BinnedRenderPhaseType::MultidrawableMesh => {
+            | BinnedRenderPhaseType::MultidrawableMesh => {
                 match self.multidrawable_meshes.entry(batch_set_key.clone()) {
-                    indexmap::map::Entry::Occupied(mut entry) => {
+                    | indexmap::map::Entry::Occupied(mut entry) => {
                         entry
                             .get_mut()
                             .entry(bin_key.clone())
                             .or_default()
                             .insert(main_entity, input_uniform_index);
-                    }
-                    indexmap::map::Entry::Vacant(entry) => {
+                    },
+                    | indexmap::map::Entry::Vacant(entry) => {
                         let mut new_batch_set = IndexMap::default();
                         new_batch_set.insert(
                             bin_key.clone(),
                             RenderBin::from_entity(main_entity, input_uniform_index),
                         );
                         entry.insert(new_batch_set);
-                    }
+                    },
                 }
-            }
+            },
 
-            BinnedRenderPhaseType::BatchableMesh => {
+            | BinnedRenderPhaseType::BatchableMesh => {
                 match self
                     .batchable_meshes
                     .entry((batch_set_key.clone(), bin_key.clone()).clone())
                 {
-                    indexmap::map::Entry::Occupied(mut entry) => {
+                    | indexmap::map::Entry::Occupied(mut entry) => {
                         entry.get_mut().insert(main_entity, input_uniform_index);
-                    }
-                    indexmap::map::Entry::Vacant(entry) => {
+                    },
+                    | indexmap::map::Entry::Vacant(entry) => {
                         entry.insert(RenderBin::from_entity(main_entity, input_uniform_index));
-                    }
+                    },
                 }
-            }
+            },
 
-            BinnedRenderPhaseType::UnbatchableMesh => {
+            | BinnedRenderPhaseType::UnbatchableMesh => {
                 match self
                     .unbatchable_meshes
                     .entry((batch_set_key.clone(), bin_key.clone()))
                 {
-                    indexmap::map::Entry::Occupied(mut entry) => {
+                    | indexmap::map::Entry::Occupied(mut entry) => {
                         entry.get_mut().entities.insert(main_entity, entity);
-                    }
-                    indexmap::map::Entry::Vacant(entry) => {
+                    },
+                    | indexmap::map::Entry::Vacant(entry) => {
                         let mut entities = MainEntityHashMap::default();
                         entities.insert(main_entity, entity);
                         entry.insert(UnbatchableBinnedEntities {
                             entities,
                             buffer_indices: default(),
                         });
-                    }
+                    },
                 }
-            }
+            },
 
-            BinnedRenderPhaseType::NonMesh => {
+            | BinnedRenderPhaseType::NonMesh => {
                 // We don't process these items further.
                 match self
                     .non_mesh_items
                     .entry((batch_set_key.clone(), bin_key.clone()).clone())
                 {
-                    indexmap::map::Entry::Occupied(mut entry) => {
+                    | indexmap::map::Entry::Occupied(mut entry) => {
                         entry.get_mut().entities.insert(main_entity, entity);
-                    }
-                    indexmap::map::Entry::Vacant(entry) => {
+                    },
+                    | indexmap::map::Entry::Vacant(entry) => {
                         let mut entities = MainEntityHashMap::default();
                         entities.insert(main_entity, entity);
                         entry.insert(NonMeshEntities { entities });
-                    }
+                    },
                 }
-            }
+            },
         }
 
         // Update the cache.
@@ -612,8 +654,8 @@ where
 
         // If the entity changed bins, record its old bin so that we can remove
         // the entity from it.
-        if let Some(old_cached_binned_entity) = old_cached_binned_entity
-            && old_cached_binned_entity.cached_bin_key != new_cached_binned_entity.cached_bin_key
+        if let Some(old_cached_binned_entity) = old_cached_binned_entity &&
+            old_cached_binned_entity.cached_bin_key != new_cached_binned_entity.cached_bin_key
         {
             self.entities_that_changed_bins.push(EntityThatChangedBins {
                 main_entity,
@@ -666,7 +708,7 @@ where
             && !matches!(render_adapter_info.backend, wgpu::Backend::Dx12);
 
         match self.batch_sets {
-            BinnedRenderPhaseBatchSets::DynamicUniforms(ref batch_sets) => {
+            | BinnedRenderPhaseBatchSets::DynamicUniforms(ref batch_sets) => {
                 debug_assert_eq!(self.batchable_meshes.len(), batch_sets.len());
 
                 for ((batch_set_key, bin_key), batch_set) in
@@ -691,9 +733,9 @@ where
                         draw_function.draw(world, render_pass, view, &binned_phase_item)?;
                     }
                 }
-            }
+            },
 
-            BinnedRenderPhaseBatchSets::Direct(ref batch_set) => {
+            | BinnedRenderPhaseBatchSets::Direct(ref batch_set) => {
                 for (batch, (batch_set_key, bin_key)) in
                     batch_set.iter().zip(self.batchable_meshes.keys())
                 {
@@ -714,9 +756,9 @@ where
 
                     draw_function.draw(world, render_pass, view, &binned_phase_item)?;
                 }
-            }
+            },
 
-            BinnedRenderPhaseBatchSets::MultidrawIndirect(ref batch_sets) => {
+            | BinnedRenderPhaseBatchSets::MultidrawIndirect(ref batch_sets) => {
                 for (batch_set_key, batch_set) in self
                     .multidrawable_meshes
                     .keys()
@@ -741,16 +783,16 @@ where
                         batch.representative_entity,
                         batch.instance_range.clone(),
                         match batch.extra_index {
-                            PhaseItemExtraIndex::None => PhaseItemExtraIndex::None,
-                            PhaseItemExtraIndex::DynamicOffset(ref dynamic_offset) => {
+                            | PhaseItemExtraIndex::None => PhaseItemExtraIndex::None,
+                            | PhaseItemExtraIndex::DynamicOffset(ref dynamic_offset) => {
                                 PhaseItemExtraIndex::DynamicOffset(*dynamic_offset)
-                            }
-                            PhaseItemExtraIndex::IndirectParametersIndex { ref range, .. } => {
-                                PhaseItemExtraIndex::IndirectParametersIndex {
-                                    range: range.start..(range.start + batch_set.batch_count),
-                                    batch_set_index,
-                                }
-                            }
+                            },
+                            | PhaseItemExtraIndex::IndirectParametersIndex {
+                                ref range, ..
+                            } => PhaseItemExtraIndex::IndirectParametersIndex {
+                                range: range.start..(range.start + batch_set.batch_count),
+                                batch_set_index,
+                            },
                         },
                     );
 
@@ -763,7 +805,7 @@ where
 
                     draw_function.draw(world, render_pass, view, &binned_phase_item)?;
                 }
-            }
+            },
         }
 
         Ok(())
@@ -784,40 +826,40 @@ where
                 &self.unbatchable_meshes[&(batch_set_key.clone(), bin_key.clone())];
             for (entity_index, entity) in unbatchable_entities.entities.iter().enumerate() {
                 let unbatchable_dynamic_offset = match &unbatchable_entities.buffer_indices {
-                    UnbatchableBinnedEntityIndexSet::NoEntities => {
+                    | UnbatchableBinnedEntityIndexSet::NoEntities => {
                         // Shouldn't happen…
                         continue;
-                    }
-                    UnbatchableBinnedEntityIndexSet::Sparse {
+                    },
+                    | UnbatchableBinnedEntityIndexSet::Sparse {
                         instance_range,
                         first_indirect_parameters_index,
                     } => UnbatchableBinnedEntityIndices {
                         instance_index: instance_range.start + entity_index as u32,
                         extra_index: match first_indirect_parameters_index {
-                            None => PhaseItemExtraIndex::None,
-                            Some(first_indirect_parameters_index) => {
+                            | None => PhaseItemExtraIndex::None,
+                            | Some(first_indirect_parameters_index) => {
                                 let first_indirect_parameters_index_for_entity =
-                                    u32::from(*first_indirect_parameters_index)
-                                        + entity_index as u32;
+                                    u32::from(*first_indirect_parameters_index) +
+                                        entity_index as u32;
                                 PhaseItemExtraIndex::IndirectParametersIndex {
-                                    range: first_indirect_parameters_index_for_entity
-                                        ..(first_indirect_parameters_index_for_entity + 1),
+                                    range: first_indirect_parameters_index_for_entity..
+                                        (first_indirect_parameters_index_for_entity + 1),
                                     batch_set_index: None,
                                 }
-                            }
+                            },
                         },
                     },
-                    UnbatchableBinnedEntityIndexSet::Dense(dynamic_offsets) => {
+                    | UnbatchableBinnedEntityIndexSet::Dense(dynamic_offsets) => {
                         dynamic_offsets[entity_index].clone()
-                    }
+                    },
                 };
 
                 let binned_phase_item = BPI::new(
                     batch_set_key.clone(),
                     bin_key.clone(),
                     (*entity.1, *entity.0),
-                    unbatchable_dynamic_offset.instance_index
-                        ..(unbatchable_dynamic_offset.instance_index + 1),
+                    unbatchable_dynamic_offset.instance_index..
+                        (unbatchable_dynamic_offset.instance_index + 1),
                     unbatchable_dynamic_offset.extra_index,
                 );
 
@@ -870,10 +912,10 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        self.multidrawable_meshes.is_empty()
-            && self.batchable_meshes.is_empty()
-            && self.unbatchable_meshes.is_empty()
-            && self.non_mesh_items.is_empty()
+        self.multidrawable_meshes.is_empty() &&
+            self.batchable_meshes.is_empty() &&
+            self.unbatchable_meshes.is_empty() &&
+            self.non_mesh_items.is_empty()
     }
 
     pub fn prepare_for_new_frame(&mut self) {
@@ -903,8 +945,8 @@ where
         current_change_tick: Tick,
     ) -> bool {
         if let indexmap::map::Entry::Occupied(entry) =
-            self.cached_entity_bin_keys.entry(visible_entity)
-            && entry.get().change_tick == current_change_tick
+            self.cached_entity_bin_keys.entry(visible_entity) &&
+            entry.get().change_tick == current_change_tick
         {
             self.valid_cached_entity_bin_keys.insert(entry.index());
             return true;
@@ -976,10 +1018,9 @@ fn remove_entity_from_bin<BPI>(
     unbatchable_meshes: &mut IndexMap<(BPI::BatchSetKey, BPI::BinKey), UnbatchableBinnedEntities>,
     non_mesh_items: &mut IndexMap<(BPI::BatchSetKey, BPI::BinKey), NonMeshEntities>,
 ) where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     match entity_bin_key.phase_type {
-        BinnedRenderPhaseType::MultidrawableMesh => {
+        | BinnedRenderPhaseType::MultidrawableMesh => {
             if let indexmap::map::Entry::Occupied(mut batch_set_entry) =
                 multidrawable_meshes.entry(entity_bin_key.batch_set_key.clone())
             {
@@ -1002,9 +1043,9 @@ fn remove_entity_from_bin<BPI>(
                     batch_set_entry.swap_remove();
                 }
             }
-        }
+        },
 
-        BinnedRenderPhaseType::BatchableMesh => {
+        | BinnedRenderPhaseType::BatchableMesh => {
             if let indexmap::map::Entry::Occupied(mut bin_entry) = batchable_meshes.entry((
                 entity_bin_key.batch_set_key.clone(),
                 entity_bin_key.bin_key.clone(),
@@ -1016,9 +1057,9 @@ fn remove_entity_from_bin<BPI>(
                     bin_entry.swap_remove();
                 }
             }
-        }
+        },
 
-        BinnedRenderPhaseType::UnbatchableMesh => {
+        | BinnedRenderPhaseType::UnbatchableMesh => {
             if let indexmap::map::Entry::Occupied(mut bin_entry) = unbatchable_meshes.entry((
                 entity_bin_key.batch_set_key.clone(),
                 entity_bin_key.bin_key.clone(),
@@ -1030,9 +1071,9 @@ fn remove_entity_from_bin<BPI>(
                     bin_entry.swap_remove();
                 }
             }
-        }
+        },
 
-        BinnedRenderPhaseType::NonMesh => {
+        | BinnedRenderPhaseType::NonMesh => {
             if let indexmap::map::Entry::Occupied(mut bin_entry) = non_mesh_items.entry((
                 entity_bin_key.batch_set_key.clone(),
                 entity_bin_key.bin_key.clone(),
@@ -1044,7 +1085,7 @@ fn remove_entity_from_bin<BPI>(
                     bin_entry.swap_remove();
                 }
             }
-        }
+        },
     }
 }
 
@@ -1059,13 +1100,13 @@ where
             unbatchable_meshes: IndexMap::default(),
             non_mesh_items: IndexMap::default(),
             batch_sets: match gpu_preprocessing {
-                GpuPreprocessingMode::Culling => {
+                | GpuPreprocessingMode::Culling => {
                     BinnedRenderPhaseBatchSets::MultidrawIndirect(vec![])
-                }
-                GpuPreprocessingMode::PreprocessingOnly => {
+                },
+                | GpuPreprocessingMode::PreprocessingOnly => {
                     BinnedRenderPhaseBatchSets::Direct(vec![])
-                }
-                GpuPreprocessingMode::None => BinnedRenderPhaseBatchSets::DynamicUniforms(vec![]),
+                },
+                | GpuPreprocessingMode::None => BinnedRenderPhaseBatchSets::DynamicUniforms(vec![]),
             },
             cached_entity_bin_keys: IndexMap::default(),
             valid_cached_entity_bin_keys: FixedBitSet::new(),
@@ -1082,20 +1123,20 @@ impl UnbatchableBinnedEntityIndexSet {
         entity_index: u32,
     ) -> Option<UnbatchableBinnedEntityIndices> {
         match self {
-            UnbatchableBinnedEntityIndexSet::NoEntities => None,
-            UnbatchableBinnedEntityIndexSet::Sparse { instance_range, .. }
+            | UnbatchableBinnedEntityIndexSet::NoEntities => None,
+            | UnbatchableBinnedEntityIndexSet::Sparse { instance_range, .. }
                 if entity_index >= instance_range.len() as u32 =>
             {
                 None
-            }
-            UnbatchableBinnedEntityIndexSet::Sparse {
+            },
+            | UnbatchableBinnedEntityIndexSet::Sparse {
                 instance_range,
                 first_indirect_parameters_index: None,
             } => Some(UnbatchableBinnedEntityIndices {
                 instance_index: instance_range.start + entity_index,
                 extra_index: PhaseItemExtraIndex::None,
             }),
-            UnbatchableBinnedEntityIndexSet::Sparse {
+            | UnbatchableBinnedEntityIndexSet::Sparse {
                 instance_range,
                 first_indirect_parameters_index: Some(first_indirect_parameters_index),
             } => {
@@ -1104,15 +1145,15 @@ impl UnbatchableBinnedEntityIndexSet {
                 Some(UnbatchableBinnedEntityIndices {
                     instance_index: instance_range.start + entity_index,
                     extra_index: PhaseItemExtraIndex::IndirectParametersIndex {
-                        range: first_indirect_parameters_index_for_this_batch
-                            ..(first_indirect_parameters_index_for_this_batch + 1),
+                        range: first_indirect_parameters_index_for_this_batch..
+                            (first_indirect_parameters_index_for_this_batch + 1),
                         batch_set_index: None,
                     },
                 })
-            }
-            UnbatchableBinnedEntityIndexSet::Dense(indices) => {
+            },
+            | UnbatchableBinnedEntityIndexSet::Dense(indices) => {
                 indices.get(entity_index as usize).cloned()
-            }
+            },
         }
     }
 }
@@ -1125,9 +1166,9 @@ impl UnbatchableBinnedEntityIndexSet {
 pub struct BinnedRenderPhasePlugin<BPI, GFBD>
 where
     BPI: BinnedPhaseItem,
-    GFBD: GetFullBatchData,
-{
-    /// Debugging flags that can optionally be set when constructing the renderer.
+    GFBD: GetFullBatchData, {
+    /// Debugging flags that can optionally be set when constructing the
+    /// renderer.
     pub debug_flags: RenderDebugFlags,
     phantom: PhantomData<(BPI, GFBD)>,
 }
@@ -1215,10 +1256,10 @@ where
 {
     pub fn insert_or_clear(&mut self, retained_view_entity: RetainedViewEntity) {
         match self.entry(retained_view_entity) {
-            Entry::Occupied(mut entry) => entry.get_mut().clear(),
-            Entry::Vacant(entry) => {
+            | Entry::Occupied(mut entry) => entry.get_mut().clear(),
+            | Entry::Vacant(entry) => {
                 entry.insert(default());
-            }
+            },
         }
     }
 }
@@ -1231,9 +1272,9 @@ where
 pub struct SortedRenderPhasePlugin<SPI, GFBD>
 where
     SPI: SortedPhaseItem,
-    GFBD: GetFullBatchData,
-{
-    /// Debugging flags that can optionally be set when constructing the renderer.
+    GFBD: GetFullBatchData, {
+    /// Debugging flags that can optionally be set when constructing the
+    /// renderer.
     pub debug_flags: RenderDebugFlags,
     phantom: PhantomData<(SPI, GFBD)>,
 }
@@ -1298,22 +1339,22 @@ impl UnbatchableBinnedEntityIndexSet {
     /// Adds a new entity to the list of unbatchable binned entities.
     pub fn add(&mut self, indices: UnbatchableBinnedEntityIndices) {
         match self {
-            UnbatchableBinnedEntityIndexSet::NoEntities => {
+            | UnbatchableBinnedEntityIndexSet::NoEntities => {
                 match indices.extra_index {
-                    PhaseItemExtraIndex::DynamicOffset(_) => {
+                    | PhaseItemExtraIndex::DynamicOffset(_) => {
                         // This is the first entity we've seen, and we don't have
                         // compute shaders. Initialize an array.
                         *self = UnbatchableBinnedEntityIndexSet::Dense(vec![indices]);
-                    }
-                    PhaseItemExtraIndex::None => {
+                    },
+                    | PhaseItemExtraIndex::None => {
                         // This is the first entity we've seen, and we have compute
                         // shaders. Initialize the fast path.
                         *self = UnbatchableBinnedEntityIndexSet::Sparse {
                             instance_range: indices.instance_index..indices.instance_index + 1,
                             first_indirect_parameters_index: None,
                         }
-                    }
-                    PhaseItemExtraIndex::IndirectParametersIndex {
+                    },
+                    | PhaseItemExtraIndex::IndirectParametersIndex {
                         range: ref indirect_parameters_index,
                         ..
                     } => {
@@ -1325,37 +1366,37 @@ impl UnbatchableBinnedEntityIndexSet {
                                 indirect_parameters_index.start,
                             ),
                         }
-                    }
+                    },
                 }
-            }
+            },
 
-            UnbatchableBinnedEntityIndexSet::Sparse {
+            | UnbatchableBinnedEntityIndexSet::Sparse {
                 instance_range,
                 first_indirect_parameters_index,
-            } if instance_range.end == indices.instance_index
-                && ((first_indirect_parameters_index.is_none()
-                    && indices.extra_index == PhaseItemExtraIndex::None)
-                    || first_indirect_parameters_index.is_some_and(
+            } if instance_range.end == indices.instance_index &&
+                ((first_indirect_parameters_index.is_none() &&
+                    indices.extra_index == PhaseItemExtraIndex::None) ||
+                    first_indirect_parameters_index.is_some_and(
                         |first_indirect_parameters_index| match indices.extra_index {
-                            PhaseItemExtraIndex::IndirectParametersIndex {
+                            | PhaseItemExtraIndex::IndirectParametersIndex {
                                 range: ref this_range,
                                 ..
                             } => {
-                                u32::from(first_indirect_parameters_index) + instance_range.end
-                                    - instance_range.start
-                                    == this_range.start
-                            }
-                            PhaseItemExtraIndex::DynamicOffset(_) | PhaseItemExtraIndex::None => {
+                                u32::from(first_indirect_parameters_index) + instance_range.end -
+                                    instance_range.start ==
+                                    this_range.start
+                            },
+                            | PhaseItemExtraIndex::DynamicOffset(_) | PhaseItemExtraIndex::None => {
                                 false
-                            }
+                            },
                         },
                     )) =>
             {
                 // This is the normal case on non-WebGL 2.
                 instance_range.end += 1;
-            }
+            },
 
-            UnbatchableBinnedEntityIndexSet::Sparse { instance_range, .. } => {
+            | UnbatchableBinnedEntityIndexSet::Sparse { instance_range, .. } => {
                 // We thought we were in non-WebGL 2 mode, but we got a dynamic
                 // offset or non-contiguous index anyway. This shouldn't happen,
                 // but let's go ahead and do the sensible thing anyhow: demote
@@ -1370,22 +1411,22 @@ impl UnbatchableBinnedEntityIndexSet {
                     .chain(iter::once(indices))
                     .collect();
                 *self = UnbatchableBinnedEntityIndexSet::Dense(new_dynamic_offsets);
-            }
+            },
 
-            UnbatchableBinnedEntityIndexSet::Dense(dense_indices) => {
+            | UnbatchableBinnedEntityIndexSet::Dense(dense_indices) => {
                 dense_indices.push(indices);
-            }
+            },
         }
     }
 
     /// Clears the unbatchable binned entity index set.
     fn clear(&mut self) {
         match self {
-            UnbatchableBinnedEntityIndexSet::Dense(dense_indices) => dense_indices.clear(),
-            UnbatchableBinnedEntityIndexSet::Sparse { .. } => {
+            | UnbatchableBinnedEntityIndexSet::Dense(dense_indices) => dense_indices.clear(),
+            | UnbatchableBinnedEntityIndexSet::Sparse { .. } => {
                 *self = UnbatchableBinnedEntityIndexSet::NoEntities;
-            }
-            _ => {}
+            },
+            | _ => {},
         }
     }
 }
@@ -1393,21 +1434,21 @@ impl UnbatchableBinnedEntityIndexSet {
 /// A collection of all items to be rendered that will be encoded to GPU
 /// commands for a single render phase for a single view.
 ///
-/// Each view (camera, or shadow-casting light, etc.) can have one or multiple render phases.
-/// They are used to queue entities for rendering.
-/// Multiple phases might be required due to different sorting/batching behaviors
-/// (e.g. opaque: front to back, transparent: back to front) or because one phase depends on
-/// the rendered texture of the previous phase (e.g. for screen-space reflections).
-/// All [`PhaseItem`]s are then rendered using a single [`TrackedRenderPass`].
-/// The render pass might be reused for multiple phases to reduce GPU overhead.
+/// Each view (camera, or shadow-casting light, etc.) can have one or multiple
+/// render phases. They are used to queue entities for rendering.
+/// Multiple phases might be required due to different sorting/batching
+/// behaviors (e.g. opaque: front to back, transparent: back to front) or
+/// because one phase depends on the rendered texture of the previous phase
+/// (e.g. for screen-space reflections). All [`PhaseItem`]s are then rendered
+/// using a single [`TrackedRenderPass`]. The render pass might be reused for
+/// multiple phases to reduce GPU overhead.
 ///
 /// This flavor of render phase is used only for meshes that need to be sorted
 /// back-to-front, such as transparent meshes. For items that don't need strict
 /// sorting, [`BinnedRenderPhase`] is preferred, for performance.
 pub struct SortedRenderPhase<I>
 where
-    I: SortedPhaseItem,
-{
+    I: SortedPhaseItem, {
     /// The items within this [`SortedRenderPhase`].
     pub items: Vec<I>,
 }
@@ -1442,13 +1483,15 @@ where
         I::sort(&mut self.items);
     }
 
-    /// An [`Iterator`] through the associated [`Entity`] for each [`PhaseItem`] in order.
+    /// An [`Iterator`] through the associated [`Entity`] for each [`PhaseItem`]
+    /// in order.
     #[inline]
     pub fn iter_entities(&'_ self) -> impl Iterator<Item = Entity> + '_ {
         self.items.iter().map(PhaseItem::entity)
     }
 
-    /// Renders all of its [`PhaseItem`]s using their corresponding draw functions.
+    /// Renders all of its [`PhaseItem`]s using their corresponding draw
+    /// functions.
     pub fn render<'w>(
         &self,
         render_pass: &mut TrackedRenderPass<'w>,
@@ -1458,7 +1501,8 @@ where
         self.render_range(render_pass, world, view, ..)
     }
 
-    /// Renders all [`PhaseItem`]s in the provided `range` (based on their index in `self.items`) using their corresponding draw functions.
+    /// Renders all [`PhaseItem`]s in the provided `range` (based on their index
+    /// in `self.items`) using their corresponding draw functions.
     pub fn render_range<'w>(
         &self,
         render_pass: &mut TrackedRenderPass<'w>,
@@ -1491,37 +1535,40 @@ where
     }
 }
 
-/// An item (entity of the render world) which will be drawn to a texture or the screen,
-/// as part of a render phase.
+/// An item (entity of the render world) which will be drawn to a texture or the
+/// screen, as part of a render phase.
 ///
-/// The data required for rendering an entity is extracted from the main world in the
-/// [`ExtractSchedule`](crate::ExtractSchedule).
-/// Then it has to be queued up for rendering during the [`RenderSystems::Queue`],
-/// by adding a corresponding phase item to a render phase.
-/// Afterwards it will be possibly sorted and rendered automatically in the
-/// [`RenderSystems::PhaseSort`] and [`RenderSystems::Render`], respectively.
+/// The data required for rendering an entity is extracted from the main world
+/// in the [`ExtractSchedule`](crate::ExtractSchedule).
+/// Then it has to be queued up for rendering during the
+/// [`RenderSystems::Queue`], by adding a corresponding phase item to a render
+/// phase. Afterwards it will be possibly sorted and rendered automatically in
+/// the [`RenderSystems::PhaseSort`] and [`RenderSystems::Render`],
+/// respectively.
 ///
 /// `PhaseItem`s come in two flavors: [`BinnedPhaseItem`]s and
 /// [`SortedPhaseItem`]s.
 ///
 /// * Binned phase items have a `BinKey` which specifies what bin they're to be
 ///   placed in. All items in the same bin are eligible to be batched together.
-///   The `BinKey`s are sorted, but the individual bin items aren't. Binned phase
-///   items are good for opaque meshes, in which the order of rendering isn't
-///   important. Generally, binned phase items are faster than sorted phase items.
+///   The `BinKey`s are sorted, but the individual bin items aren't. Binned
+///   phase items are good for opaque meshes, in which the order of rendering
+///   isn't important. Generally, binned phase items are faster than sorted
+///   phase items.
 ///
 /// * Sorted phase items, on the other hand, are placed into one large buffer
 ///   and then sorted all at once. This is needed for transparent meshes, which
 ///   have to be sorted back-to-front to render with the painter's algorithm.
 ///   These types of phase items are generally slower than binned phase items.
 pub trait PhaseItem: Sized + Send + Sync + 'static {
-    /// Whether or not this `PhaseItem` should be subjected to automatic batching. (Default: `true`)
+    /// Whether or not this `PhaseItem` should be subjected to automatic
+    /// batching. (Default: `true`)
     const AUTOMATIC_BATCHING: bool = true;
 
     /// The corresponding entity that will be drawn.
     ///
-    /// This is used to fetch the render data of the entity, required by the draw function,
-    /// from the render world .
+    /// This is used to fetch the render data of the entity, required by the
+    /// draw function, from the render world .
     fn entity(&self) -> Entity;
 
     /// The main world entity represented by this `PhaseItem`.
@@ -1530,9 +1577,9 @@ pub trait PhaseItem: Sized + Send + Sync + 'static {
     /// Specifies the [`Draw`] function used to render the item.
     fn draw_function(&self) -> DrawFunctionId;
 
-    /// The range of instances that the batch covers. After doing a batched draw, batch range
-    /// length phase items will be skipped. This design is to avoid having to restructure the
-    /// render phase unnecessarily.
+    /// The range of instances that the batch covers. After doing a batched
+    /// draw, batch range length phase items will be skipped. This design is
+    /// to avoid having to restructure the render phase unnecessarily.
     fn batch_range(&self) -> &Range<u32>;
     fn batch_range_mut(&mut self) -> &mut Range<u32>;
 
@@ -1558,8 +1605,8 @@ pub trait PhaseItem: Sized + Send + Sync + 'static {
 ///   buffers, to work around uniform buffer size limitations.
 ///
 /// * The *indirect parameters index*: an index into the buffer that specifies
-///   the indirect parameters for this [`PhaseItem`]'s drawcall. This is used when
-///   indirect mode is on (as used for GPU culling).
+///   the indirect parameters for this [`PhaseItem`]'s drawcall. This is used
+///   when indirect mode is on (as used for GPU culling).
 ///
 /// Note that our indirect draw functionality requires storage buffers, so it's
 /// impossible to have both a dynamic offset and an indirect parameters index.
@@ -1576,7 +1623,8 @@ pub enum PhaseItemExtraIndex {
     /// [`PhaseItem`]'s drawcall. This is used when indirect mode is on (as used
     /// for GPU culling).
     IndirectParametersIndex {
-        /// The range of indirect parameters within the indirect parameters array.
+        /// The range of indirect parameters within the indirect parameters
+        /// array.
         ///
         /// If we're using `multi_draw_indirect_count`, this specifies the
         /// maximum range of indirect parameters within that array. If batches
@@ -1600,12 +1648,12 @@ impl PhaseItemExtraIndex {
         indirect_parameters_index: Option<NonMaxU32>,
     ) -> PhaseItemExtraIndex {
         match indirect_parameters_index {
-            Some(indirect_parameters_index) => PhaseItemExtraIndex::IndirectParametersIndex {
-                range: u32::from(indirect_parameters_index)
-                    ..(u32::from(indirect_parameters_index) + 1),
+            | Some(indirect_parameters_index) => PhaseItemExtraIndex::IndirectParametersIndex {
+                range: u32::from(indirect_parameters_index)..
+                    (u32::from(indirect_parameters_index) + 1),
                 batch_set_index: None,
             },
-            None => PhaseItemExtraIndex::None,
+            | None => PhaseItemExtraIndex::None,
         }
     }
 
@@ -1613,8 +1661,8 @@ impl PhaseItemExtraIndex {
     /// as appropriate.
     pub fn maybe_dynamic_offset(dynamic_offset: Option<NonMaxU32>) -> PhaseItemExtraIndex {
         match dynamic_offset {
-            Some(dynamic_offset) => PhaseItemExtraIndex::DynamicOffset(dynamic_offset.into()),
-            None => PhaseItemExtraIndex::None,
+            | Some(dynamic_offset) => PhaseItemExtraIndex::DynamicOffset(dynamic_offset.into()),
+            | None => PhaseItemExtraIndex::None,
         }
     }
 }
@@ -1675,26 +1723,28 @@ pub trait PhaseItemBatchSetKey: Clone + Send + Sync + PartialEq + Eq + Ord + Has
 /// An example of a sorted phase item is `Transparent3d`, which must be sorted
 /// back to front in order to correctly render with the painter's algorithm.
 pub trait SortedPhaseItem: PhaseItem {
-    /// The type used for ordering the items. The smallest values are drawn first.
-    /// This order can be calculated using the [`ViewRangefinder3d`],
+    /// The type used for ordering the items. The smallest values are drawn
+    /// first. This order can be calculated using the [`ViewRangefinder3d`],
     /// based on the view-space `Z` value of the corresponding view matrix.
     type SortKey: Ord;
 
     /// Determines the order in which the items are drawn.
     fn sort_key(&self) -> Self::SortKey;
 
-    /// Sorts a slice of phase items into render order. Generally if the same type
-    /// is batched this should use a stable sort like [`slice::sort_by_key`].
-    /// In almost all other cases, this should not be altered from the default,
-    /// which uses an unstable sort, as this provides the best balance of CPU and GPU
-    /// performance.
+    /// Sorts a slice of phase items into render order. Generally if the same
+    /// type is batched this should use a stable sort like
+    /// [`slice::sort_by_key`]. In almost all other cases, this should not
+    /// be altered from the default, which uses an unstable sort, as this
+    /// provides the best balance of CPU and GPU performance.
     ///
-    /// Implementers can optionally not sort the list at all. This is generally advisable if and
-    /// only if the renderer supports a depth prepass, which is by default not supported by
-    /// the rest of Bevy's first party rendering crates. Even then, this may have a negative
+    /// Implementers can optionally not sort the list at all. This is generally
+    /// advisable if and only if the renderer supports a depth prepass,
+    /// which is by default not supported by the rest of Bevy's first party
+    /// rendering crates. Even then, this may have a negative
     /// impact on GPU-side performance due to overdraw.
     ///
-    /// It's advised to always profile for performance changes when changing this implementation.
+    /// It's advised to always profile for performance changes when changing
+    /// this implementation.
     #[inline]
     fn sort(items: &mut [Self]) {
         items.sort_unstable_by_key(Self::sort_key);
@@ -1712,23 +1762,26 @@ pub trait SortedPhaseItem: PhaseItem {
     fn indexed(&self) -> bool;
 }
 
-/// A [`PhaseItem`] item, that automatically sets the appropriate render pipeline,
-/// cached in the [`PipelineCache`].
+/// A [`PhaseItem`] item, that automatically sets the appropriate render
+/// pipeline, cached in the [`PipelineCache`].
 ///
-/// You can use the [`SetItemPipeline`] render command to set the pipeline for this item.
+/// You can use the [`SetItemPipeline`] render command to set the pipeline for
+/// this item.
 pub trait CachedRenderPipelinePhaseItem: PhaseItem {
-    /// The id of the render pipeline, cached in the [`PipelineCache`], that will be used to draw
-    /// this phase item.
+    /// The id of the render pipeline, cached in the [`PipelineCache`], that
+    /// will be used to draw this phase item.
     fn cached_pipeline(&self) -> CachedRenderPipelineId;
 }
 
-/// A [`RenderCommand`] that sets the pipeline for the [`CachedRenderPipelinePhaseItem`].
+/// A [`RenderCommand`] that sets the pipeline for the
+/// [`CachedRenderPipelinePhaseItem`].
 pub struct SetItemPipeline;
 
 impl<P: CachedRenderPipelinePhaseItem> RenderCommand<P> for SetItemPipeline {
+    type ItemQuery = ();
     type Param = SRes<PipelineCache>;
     type ViewQuery = ();
-    type ItemQuery = ();
+
     #[inline]
     fn render<'w>(
         item: &P,
@@ -1753,8 +1806,7 @@ impl<P: CachedRenderPipelinePhaseItem> RenderCommand<P> for SetItemPipeline {
 /// type.
 pub fn sort_phase_system<I>(mut render_phases: ResMut<ViewSortedRenderPhases<I>>)
 where
-    I: SortedPhaseItem,
-{
+    I: SortedPhaseItem, {
     for phase in render_phases.values_mut() {
         phase.sort();
     }
@@ -1765,8 +1817,7 @@ where
 /// This must run after queuing.
 pub fn sweep_old_entities<BPI>(mut render_phases: ResMut<ViewBinnedRenderPhases<BPI>>)
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     for phase in render_phases.0.values_mut() {
         phase.sweep_old_entities();
     }
@@ -1778,9 +1829,9 @@ impl BinnedRenderPhaseType {
         gpu_preprocessing_support: &GpuPreprocessingSupport,
     ) -> BinnedRenderPhaseType {
         match (batchable, gpu_preprocessing_support.max_supported_mode) {
-            (true, GpuPreprocessingMode::Culling) => BinnedRenderPhaseType::MultidrawableMesh,
-            (true, _) => BinnedRenderPhaseType::BatchableMesh,
-            (false, _) => BinnedRenderPhaseType::UnbatchableMesh,
+            | (true, GpuPreprocessingMode::Culling) => BinnedRenderPhaseType::MultidrawableMesh,
+            | (true, _) => BinnedRenderPhaseType::BatchableMesh,
+            | (false, _) => BinnedRenderPhaseType::UnbatchableMesh,
         }
     }
 }
@@ -1877,9 +1928,14 @@ impl<'a> Iterator for ReverseFixedBitSetZeroesIterator<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::ReverseFixedBitSetZeroesIterator;
     use fixedbitset::FixedBitSet;
-    use proptest::{collection::vec, prop_assert_eq, proptest};
+    use proptest::{
+        collection::vec,
+        prop_assert_eq,
+        proptest,
+    };
+
+    use super::ReverseFixedBitSetZeroesIterator;
 
     proptest! {
         #[test]

@@ -34,7 +34,10 @@ use crate::networking::{
         LastSyncVersions,
         auto_detect_transform_changes_system,
     },
-    components::{NetworkedEntity, NetworkedTransform},
+    components::{
+        NetworkedEntity,
+        NetworkedTransform,
+    },
     delta_generation::{
         NodeVectorClock,
         cleanup_skip_delta_markers_system,
@@ -159,16 +162,19 @@ impl SessionSecret {
     }
 }
 
-/// System that auto-inserts required sync components when `Synced` marker is detected.
+/// System that auto-inserts required sync components when `Synced` marker is
+/// detected.
 ///
 /// This system runs in PreUpdate and automatically adds:
 /// - `NetworkedEntity` with a new UUID and node ID
 /// - `Persisted` with the same UUID
 /// - `NetworkedTransform` if the entity has a `Transform` component
 ///
-/// Note: Selection is now a global `LocalSelection` resource, not a per-entity component.
+/// Note: Selection is now a global `LocalSelection` resource, not a per-entity
+/// component.
 ///
-/// This eliminates the need for users to manually add these components when spawning synced entities.
+/// This eliminates the need for users to manually add these components when
+/// spawning synced entities.
 fn auto_insert_sync_components(
     mut commands: Commands,
     query: Query<Entity, (Added<Synced>, Without<NetworkedEntity>)>,
@@ -196,20 +202,29 @@ fn auto_insert_sync_components(
             "[auto_insert_sync] Entity {:?} → NetworkedEntity({}), Persisted, {} auto-added",
             entity,
             entity_id,
-            if transforms.contains(entity) { "NetworkedTransform" } else { "no transform" }
+            if transforms.contains(entity) {
+                "NetworkedTransform"
+            } else {
+                "no transform"
+            }
         );
     }
 
     let count = query.iter().count();
     if count > 0 {
-        debug!("[auto_insert_sync] Processed {} newly synced entities this frame", count);
+        debug!(
+            "[auto_insert_sync] Processed {} newly synced entities this frame",
+            count
+        );
     }
 }
 
-/// System that adds NetworkedTransform to networked entities when Transform is added.
+/// System that adds NetworkedTransform to networked entities when Transform is
+/// added.
 ///
-/// This handles entities received from the network that already have NetworkedEntity,
-/// Persisted, and Synced, but need NetworkedTransform when Transform is added.
+/// This handles entities received from the network that already have
+/// NetworkedEntity, Persisted, and Synced, but need NetworkedTransform when
+/// Transform is added.
 fn auto_insert_networked_transform(
     mut commands: Commands,
     query: Query<
@@ -224,17 +239,22 @@ fn auto_insert_networked_transform(
 ) {
     for entity in &query {
         commands.entity(entity).insert(NetworkedTransform);
-        debug!("Auto-inserted NetworkedTransform for networked entity {:?}", entity);
+        debug!(
+            "Auto-inserted NetworkedTransform for networked entity {:?}",
+            entity
+        );
     }
 }
 
-/// System that triggers anti-entropy sync when going online (GossipBridge added).
+/// System that triggers anti-entropy sync when going online (GossipBridge
+/// added).
 ///
-/// This handles the offline-to-online transition: when GossipBridge is inserted,
-/// we immediately send a SyncRequest to trigger anti-entropy and broadcast all
-/// operations from the operation log.
+/// This handles the offline-to-online transition: when GossipBridge is
+/// inserted, we immediately send a SyncRequest to trigger anti-entropy and
+/// broadcast all operations from the operation log.
 ///
-/// Uses a Local resource to track if we've already sent the sync request, so this only runs once.
+/// Uses a Local resource to track if we've already sent the sync request, so
+/// this only runs once.
 fn trigger_sync_on_connect(
     mut has_synced: Local<bool>,
     bridge: Res<GossipBridge>,
@@ -312,7 +332,8 @@ fn trigger_sync_on_connect(
 ///   - FullState messages
 ///   - SyncRequest messages
 ///   - MissingDeltas messages
-///   - Lock messages (LockRequest, LockAcquired, LockRejected, LockHeartbeat, LockRelease, LockReleased)
+///   - Lock messages (LockRequest, LockAcquired, LockRejected, LockHeartbeat,
+///     LockRelease, LockReleased)
 ///
 /// ## Update
 /// - Auto-detect Transform changes
@@ -436,7 +457,8 @@ impl Plugin for NetworkingPlugin {
             ),
         );
 
-        // Trigger anti-entropy sync when going online (separate from chain to allow conditional execution)
+        // Trigger anti-entropy sync when going online (separate from chain to allow
+        // conditional execution)
         app.add_systems(
             FixedPostUpdate,
             trigger_sync_on_connect

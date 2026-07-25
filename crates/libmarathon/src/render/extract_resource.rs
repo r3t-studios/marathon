@@ -1,16 +1,23 @@
 use core::marker::PhantomData;
 
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_ecs::prelude::*;
-pub use libmarathon_macros::ExtractResource;
 use bevy_utils::once;
+pub use libmarathon_macros::ExtractResource;
 
-use crate::render::{Extract, ExtractSchedule, RenderApp};
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    RenderApp,
+};
 
 /// Describes how a resource gets extracted for rendering.
 ///
-/// Therefore the resource is transferred from the "main world" into the "render world"
-/// in the [`ExtractSchedule`] step.
+/// Therefore the resource is transferred from the "main world" into the "render
+/// world" in the [`ExtractSchedule`] step.
 pub trait ExtractResource: Resource {
     type Source: Resource;
 

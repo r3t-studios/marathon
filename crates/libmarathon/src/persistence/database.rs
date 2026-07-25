@@ -536,7 +536,8 @@ pub fn load_session(
                 last_active: row.get(3)?,
                 entity_count: row.get::<_, i64>(4)? as usize,
                 state,
-                secret: row.get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
+                secret: row
+                    .get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
                     .map(|cow| bytes::Bytes::copy_from_slice(&cow)),
             })
         },
@@ -568,7 +569,8 @@ pub fn get_last_active_session(conn: &Connection) -> Result<Option<crate::networ
                 last_active: row.get(3)?,
                 entity_count: row.get::<_, i64>(4)? as usize,
                 state,
-                secret: row.get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
+                secret: row
+                    .get::<_, Option<std::borrow::Cow<'_, [u8]>>>(6)?
                     .map(|cow| bytes::Bytes::copy_from_slice(&cow)),
             })
         },
@@ -1068,23 +1070,32 @@ pub fn load_tombstones(world: &mut bevy::prelude::World) -> Result<()> {
         for (entity_id, deleting_node_str, deletion_clock_bytes, _created_at_ts) in tombstone_rows {
             // Parse node ID
             let deleting_node = match uuid::Uuid::parse_str(&deleting_node_str) {
-                Ok(id) => id,
-                Err(e) => {
-                    error!("Failed to parse deleting_node UUID for entity {:?}: {}", entity_id, e);
+                | Ok(id) => id,
+                | Err(e) => {
+                    error!(
+                        "Failed to parse deleting_node UUID for entity {:?}: {}",
+                        entity_id, e
+                    );
                     failed_count += 1;
                     continue;
-                }
+                },
             };
 
             // Deserialize vector clock
-            let deletion_clock = match rkyv::from_bytes::<crate::networking::VectorClock, rkyv::rancor::Failure>(&deletion_clock_bytes) {
-                Ok(clock) => clock,
-                Err(e) => {
-                    error!("Failed to deserialize vector clock for tombstone {:?}: {:?}", entity_id, e);
-                    failed_count += 1;
-                    continue;
-                }
-            };
+            let deletion_clock =
+                match rkyv::from_bytes::<crate::networking::VectorClock, rkyv::rancor::Failure>(
+                    &deletion_clock_bytes,
+                ) {
+                    | Ok(clock) => clock,
+                    | Err(e) => {
+                        error!(
+                            "Failed to deserialize vector clock for tombstone {:?}: {:?}",
+                            entity_id, e
+                        );
+                        failed_count += 1;
+                        continue;
+                    },
+                };
 
             // Record the tombstone in the registry
             tombstone_registry.record_deletion(entity_id, deleting_node, deletion_clock);

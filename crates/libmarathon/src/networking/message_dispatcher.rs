@@ -4,9 +4,7 @@
 //! multiple systems each polling the same message queue. Instead, a single
 //! dispatcher system polls once and routes messages to appropriate handlers.
 
-use bevy::{
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use crate::networking::{
     GossipBridge,
@@ -77,12 +75,16 @@ pub fn message_dispatcher_system(world: &mut World) {
     for message in messages {
         let node_id = world.resource::<GossipBridge>().node_id;
         let msg_type = match &message.message {
-            SyncMessage::EntityDelta { entity_id, .. } => format!("EntityDelta({})", entity_id),
-            SyncMessage::JoinRequest { node_id, .. } => format!("JoinRequest({})", node_id),
-            SyncMessage::FullState { entities, .. } => format!("FullState({} entities)", entities.len()),
-            SyncMessage::SyncRequest { node_id, .. } => format!("SyncRequest({})", node_id),
-            SyncMessage::MissingDeltas { deltas } => format!("MissingDeltas({} ops)", deltas.len()),
-            SyncMessage::Lock(_) => "Lock".to_string(),
+            | SyncMessage::EntityDelta { entity_id, .. } => format!("EntityDelta({})", entity_id),
+            | SyncMessage::JoinRequest { node_id, .. } => format!("JoinRequest({})", node_id),
+            | SyncMessage::FullState { entities, .. } => {
+                format!("FullState({} entities)", entities.len())
+            },
+            | SyncMessage::SyncRequest { node_id, .. } => format!("SyncRequest({})", node_id),
+            | SyncMessage::MissingDeltas { deltas } => {
+                format!("MissingDeltas({} ops)", deltas.len())
+            },
+            | SyncMessage::Lock(_) => "Lock".to_string(),
         };
 
         debug!(
@@ -199,8 +201,7 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
 
                     // Get operation log and check missing deltas
                     let operation_log = world.resource::<crate::networking::OperationLog>();
-                    let missing_deltas =
-                        operation_log.get_all_operations_newer_than(their_clock);
+                    let missing_deltas = operation_log.get_all_operations_newer_than(their_clock);
 
                     // If delta count is small (<= 1000 ops), send deltas
                     // Otherwise fall back to full state
@@ -261,16 +262,12 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
             info!("Received FullState with {} entities", entities.len());
 
             let type_registry = {
-                let registry_resource = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+                let registry_resource =
+                    world.resource::<crate::persistence::ComponentTypeRegistryResource>();
                 registry_resource.0
             };
 
-            apply_full_state(
-                entities,
-                vector_clock,
-                world,
-                type_registry,
-            );
+            apply_full_state(entities, vector_clock, world, type_registry);
         },
 
         // SyncRequest - peer requesting missing operations
@@ -334,10 +331,15 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
         | SyncMessage::Lock(lock_msg) => {
             use crate::networking::LockMessage;
 
-            if let Some(mut registry) = world.get_resource_mut::<crate::networking::EntityLockRegistry>() {
+            if let Some(mut registry) =
+                world.get_resource_mut::<crate::networking::EntityLockRegistry>()
+            {
                 match lock_msg {
                     | LockMessage::LockRequest { entity_id, node_id } => {
-                        debug!("Received LockRequest for entity {} from node {}", entity_id, node_id);
+                        debug!(
+                            "Received LockRequest for entity {} from node {}",
+                            entity_id, node_id
+                        );
 
                         match registry.try_acquire(entity_id, node_id) {
                             | Ok(()) => {
@@ -352,7 +354,10 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                                     if let Err(e) = bridge.send(msg) {
                                         error!("Failed to broadcast LockAcquired: {}", e);
                                     } else {
-                                        info!("Lock acquired: entity {} by node {}", entity_id, node_id);
+                                        info!(
+                                            "Lock acquired: entity {} by node {}",
+                                            entity_id, node_id
+                                        );
                                     }
                                 }
                             },
@@ -369,8 +374,10 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                                     if let Err(e) = bridge.send(msg) {
                                         error!("Failed to send LockRejected: {}", e);
                                     } else {
-                                        debug!("Lock rejected: entity {} requested by {} (held by {})",
-                                            entity_id, node_id, current_holder);
+                                        debug!(
+                                            "Lock rejected: entity {} requested by {} (held by {})",
+                                            entity_id, node_id, current_holder
+                                        );
                                     }
                                 }
                             },
@@ -378,8 +385,12 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                     },
 
                     | LockMessage::LockAcquired { entity_id, holder } => {
-                        debug!("Received LockAcquired for entity {} by node {}", entity_id, holder);
-                        // Lock already applied optimistically, just log confirmation
+                        debug!(
+                            "Received LockAcquired for entity {} by node {}",
+                            entity_id, holder
+                        );
+                        // Lock already applied optimistically, just log
+                        // confirmation
                     },
 
                     | LockMessage::LockRejected {
@@ -395,11 +406,17 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                     },
 
                     | LockMessage::LockHeartbeat { entity_id, holder } => {
-                        trace!("Received LockHeartbeat for entity {} from node {}", entity_id, holder);
+                        trace!(
+                            "Received LockHeartbeat for entity {} from node {}",
+                            entity_id, holder
+                        );
 
                         // Renew the lock's heartbeat timestamp
                         if registry.renew_heartbeat(entity_id, holder) {
-                            trace!("Lock heartbeat renewed: entity {} by node {}", entity_id, holder);
+                            trace!(
+                                "Lock heartbeat renewed: entity {} by node {}",
+                                entity_id, holder
+                            );
                         } else {
                             debug!(
                                 "Received heartbeat for entity {} from {}, but lock not found or holder mismatch",
@@ -409,7 +426,10 @@ fn dispatch_message(world: &mut World, message: crate::networking::VersionedMess
                     },
 
                     | LockMessage::LockRelease { entity_id, node_id } => {
-                        debug!("Received LockRelease for entity {} from node {}", entity_id, node_id);
+                        debug!(
+                            "Received LockRelease for entity {} from node {}",
+                            entity_id, node_id
+                        );
 
                         if registry.release(entity_id, node_id) {
                             // Broadcast confirmation
@@ -446,13 +466,11 @@ fn build_full_state_from_data(
     node_clock: &NodeVectorClock,
     blob_store: Option<&BlobStore>,
 ) -> crate::networking::VersionedMessage {
-    use crate::{
-        networking::{
-            blob_support::create_component_data,
-            messages::{
-                ComponentState,
-                EntityState,
-            },
+    use crate::networking::{
+        blob_support::create_component_data,
+        messages::{
+            ComponentState,
+            EntityState,
         },
     };
 
@@ -475,7 +493,8 @@ fn build_full_state_from_data(
         let mut components = Vec::new();
 
         // Get component type registry
-        let type_registry_res = world.resource::<crate::persistence::ComponentTypeRegistryResource>();
+        let type_registry_res =
+            world.resource::<crate::persistence::ComponentTypeRegistryResource>();
         let component_registry = type_registry_res.0;
 
         // Serialize all registered components on this entity
@@ -500,10 +519,7 @@ fn build_full_state_from_data(
                 crate::networking::ComponentData::Inline(serialized)
             };
 
-            components.push(ComponentState {
-                discriminant,
-                data,
-            });
+            components.push(ComponentState { discriminant, data });
         }
 
         entities.push(EntityState {

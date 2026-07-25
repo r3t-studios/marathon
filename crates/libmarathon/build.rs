@@ -1,6 +1,8 @@
-use std::env;
-use std::path::PathBuf;
-use std::process::Command;
+use std::{
+    env,
+    path::PathBuf,
+    process::Command,
+};
 
 fn main() {
     // Only compile Swift code when building for iOS
@@ -26,19 +28,26 @@ fn main() {
         .output()
         .expect("Failed to get iOS SDK path");
 
-    let sdk_path = String::from_utf8_lossy(&sdk_output.stdout).trim().to_string();
+    let sdk_path = String::from_utf8_lossy(&sdk_output.stdout)
+        .trim()
+        .to_string();
 
     println!("cargo:warning=Using iOS SDK: {}", sdk_path);
 
     // Compile Swift to object file
     let status = Command::new("swiftc")
         .args(&[
-            "-sdk", &sdk_path,
-            "-target", "arm64-apple-ios14.0",  // Minimum iOS 14
-            "-import-objc-header", header.to_str().unwrap(),
+            "-sdk",
+            &sdk_path,
+            "-target",
+            "arm64-apple-ios14.0", // Minimum iOS 14
+            "-import-objc-header",
+            header.to_str().unwrap(),
             "-parse-as-library",
-            "-c", swift_src.to_str().unwrap(),
-            "-o", object_file.to_str().unwrap(),
+            "-c",
+            swift_src.to_str().unwrap(),
+            "-o",
+            object_file.to_str().unwrap(),
         ])
         .status()
         .expect("Failed to compile Swift");
@@ -64,7 +73,10 @@ fn main() {
         panic!("Failed to create static library");
     }
 
-    println!("cargo:warning=Created static library: {}", lib_file.display());
+    println!(
+        "cargo:warning=Created static library: {}",
+        lib_file.display()
+    );
 
     // Tell Cargo to link the static library
     println!("cargo:rustc-link-search=native={}", out_dir.display());

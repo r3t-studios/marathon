@@ -1,25 +1,45 @@
-use bevy_camera::{MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::*, query::QueryItem};
-use crate::render::experimental::occlusion_culling::OcclusionCulling;
-use crate::render::render_graph::ViewNode;
-
-use crate::render::view::{ExtractedView, NoIndirectDrawing};
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext},
-    render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::ViewDepthTexture,
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
+};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use crate::render::prepass::ViewPrepassTextures;
-
-use super::{AlphaMask3dDeferred, Opaque3dDeferred};
+use super::{
+    AlphaMask3dDeferred,
+    Opaque3dDeferred,
+};
+use crate::render::{
+    camera::ExtractedCamera,
+    diagnostic::RecordDiagnostics,
+    experimental::occlusion_culling::OcclusionCulling,
+    prepass::ViewPrepassTextures,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::{
+        TrackedRenderPass,
+        ViewBinnedRenderPhases,
+    },
+    render_resource::{
+        CommandEncoderDescriptor,
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    view::{
+        ExtractedView,
+        NoIndirectDrawing,
+        ViewDepthTexture,
+    },
+};
 
 /// The phase of the deferred prepass that draws meshes that were visible last
 /// frame.
@@ -147,10 +167,11 @@ fn run_deferred_prepass<'w>(
             .map(|motion_vectors_texture| motion_vectors_texture.get_attachment()),
     );
 
-    // If we clear the deferred texture with LoadOp::Clear(Default::default()) we get these errors:
-    // Chrome: GL_INVALID_OPERATION: No defined conversion between clear value and attachment format.
-    // Firefox: WebGL warning: clearBufferu?[fi]v: This attachment is of type FLOAT, but this function is of type UINT.
-    // Appears to be unsupported: https://registry.khronos.org/webgl/specs/latest/2.0/#3.7.9
+    // If we clear the deferred texture with LoadOp::Clear(Default::default()) we
+    // get these errors: Chrome: GL_INVALID_OPERATION: No defined conversion
+    // between clear value and attachment format. Firefox: WebGL warning:
+    // clearBufferu?[fi]v: This attachment is of type FLOAT, but this function is of
+    // type UINT. Appears to be unsupported: https://registry.khronos.org/webgl/specs/latest/2.0/#3.7.9
     // For webgl2 we fallback to manually clearing
     #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
     if !is_late {
@@ -199,7 +220,8 @@ fn run_deferred_prepass<'w>(
             .map(|deferred_lighting_pass_id| deferred_lighting_pass_id.get_attachment()),
     );
 
-    // If all color attachments are none: clear the color attachment list so that no fragment shader is required
+    // If all color attachments are none: clear the color attachment list so that no
+    // fragment shader is required
     if color_attachments.iter().all(Option::is_none) {
         color_attachments.clear();
     }
@@ -233,9 +255,9 @@ fn run_deferred_prepass<'w>(
         }
 
         // Opaque draws
-        if !opaque_deferred_phase.multidrawable_meshes.is_empty()
-            || !opaque_deferred_phase.batchable_meshes.is_empty()
-            || !opaque_deferred_phase.unbatchable_meshes.is_empty()
+        if !opaque_deferred_phase.multidrawable_meshes.is_empty() ||
+            !opaque_deferred_phase.batchable_meshes.is_empty() ||
+            !opaque_deferred_phase.unbatchable_meshes.is_empty()
         {
             #[cfg(feature = "trace")]
             let _opaque_prepass_span = info_span!("opaque_deferred_prepass").entered();
@@ -257,7 +279,8 @@ fn run_deferred_prepass<'w>(
         pass_span.end(&mut render_pass);
         drop(render_pass);
 
-        // After rendering to the view depth texture, copy it to the prepass depth texture
+        // After rendering to the view depth texture, copy it to the prepass depth
+        // texture
         if let Some(prepass_depth_texture) = &view_prepass_textures.depth {
             command_encoder.copy_texture_to_texture(
                 view_depth_texture.texture.as_image_copy(),

@@ -1,13 +1,26 @@
+use bevy_ecs::{
+    prelude::ResMut,
+    resource::Resource,
+};
+use bevy_platform::collections::{
+    HashMap,
+    hash_map::Entry,
+};
+use wgpu::{
+    TextureDescriptor,
+    TextureViewDescriptor,
+};
+
 use crate::render::{
-    render_resource::{Texture, TextureView},
+    render_resource::{
+        Texture,
+        TextureView,
+    },
     renderer::RenderDevice,
 };
-use bevy_ecs::{prelude::ResMut, resource::Resource};
-use bevy_platform::collections::{hash_map::Entry, HashMap};
-use wgpu::{TextureDescriptor, TextureViewDescriptor};
 
-/// The internal representation of a [`CachedTexture`] used to track whether it was recently used
-/// and is currently taken.
+/// The internal representation of a [`CachedTexture`] used to track whether it
+/// was recently used and is currently taken.
 struct CachedTextureMeta {
     texture: Texture,
     default_view: TextureView,
@@ -17,31 +30,31 @@ struct CachedTextureMeta {
 
 /// A cached GPU [`Texture`] with corresponding [`TextureView`].
 ///
-/// This is useful for textures that are created repeatedly (each frame) in the rendering process
-/// to reduce the amount of GPU memory allocations.
+/// This is useful for textures that are created repeatedly (each frame) in the
+/// rendering process to reduce the amount of GPU memory allocations.
 #[derive(Clone)]
 pub struct CachedTexture {
     pub texture: Texture,
     pub default_view: TextureView,
 }
 
-/// This resource caches textures that are created repeatedly in the rendering process and
-/// are only required for one frame.
+/// This resource caches textures that are created repeatedly in the rendering
+/// process and are only required for one frame.
 #[derive(Resource, Default)]
 pub struct TextureCache {
     textures: HashMap<TextureDescriptor<'static>, Vec<CachedTextureMeta>>,
 }
 
 impl TextureCache {
-    /// Retrieves a texture that matches the `descriptor`. If no matching one is found a new
-    /// [`CachedTexture`] is created.
+    /// Retrieves a texture that matches the `descriptor`. If no matching one is
+    /// found a new [`CachedTexture`] is created.
     pub fn get(
         &mut self,
         render_device: &RenderDevice,
         descriptor: TextureDescriptor<'static>,
     ) -> CachedTexture {
         match self.textures.entry(descriptor) {
-            Entry::Occupied(mut entry) => {
+            | Entry::Occupied(mut entry) => {
                 for texture in entry.get_mut().iter_mut() {
                     if !texture.taken {
                         texture.frames_since_last_use = 0;
@@ -65,8 +78,8 @@ impl TextureCache {
                     texture,
                     default_view,
                 }
-            }
-            Entry::Vacant(entry) => {
+            },
+            | Entry::Vacant(entry) => {
                 let texture = render_device.create_texture(entry.key());
                 let default_view = texture.create_view(&TextureViewDescriptor::default());
                 entry.insert(vec![CachedTextureMeta {
@@ -79,7 +92,7 @@ impl TextureCache {
                     texture,
                     default_view,
                 }
-            }
+            },
         }
     }
 

@@ -1,28 +1,67 @@
-use crate::render::pbr::{GpuLights, LightMeta};
-use bevy_asset::{load_embedded_asset, Handle};
-use bevy_camera::{Camera, Camera3d};
-use crate::render::FullscreenShader;
+use bevy_asset::{
+    Handle,
+    load_embedded_asset,
+};
+use bevy_camera::{
+    Camera,
+    Camera3d,
+};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
     query::With,
     resource::Resource,
-    system::{Commands, Query, Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
 use bevy_image::ToExtents;
-use bevy_math::{Affine3A, Mat4, Vec3A};
-use crate::render::{
-    extract_component::ComponentUniforms,
-    render_resource::{binding_types::*, *},
-    renderer::{RenderDevice, RenderQueue},
-    texture::{CachedTexture, TextureCache},
-    view::{ExtractedView, Msaa, ViewDepthTexture, ViewUniform, ViewUniforms},
+use bevy_math::{
+    Affine3A,
+    Mat4,
+    Vec3A,
 };
 use bevy_shader::Shader;
 use bevy_utils::default;
 
-use super::{Atmosphere, GpuAtmosphereSettings};
+use super::{
+    Atmosphere,
+    GpuAtmosphereSettings,
+};
+use crate::render::{
+    FullscreenShader,
+    extract_component::ComponentUniforms,
+    pbr::{
+        GpuLights,
+        LightMeta,
+    },
+    render_resource::{
+        binding_types::*,
+        *,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    texture::{
+        CachedTexture,
+        TextureCache,
+    },
+    view::{
+        ExtractedView,
+        Msaa,
+        ViewDepthTexture,
+        ViewUniform,
+        ViewUniforms,
+    },
+};
 
 #[derive(Resource)]
 pub(crate) struct AtmosphereBindGroupLayouts {

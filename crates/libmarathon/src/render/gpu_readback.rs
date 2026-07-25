@@ -1,41 +1,78 @@
-use crate::render::{
-    extract_component::ExtractComponentPlugin,
-    render_asset::RenderAssets,
-    render_resource::{
-        Buffer, BufferUsages, CommandEncoder, Extent3d, TexelCopyBufferLayout, Texture,
-        TextureFormat,
-    },
-    renderer::{render_system, RenderDevice},
-    storage::{GpuShaderStorageBuffer, ShaderStorageBuffer},
-    sync_world::MainEntity,
-    texture::GpuImage,
-    ExtractSchedule, MainWorld, Render, RenderApp, RenderSystems,
+use async_channel::{
+    Receiver,
+    Sender,
 };
-use async_channel::{Receiver, Sender};
-use bevy_app::{App, Plugin};
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_asset::Handle;
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::schedule::IntoScheduleConfigs;
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
     change_detection::ResMut,
     entity::Entity,
     event::EntityEvent,
-    prelude::{Component, Resource, World},
-    system::{Query, Res},
+    prelude::{
+        Component,
+        Resource,
+        World,
+    },
+    schedule::IntoScheduleConfigs,
+    system::{
+        Query,
+        Res,
+    },
 };
-use bevy_image::{Image, TextureFormatPixelInfo};
+use bevy_image::{
+    Image,
+    TextureFormatPixelInfo,
+};
 use bevy_platform::collections::HashMap;
 use bevy_reflect::Reflect;
+use encase::{
+    ShaderType,
+    internal::ReadFrom,
+    private::Reader,
+};
 use libmarathon_macros::ExtractComponent;
-use encase::internal::ReadFrom;
-use encase::private::Reader;
-use encase::ShaderType;
 use tracing::warn;
+
+use crate::render::{
+    ExtractSchedule,
+    MainWorld,
+    Render,
+    RenderApp,
+    RenderSystems,
+    extract_component::ExtractComponentPlugin,
+    render_asset::RenderAssets,
+    render_resource::{
+        Buffer,
+        BufferUsages,
+        CommandEncoder,
+        Extent3d,
+        TexelCopyBufferLayout,
+        Texture,
+        TextureFormat,
+    },
+    renderer::{
+        RenderDevice,
+        render_system,
+    },
+    storage::{
+        GpuShaderStorageBuffer,
+        ShaderStorageBuffer,
+    },
+    sync_world::MainEntity,
+    texture::GpuImage,
+};
 
 /// A plugin that enables reading back gpu buffers and textures to the cpu.
 pub struct GpuReadbackPlugin {
-    /// Describes the number of frames a buffer can be unused before it is removed from the pool in
-    /// order to avoid unnecessary reallocations.
+    /// Describes the number of frames a buffer can be unused before it is
+    /// removed from the pool in order to avoid unnecessary reallocations.
     max_unused_frames: usize,
 }
 
@@ -70,10 +107,12 @@ impl Plugin for GpuReadbackPlugin {
     }
 }
 
-/// A component that registers the wrapped handle for gpu readback, either a texture or a buffer.
+/// A component that registers the wrapped handle for gpu readback, either a
+/// texture or a buffer.
 ///
-/// Data is read asynchronously and will be triggered on the entity via the [`ReadbackComplete`] event
-/// when complete. If this component is not removed, the readback will be attempted every frame
+/// Data is read asynchronously and will be triggered on the entity via the
+/// [`ReadbackComplete`] event when complete. If this component is not removed,
+/// the readback will be attempted every frame
 #[derive(Component, ExtractComponent, Clone, Debug)]
 pub enum Readback {
     Texture(Handle<Image>),
@@ -97,8 +136,8 @@ impl Readback {
         }
     }
 
-    /// Create a readback component for a buffer range using the given handle, a start offset in bytes
-    /// and a number of bytes to read.
+    /// Create a readback component for a buffer range using the given handle, a
+    /// start offset in bytes and a number of bytes to read.
     pub fn buffer_range(buffer: Handle<ShaderStorageBuffer>, start_offset: u64, size: u64) -> Self {
         Self::Buffer {
             buffer,
@@ -109,8 +148,8 @@ impl Readback {
 
 /// An event that is triggered when a gpu readback is complete.
 ///
-/// The event contains the data as a `Vec<u8>`, which can be interpreted as the raw bytes of the
-/// requested buffer or texture.
+/// The event contains the data as a `Vec<u8>`, which can be interpreted as the
+/// raw bytes of the requested buffer or texture.
 #[derive(EntityEvent, Deref, DerefMut, Reflect, Debug)]
 #[reflect(Debug)]
 pub struct ReadbackComplete {
@@ -260,9 +299,9 @@ fn prepare_buffers(
 ) {
     for (entity, readback) in handles.iter() {
         match readback {
-            Readback::Texture(image) => {
-                if let Some(gpu_image) = gpu_images.get(image)
-                    && let Ok(pixel_size) = gpu_image.texture_format.pixel_size()
+            | Readback::Texture(image) => {
+                if let Some(gpu_image) = gpu_images.get(image) &&
+                    let Ok(pixel_size) = gpu_image.texture_format.pixel_size()
                 {
                     let layout = layout_data(gpu_image.size, gpu_image.texture_format);
                     let buffer = buffer_pool.get(
@@ -282,8 +321,8 @@ fn prepare_buffers(
                         tx,
                     });
                 }
-            }
-            Readback::Buffer {
+            },
+            | Readback::Buffer {
                 buffer,
                 start_offset_and_size,
             } => {
@@ -314,7 +353,7 @@ fn prepare_buffers(
                         tx,
                     });
                 }
-            }
+            },
         }
     }
 }
@@ -323,7 +362,7 @@ pub(crate) fn submit_readback_commands(world: &World, command_encoder: &mut Comm
     let readbacks = world.resource::<GpuReadbacks>();
     for readback in &readbacks.requested {
         match &readback.src {
-            ReadbackSource::Texture {
+            | ReadbackSource::Texture {
                 texture,
                 layout,
                 size,
@@ -336,19 +375,20 @@ pub(crate) fn submit_readback_commands(world: &World, command_encoder: &mut Comm
                     },
                     *size,
                 );
-            }
-            ReadbackSource::Buffer {
+            },
+            | ReadbackSource::Buffer {
                 buffer,
                 start_offset_and_size,
             } => {
                 let (src_start, size) = start_offset_and_size.unwrap_or((0, buffer.size()));
                 command_encoder.copy_buffer_to_buffer(buffer, src_start, &readback.buffer, 0, size);
-            }
+            },
         }
     }
 }
 
-/// Move requested readbacks to mapped readbacks after commands have been submitted in render system
+/// Move requested readbacks to mapped readbacks after commands have been
+/// submitted in render system
 fn map_buffers(mut readbacks: ResMut<GpuReadbacks>) {
     let requested = readbacks.requested.drain(..).collect::<Vec<GpuReadback>>();
     for readback in requested {
@@ -373,17 +413,20 @@ fn map_buffers(mut readbacks: ResMut<GpuReadbacks>) {
 
 // Utils
 
-/// Round up a given value to be a multiple of [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
+/// Round up a given value to be a multiple of
+/// [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
 pub(crate) const fn align_byte_size(value: u32) -> u32 {
     RenderDevice::align_copy_bytes_per_row(value as usize) as u32
 }
 
-/// Get the size of a image when the size of each row has been rounded up to [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
+/// Get the size of a image when the size of each row has been rounded up to
+/// [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
 pub(crate) const fn get_aligned_size(extent: Extent3d, pixel_size: u32) -> u32 {
     extent.height * align_byte_size(extent.width * pixel_size) * extent.depth_or_array_layers
 }
 
-/// Get a [`TexelCopyBufferLayout`] aligned such that the image can be copied into a buffer.
+/// Get a [`TexelCopyBufferLayout`] aligned such that the image can be copied
+/// into a buffer.
 pub(crate) fn layout_data(extent: Extent3d, format: TextureFormat) -> TexelCopyBufferLayout {
     TexelCopyBufferLayout {
         bytes_per_row: if extent.height > 1 || extent.depth_or_array_layers > 1 {

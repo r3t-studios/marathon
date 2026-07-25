@@ -196,7 +196,10 @@ pub fn create_component_data(data: bytes::Bytes, blob_store: &BlobStore) -> Resu
     if should_use_blob(&data) {
         let size = data.len() as u64;
         let hash = blob_store.store_blob(data.to_vec())?;
-        Ok(ComponentData::BlobRef { hash: bytes::Bytes::from(hash), size })
+        Ok(ComponentData::BlobRef {
+            hash: bytes::Bytes::from(hash),
+            size,
+        })
     } else {
         Ok(ComponentData::Inline(data))
     }
@@ -326,7 +329,8 @@ mod tests {
         let store = BlobStore::new();
         let small_data = vec![1, 2, 3];
 
-        let component_data = create_component_data(bytes::Bytes::from(small_data.clone()), &store).unwrap();
+        let component_data =
+            create_component_data(bytes::Bytes::from(small_data.clone()), &store).unwrap();
 
         match component_data {
             | ComponentData::Inline(data) => assert_eq!(data, small_data),
@@ -339,7 +343,8 @@ mod tests {
         let store = BlobStore::new();
         let large_data = vec![0u8; 100_000];
 
-        let component_data = create_component_data(bytes::Bytes::from(large_data.clone()), &store).unwrap();
+        let component_data =
+            create_component_data(bytes::Bytes::from(large_data.clone()), &store).unwrap();
 
         match component_data {
             | ComponentData::BlobRef { hash, size } => {

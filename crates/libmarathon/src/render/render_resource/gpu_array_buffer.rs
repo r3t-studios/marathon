@@ -1,23 +1,43 @@
+use core::marker::PhantomData;
+
+use bevy_ecs::{
+    prelude::Component,
+    resource::Resource,
+};
+use encase::{
+    ShaderSize,
+    ShaderType,
+    private::WriteInto,
+};
+use nonmax::NonMaxU32;
+use wgpu::{
+    BindingResource,
+    BufferUsages,
+};
+
 use super::{
-    binding_types::{storage_buffer_read_only, uniform_buffer_sized},
-    BindGroupLayoutEntryBuilder, BufferVec,
+    BindGroupLayoutEntryBuilder,
+    BufferVec,
+    binding_types::{
+        storage_buffer_read_only,
+        uniform_buffer_sized,
+    },
 };
 use crate::render::{
     render_resource::batched_uniform_buffer::BatchedUniformBuffer,
-    renderer::{RenderDevice, RenderQueue},
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
 };
-use bevy_ecs::{prelude::Component, resource::Resource};
-use core::marker::PhantomData;
-use encase::{private::WriteInto, ShaderSize, ShaderType};
-use nonmax::NonMaxU32;
-use wgpu::{BindingResource, BufferUsages};
 
 /// Trait for types able to go in a [`GpuArrayBuffer`].
 pub trait GpuArrayBufferable: ShaderType + ShaderSize + WriteInto + Clone {}
 
 impl<T: ShaderType + ShaderSize + WriteInto + Clone> GpuArrayBufferable for T {}
 
-/// Stores an array of elements to be transferred to the GPU and made accessible to shaders as a read-only array.
+/// Stores an array of elements to be transferred to the GPU and made accessible
+/// to shaders as a read-only array.
 ///
 /// On platforms that support storage buffers, this is equivalent to
 /// [`BufferVec<T>`]. Otherwise, this falls back to a dynamic offset
@@ -50,29 +70,29 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
 
     pub fn clear(&mut self) {
         match self {
-            GpuArrayBuffer::Uniform(buffer) => buffer.clear(),
-            GpuArrayBuffer::Storage(buffer) => buffer.clear(),
+            | GpuArrayBuffer::Uniform(buffer) => buffer.clear(),
+            | GpuArrayBuffer::Storage(buffer) => buffer.clear(),
         }
     }
 
     pub fn push(&mut self, value: T) -> GpuArrayBufferIndex<T> {
         match self {
-            GpuArrayBuffer::Uniform(buffer) => buffer.push(value),
-            GpuArrayBuffer::Storage(buffer) => {
+            | GpuArrayBuffer::Uniform(buffer) => buffer.push(value),
+            | GpuArrayBuffer::Storage(buffer) => {
                 let index = buffer.push(value) as u32;
                 GpuArrayBufferIndex {
                     index,
                     dynamic_offset: None,
                     element_type: PhantomData,
                 }
-            }
+            },
         }
     }
 
     pub fn write_buffer(&mut self, device: &RenderDevice, queue: &RenderQueue) {
         match self {
-            GpuArrayBuffer::Uniform(buffer) => buffer.write_buffer(device, queue),
-            GpuArrayBuffer::Storage(buffer) => buffer.write_buffer(device, queue),
+            | GpuArrayBuffer::Uniform(buffer) => buffer.write_buffer(device, queue),
+            | GpuArrayBuffer::Storage(buffer) => buffer.write_buffer(device, queue),
         }
     }
 
@@ -91,8 +111,8 @@ impl<T: GpuArrayBufferable> GpuArrayBuffer<T> {
 
     pub fn binding(&self) -> Option<BindingResource<'_>> {
         match self {
-            GpuArrayBuffer::Uniform(buffer) => buffer.binding(),
-            GpuArrayBuffer::Storage(buffer) => buffer.binding(),
+            | GpuArrayBuffer::Uniform(buffer) => buffer.binding(),
+            | GpuArrayBuffer::Storage(buffer) => buffer.binding(),
         }
     }
 

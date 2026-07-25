@@ -2,60 +2,149 @@
 
 use core::array;
 
-use bevy_asset::{load_embedded_asset, AssetId, AssetServer, Handle};
+use bevy_asset::{
+    AssetId,
+    AssetServer,
+    Handle,
+    load_embedded_asset,
+};
 use bevy_camera::Camera3d;
 use bevy_color::ColorToComponents as _;
-use crate::render::prepass::{
-    DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass,
+use bevy_derive::{
+    Deref,
+    DerefMut,
 };
-use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    query::{Has, QueryItem, With},
+    query::{
+        Has,
+        QueryItem,
+        With,
+    },
     resource::Resource,
-    system::{lifetimeless::Read, Commands, Local, Query, Res, ResMut},
+    system::{
+        Commands,
+        Local,
+        Query,
+        Res,
+        ResMut,
+        lifetimeless::Read,
+    },
     world::World,
 };
-use bevy_image::{BevyDefault, Image};
-use bevy_light::{FogVolume, VolumetricFog, VolumetricLight};
-use bevy_math::{vec4, Affine3A, Mat4, Vec3, Vec3A, Vec4};
-use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
-use crate::render::{
-    diagnostic::RecordDiagnostics,
-    mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo},
-    render_asset::RenderAssets,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_resource::{
-        binding_types::{
-            sampler, texture_3d, texture_depth_2d, texture_depth_2d_multisampled, uniform_buffer,
-        },
-        BindGroupLayout, BindGroupLayoutEntries, BindingResource, BlendComponent, BlendFactor,
-        BlendOperation, BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites,
-        DynamicBindGroupEntries, DynamicUniformBuffer, Face, FragmentState, LoadOp, Operations,
-        PipelineCache, PrimitiveState, RenderPassColorAttachment, RenderPassDescriptor,
-        RenderPipelineDescriptor, SamplerBindingType, ShaderStages, ShaderType,
-        SpecializedRenderPipeline, SpecializedRenderPipelines, StoreOp, TextureFormat,
-        TextureSampleType, TextureUsages, VertexState,
-    },
-    renderer::{RenderContext, RenderDevice, RenderQueue},
-    sync_world::RenderEntity,
-    texture::GpuImage,
-    view::{ExtractedView, Msaa, ViewDepthTexture, ViewTarget, ViewUniformOffset},
-    Extract,
+use bevy_image::{
+    BevyDefault,
+    Image,
+};
+use bevy_light::{
+    FogVolume,
+    VolumetricFog,
+    VolumetricLight,
+};
+use bevy_math::{
+    Affine3A,
+    Mat4,
+    Vec3,
+    Vec3A,
+    Vec4,
+    vec4,
+};
+use bevy_mesh::{
+    Mesh,
+    MeshVertexBufferLayoutRef,
 };
 use bevy_shader::Shader;
 use bevy_transform::components::GlobalTransform;
 use bevy_utils::prelude::default;
 use bitflags::bitflags;
 
-use crate::render::pbr::{
-    MeshPipelineViewLayoutKey, MeshPipelineViewLayouts, MeshViewBindGroup,
-    ViewEnvironmentMapUniformOffset, ViewFogUniformOffset, ViewLightProbesUniformOffset,
-    ViewLightsUniformOffset, ViewScreenSpaceReflectionsUniformOffset,
-};
-
 use super::FogAssets;
+use crate::render::{
+    Extract,
+    diagnostic::RecordDiagnostics,
+    mesh::{
+        RenderMesh,
+        RenderMeshBufferInfo,
+        allocator::MeshAllocator,
+    },
+    pbr::{
+        MeshPipelineViewLayoutKey,
+        MeshPipelineViewLayouts,
+        MeshViewBindGroup,
+        ViewEnvironmentMapUniformOffset,
+        ViewFogUniformOffset,
+        ViewLightProbesUniformOffset,
+        ViewLightsUniformOffset,
+        ViewScreenSpaceReflectionsUniformOffset,
+    },
+    prepass::{
+        DeferredPrepass,
+        DepthPrepass,
+        MotionVectorPrepass,
+        NormalPrepass,
+    },
+    render_asset::RenderAssets,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_resource::{
+        BindGroupLayout,
+        BindGroupLayoutEntries,
+        BindingResource,
+        BlendComponent,
+        BlendFactor,
+        BlendOperation,
+        BlendState,
+        CachedRenderPipelineId,
+        ColorTargetState,
+        ColorWrites,
+        DynamicBindGroupEntries,
+        DynamicUniformBuffer,
+        Face,
+        FragmentState,
+        LoadOp,
+        Operations,
+        PipelineCache,
+        PrimitiveState,
+        RenderPassColorAttachment,
+        RenderPassDescriptor,
+        RenderPipelineDescriptor,
+        SamplerBindingType,
+        ShaderStages,
+        ShaderType,
+        SpecializedRenderPipeline,
+        SpecializedRenderPipelines,
+        StoreOp,
+        TextureFormat,
+        TextureSampleType,
+        TextureUsages,
+        VertexState,
+        binding_types::{
+            sampler,
+            texture_3d,
+            texture_depth_2d,
+            texture_depth_2d_multisampled,
+            uniform_buffer,
+        },
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_world::RenderEntity,
+    texture::GpuImage,
+    view::{
+        ExtractedView,
+        Msaa,
+        ViewDepthTexture,
+        ViewTarget,
+        ViewUniformOffset,
+    },
+};
 
 bitflags! {
     /// Flags that describe the bind group layout used to render volumetric fog.
@@ -477,7 +566,7 @@ impl ViewNode for VolumetricFogNode {
 
             // Draw elements or arrays, as appropriate.
             match &render_mesh.buffer_info {
-                RenderMeshBufferInfo::Indexed {
+                | RenderMeshBufferInfo::Indexed {
                     index_format,
                     count,
                 } => {
@@ -494,10 +583,10 @@ impl ViewNode for VolumetricFogNode {
                         vertex_buffer_slice.range.start as i32,
                         0..1,
                     );
-                }
-                RenderMeshBufferInfo::NonIndexed => {
+                },
+                | RenderMeshBufferInfo::NonIndexed => {
                     render_pass.draw(vertex_buffer_slice.range, 0..1);
-                }
+                },
             }
         }
 
@@ -632,7 +721,8 @@ pub fn prepare_volumetric_fog_pipelines(
     meshes: Res<RenderAssets<RenderMesh>>,
 ) {
     let Some(plane_mesh) = meshes.get(&fog_assets.plane_mesh) else {
-        // There's an off chance that the mesh won't be prepared yet if `RenderAssetBytesPerFrame` limiting is in use.
+        // There's an off chance that the mesh won't be prepared yet if
+        // `RenderAssetBytesPerFrame` limiting is in use.
         return;
     };
 
@@ -677,8 +767,8 @@ pub fn prepare_volumetric_fog_pipelines(
             &pipeline_cache,
             &volumetric_lighting_pipeline,
             VolumetricFogPipelineKey {
-                flags: textureless_pipeline_key.flags
-                    | VolumetricFogPipelineKeyFlags::DENSITY_TEXTURE,
+                flags: textureless_pipeline_key.flags |
+                    VolumetricFogPipelineKeyFlags::DENSITY_TEXTURE,
                 ..textureless_pipeline_key
             },
         );

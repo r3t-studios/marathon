@@ -109,7 +109,8 @@ pub enum InputEvent {
     },
 
     /// Text input from keyboard
-    /// This is the actual character that was typed, after applying keyboard layout
+    /// This is the actual character that was typed, after applying keyboard
+    /// layout
     Text {
         /// The text/character that was entered
         text: String,
@@ -156,12 +157,12 @@ impl InputEvent {
     /// Get the position for positional input types
     pub fn position(&self) -> Option<Vec2> {
         match self {
-            InputEvent::Stylus { pos, .. } => Some(*pos),
-            InputEvent::Mouse { pos, .. } => Some(*pos),
-            InputEvent::MouseMove { pos } => Some(*pos),
-            InputEvent::Touch { pos, .. } => Some(*pos),
-            InputEvent::MouseWheel { pos, .. } => Some(*pos),
-            InputEvent::Keyboard { .. } |
+            | InputEvent::Stylus { pos, .. } => Some(*pos),
+            | InputEvent::Mouse { pos, .. } => Some(*pos),
+            | InputEvent::MouseMove { pos } => Some(*pos),
+            | InputEvent::Touch { pos, .. } => Some(*pos),
+            | InputEvent::MouseWheel { pos, .. } => Some(*pos),
+            | InputEvent::Keyboard { .. } |
             InputEvent::Text { .. } |
             InputEvent::MouseMotion { .. } |
             InputEvent::PinchGesture { .. } |
@@ -174,10 +175,10 @@ impl InputEvent {
     /// Get the phase for input types that have phases
     pub fn phase(&self) -> Option<TouchPhase> {
         match self {
-            InputEvent::Stylus { phase, .. } => Some(*phase),
-            InputEvent::Mouse { phase, .. } => Some(*phase),
-            InputEvent::Touch { phase, .. } => Some(*phase),
-            InputEvent::Keyboard { .. } |
+            | InputEvent::Stylus { phase, .. } => Some(*phase),
+            | InputEvent::Mouse { phase, .. } => Some(*phase),
+            | InputEvent::Touch { phase, .. } => Some(*phase),
+            | InputEvent::Keyboard { .. } |
             InputEvent::Text { .. } |
             InputEvent::MouseWheel { .. } |
             InputEvent::MouseMove { .. } |
@@ -192,8 +193,8 @@ impl InputEvent {
     /// Check if this is an active input (not ended/cancelled)
     pub fn is_active(&self) -> bool {
         match self.phase() {
-            Some(phase) => !matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled),
-            None => true, // Gestures, keyboard, and wheel events are instantaneous
+            | Some(phase) => !matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled),
+            | None => true, // Gestures, keyboard, and wheel events are instantaneous
         }
     }
 }

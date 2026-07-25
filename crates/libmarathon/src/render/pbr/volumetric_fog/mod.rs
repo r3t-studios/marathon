@@ -7,12 +7,12 @@
 //! known as *light shafts* or *god rays*.
 //!
 //! To add volumetric fog to a scene, add [`bevy_light::VolumetricFog`] to the
-//! camera, and add [`bevy_light::VolumetricLight`] to directional lights that you wish to
-//! be volumetric. [`bevy_light::VolumetricFog`] feature numerous settings that
-//! allow you to define the accuracy of the simulation, as well as the look of
-//! the fog. Currently, only interaction with directional lights that have
-//! shadow maps is supported. Note that the overhead of the effect scales
-//! directly with the number of directional lights in use, so apply
+//! camera, and add [`bevy_light::VolumetricLight`] to directional lights that
+//! you wish to be volumetric. [`bevy_light::VolumetricFog`] feature numerous
+//! settings that allow you to define the accuracy of the simulation, as well as
+//! the look of the fog. Currently, only interaction with directional lights
+//! that have shadow maps is supported. Note that the overhead of the effect
+//! scales directly with the number of directional lights in use, so apply
 //! [`bevy_light::VolumetricLight`] sparingly for the best results.
 //!
 //! The overall algorithm, which is implemented as a postprocessing effect, is a
@@ -29,28 +29,62 @@
 //!
 //! [Henyey-Greenstein phase function]: https://www.pbr-book.org/4ed/Volume_Scattering/Phase_Functions#TheHenyeyndashGreensteinPhaseFunction
 
-use bevy_app::{App, Plugin};
-use bevy_asset::{embedded_asset, Assets, Handle};
-use crate::render::core_3d::{
-    graph::{Core3d, Node3d},
-    prepare_core_3d_depth_textures,
+use bevy_app::{
+    App,
+    Plugin,
 };
-use bevy_ecs::{resource::Resource, schedule::IntoScheduleConfigs as _};
+use bevy_asset::{
+    Assets,
+    Handle,
+    embedded_asset,
+};
+use bevy_ecs::{
+    resource::Resource,
+    schedule::IntoScheduleConfigs as _,
+};
 use bevy_light::FogVolume;
 use bevy_math::{
-    primitives::{Cuboid, Plane3d},
-    Vec2, Vec3,
+    Vec2,
+    Vec3,
+    primitives::{
+        Cuboid,
+        Plane3d,
+    },
 };
-use bevy_mesh::{Mesh, Meshable};
+use bevy_mesh::{
+    Mesh,
+    Meshable,
+};
+use render::{
+    VolumetricFogNode,
+    VolumetricFogPipeline,
+    VolumetricFogUniformBuffer,
+};
+
 use crate::render::{
-    render_graph::{RenderGraphExt, ViewNodeRunner},
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    core_3d::{
+        graph::{
+            Core3d,
+            Node3d,
+        },
+        prepare_core_3d_depth_textures,
+    },
+    pbr::{
+        graph::NodePbr,
+        volumetric_fog::render::init_volumetric_fog_pipeline,
+    },
+    render_graph::{
+        RenderGraphExt,
+        ViewNodeRunner,
+    },
     render_resource::SpecializedRenderPipelines,
     sync_component::SyncComponentPlugin,
-    ExtractSchedule, Render, RenderApp, RenderStartup, RenderSystems,
 };
-use render::{VolumetricFogNode, VolumetricFogPipeline, VolumetricFogUniformBuffer};
-
-use crate::render::pbr::{graph::NodePbr, volumetric_fog::render::init_volumetric_fog_pipeline};
 
 pub mod render;
 

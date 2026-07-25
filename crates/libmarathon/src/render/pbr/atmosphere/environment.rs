@@ -1,35 +1,87 @@
-use crate::render::pbr::{
-    resources::{
-        AtmosphereSamplers, AtmosphereTextures, AtmosphereTransform, AtmosphereTransforms,
-        AtmosphereTransformsOffset,
-    },
-    GpuAtmosphereSettings, GpuLights, LightMeta, ViewLightsUniformOffset,
+use bevy_asset::{
+    AssetServer,
+    Assets,
+    Handle,
+    RenderAssetUsages,
+    load_embedded_asset,
 };
-use bevy_asset::{load_embedded_asset, AssetServer, Assets, Handle, RenderAssetUsages};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    query::{QueryState, With, Without},
+    query::{
+        QueryState,
+        With,
+        Without,
+    },
     resource::Resource,
-    system::{lifetimeless::Read, Commands, Query, Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+        lifetimeless::Read,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
 use bevy_image::Image;
-use bevy_light::{AtmosphereEnvironmentMapLight, GeneratedEnvironmentMapLight};
-use bevy_math::{Quat, UVec2};
-use crate::render::{
-    extract_component::{ComponentUniforms, DynamicUniformIndex, ExtractComponent},
-    render_asset::RenderAssets,
-    render_graph::{Node, NodeRunError, RenderGraphContext},
-    render_resource::{binding_types::*, *},
-    renderer::{RenderContext, RenderDevice},
-    texture::{CachedTexture, GpuImage},
-    view::{ViewUniform, ViewUniformOffset, ViewUniforms},
+use bevy_light::{
+    AtmosphereEnvironmentMapLight,
+    GeneratedEnvironmentMapLight,
+};
+use bevy_math::{
+    Quat,
+    UVec2,
 };
 use bevy_utils::default;
 use tracing::warn;
 
 use super::Atmosphere;
+use crate::render::{
+    extract_component::{
+        ComponentUniforms,
+        DynamicUniformIndex,
+        ExtractComponent,
+    },
+    pbr::{
+        GpuAtmosphereSettings,
+        GpuLights,
+        LightMeta,
+        ViewLightsUniformOffset,
+        resources::{
+            AtmosphereSamplers,
+            AtmosphereTextures,
+            AtmosphereTransform,
+            AtmosphereTransforms,
+            AtmosphereTransformsOffset,
+        },
+    },
+    render_asset::RenderAssets,
+    render_graph::{
+        Node,
+        NodeRunError,
+        RenderGraphContext,
+    },
+    render_resource::{
+        binding_types::*,
+        *,
+    },
+    renderer::{
+        RenderContext,
+        RenderDevice,
+    },
+    texture::{
+        CachedTexture,
+        GpuImage,
+    },
+    view::{
+        ViewUniform,
+        ViewUniformOffset,
+        ViewUniforms,
+    },
+};
 
 // Render world representation of an environment map light for the atmosphere
 #[derive(Component, ExtractComponent, Clone)]
@@ -73,13 +125,17 @@ pub fn init_atmosphere_probe_layout(mut commands: Commands, render_device: Res<R
                 uniform_buffer::<AtmosphereTransform>(true),
                 uniform_buffer::<ViewUniform>(true),
                 uniform_buffer::<GpuLights>(true),
-                texture_2d(TextureSampleType::Float { filterable: true }), //transmittance lut and sampler
+                texture_2d(TextureSampleType::Float { filterable: true }), /* transmittance lut
+                                                                            * and sampler */
                 sampler(SamplerBindingType::Filtering),
-                texture_2d(TextureSampleType::Float { filterable: true }), //multiscattering lut and sampler
+                texture_2d(TextureSampleType::Float { filterable: true }), /* multiscattering
+                                                                            * lut and sampler */
                 sampler(SamplerBindingType::Filtering),
-                texture_2d(TextureSampleType::Float { filterable: true }), //sky view lut and sampler
+                texture_2d(TextureSampleType::Float { filterable: true }), /* sky view lut and
+                                                                            * sampler */
                 sampler(SamplerBindingType::Filtering),
-                texture_3d(TextureSampleType::Float { filterable: true }), //aerial view lut ans sampler
+                texture_3d(TextureSampleType::Float { filterable: true }), /* aerial view lut
+                                                                            * ans sampler */
                 sampler(SamplerBindingType::Filtering),
                 texture_storage_2d_array(
                     // output 2D array texture
@@ -220,9 +276,9 @@ pub fn prepare_atmosphere_probe_components(
             ..Default::default()
         });
 
-        environment_image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
-            | TextureUsages::STORAGE_BINDING
-            | TextureUsages::COPY_SRC;
+        environment_image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING |
+            TextureUsages::STORAGE_BINDING |
+            TextureUsages::COPY_SRC;
 
         // Add the image to assets to get a handle
         let environment_handle = images.add(environment_image);

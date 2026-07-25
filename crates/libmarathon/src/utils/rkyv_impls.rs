@@ -1,9 +1,14 @@
 //! Custom rkyv implementations for external types
 //!
-//! This module provides rkyv serialization support for external types that don't
-//! have native rkyv support, using wrapper types to comply with Rust's orphan rules.
+//! This module provides rkyv serialization support for external types that
+//! don't have native rkyv support, using wrapper types to comply with Rust's
+//! orphan rules.
 
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{
+    Archive,
+    Deserialize,
+    Serialize,
+};
 
 /// Newtype wrapper for uuid::Uuid to provide rkyv support
 ///

@@ -67,8 +67,9 @@ pub fn build_entity_operations(
         };
 
         // Build the operation
-        // Use the vector_clock as-is - it's already been incremented by the caller (delta_generation.rs:116)
-        // All operations in the same EntityDelta share the same vector clock (same logical timestamp)
+        // Use the vector_clock as-is - it's already been incremented by the caller
+        // (delta_generation.rs:116) All operations in the same EntityDelta
+        // share the same vector clock (same logical timestamp)
         operations.push(ComponentOp::Set {
             discriminant,
             data,
@@ -88,10 +89,16 @@ pub fn build_entity_operations(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bevy::prelude::*;
-    use crate::networking::NetworkedEntity;
-    use crate::persistence::{ComponentTypeRegistry, Persisted};
+
+    use super::*;
+    use crate::{
+        networking::NetworkedEntity,
+        persistence::{
+            ComponentTypeRegistry,
+            Persisted,
+        },
+    };
 
     #[test]
     fn test_operations_use_passed_vector_clock_without_extra_increment() {
@@ -104,11 +111,13 @@ mod tests {
 
         // Create test entity with Transform
         let entity_id = uuid::Uuid::new_v4();
-        let entity = world.spawn((
-            NetworkedEntity::with_id(entity_id, node_id),
-            Persisted::with_id(entity_id),
-            Transform::from_xyz(1.0, 2.0, 3.0),
-        )).id();
+        let entity = world
+            .spawn((
+                NetworkedEntity::with_id(entity_id, node_id),
+                Persisted::with_id(entity_id),
+                Transform::from_xyz(1.0, 2.0, 3.0),
+            ))
+            .id();
 
         // Create a vector clock that's already been ticked
         let mut vector_clock = VectorClock::new();
@@ -126,10 +135,17 @@ mod tests {
         );
 
         // Verify: All operations should use the EXACT clock that was passed in
-        assert!(!operations.is_empty(), "Should have created at least one operation");
+        assert!(
+            !operations.is_empty(),
+            "Should have created at least one operation"
+        );
 
         for op in &operations {
-            if let ComponentOp::Set { vector_clock: op_clock, .. } = op {
+            if let ComponentOp::Set {
+                vector_clock: op_clock,
+                ..
+            } = op
+            {
                 assert_eq!(
                     *op_clock, expected_clock,
                     "Operation clock should match the input clock exactly. \

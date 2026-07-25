@@ -479,7 +479,8 @@ mod tests {
         set.add("bar".to_string(), node);
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&set).map(|b| b.to_vec())?;
-        let deserialized: OrSet<String> = rkyv::from_bytes::<OrSet<String>, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: OrSet<String> =
+            rkyv::from_bytes::<OrSet<String>, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.len(), 2);
         assert!(deserialized.contains(&"foo".to_string()));

@@ -1,20 +1,20 @@
 //! Events emitted from the Core Engine to Bevy
 
-use crate::networking::{NodeId, SessionId, VectorClock};
 use bevy::prelude::*;
 use uuid::Uuid;
+
+use crate::networking::{
+    NodeId,
+    SessionId,
+    VectorClock,
+};
 
 #[derive(Debug, Clone)]
 pub enum NetworkingInitStatus {
     CreatingEndpoint,
     EndpointReady,
-    DiscoveringPeers {
-        session_code: String,
-        attempt: u8,
-    },
-    PeersFound {
-        count: usize,
-    },
+    DiscoveringPeers { session_code: String, attempt: u8 },
+    PeersFound { count: usize },
     NoPeersFound,
     PublishingToDHT,
     InitializingGossip,

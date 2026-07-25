@@ -9,8 +9,11 @@ pub mod pencil_bridge;
 
 pub use executor::run_executor;
 pub use pencil_bridge::{
-    drain_as_input_events, drain_raw,
-    pencil_point_received, rust_push_pencil_point,
-    swift_attach_pencil_capture, swift_detach_pencil_capture,
     RawPencilPoint,
+    drain_as_input_events,
+    drain_raw,
+    pencil_point_received,
+    rust_push_pencil_point,
+    swift_attach_pencil_capture,
+    swift_detach_pencil_capture,
 };

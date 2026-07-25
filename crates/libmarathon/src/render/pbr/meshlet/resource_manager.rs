@@ -1,32 +1,66 @@
-use super::{instance_manager::InstanceManager, meshlet_mesh_manager::MeshletMeshManager};
-use crate::render::pbr::ShadowView;
-use bevy_camera::{visibility::RenderLayers, Camera3d};
-use crate::render::{
-    experimental::mip_generation::{self, ViewDepthPyramid},
-    prepass::{PreviousViewData, PreviousViewUniforms},
+use core::iter;
+
+use bevy_camera::{
+    Camera3d,
+    visibility::RenderLayers,
 };
 use bevy_ecs::{
     component::Component,
-    entity::{Entity, EntityHashMap},
+    entity::{
+        Entity,
+        EntityHashMap,
+    },
     query::AnyOf,
     resource::Resource,
-    system::{Commands, Query, Res, ResMut},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+    },
 };
 use bevy_image::ToExtents;
-use bevy_math::{UVec2, Vec4Swizzles};
-use crate::render::{
-    render_resource::*,
-    renderer::{RenderDevice, RenderQueue},
-    texture::{CachedTexture, TextureCache},
-    view::{ExtractedView, ViewUniform, ViewUniforms},
+use bevy_math::{
+    UVec2,
+    Vec4Swizzles,
 };
 use binding_types::*;
-use core::iter;
+
+use super::{
+    instance_manager::InstanceManager,
+    meshlet_mesh_manager::MeshletMeshManager,
+};
+use crate::render::{
+    experimental::mip_generation::{
+        self,
+        ViewDepthPyramid,
+    },
+    pbr::ShadowView,
+    prepass::{
+        PreviousViewData,
+        PreviousViewUniforms,
+    },
+    render_resource::*,
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    texture::{
+        CachedTexture,
+        TextureCache,
+    },
+    view::{
+        ExtractedView,
+        ViewUniform,
+        ViewUniforms,
+    },
+};
 
 /// Manages per-view and per-cluster GPU resources for [`super::MeshletPlugin`].
 #[derive(Resource)]
 pub struct ResourceManager {
-    /// Intermediate buffer of cluster IDs for use with rasterizing the visibility buffer
+    /// Intermediate buffer of cluster IDs for use with rasterizing the
+    /// visibility buffer
     visibility_buffer_raster_clusters: Buffer,
     /// Intermediate buffer of previous counts of clusters in rasterizer buckets
     pub visibility_buffer_raster_cluster_prev_counts: Buffer,
@@ -36,14 +70,17 @@ pub struct ResourceManager {
     bvh_traversal_queues: [Buffer; 2],
     /// Cluster cull candidate queue
     cluster_cull_candidate_queue: Buffer,
-    /// Rightmost slot index of [`Self::visibility_buffer_raster_clusters`], [`Self::bvh_traversal_queues`], and [`Self::cluster_cull_candidate_queue`]
+    /// Rightmost slot index of [`Self::visibility_buffer_raster_clusters`],
+    /// [`Self::bvh_traversal_queues`], and
+    /// [`Self::cluster_cull_candidate_queue`]
     cull_queue_rightmost_slot: u32,
 
     /// Second pass instance candidates
     second_pass_candidates: Option<Buffer>,
     /// Sampler for a depth pyramid
     depth_pyramid_sampler: Sampler,
-    /// Dummy texture view for binding depth pyramids with less than the maximum amount of mips
+    /// Dummy texture view for binding depth pyramids with less than the maximum
+    /// amount of mips
     depth_pyramid_dummy_texture: TextureView,
 
     // TODO
@@ -452,7 +489,8 @@ impl ResourceManager {
     }
 }
 
-// ------------ TODO: Everything under here needs to be rewritten and cached ------------
+// ------------ TODO: Everything under here needs to be rewritten and cached
+// ------------
 
 #[derive(Component)]
 pub struct MeshletViewResources {
@@ -509,7 +547,8 @@ pub struct MeshletViewBindGroups {
     pub fill_counts: BindGroup,
 }
 
-// TODO: Cache things per-view and skip running this system / optimize this system
+// TODO: Cache things per-view and skip running this system / optimize this
+// system
 pub fn prepare_meshlet_per_frame_resources(
     mut resource_manager: ResMut<ResourceManager>,
     mut instance_manager: ResMut<InstanceManager>,
@@ -530,7 +569,8 @@ pub fn prepare_meshlet_per_frame_resources(
 
     let instance_manager = instance_manager.as_mut();
 
-    // TODO: Move this and the submit to a separate system and remove pub from the fields
+    // TODO: Move this and the submit to a separate system and remove pub from the
+    // fields
     instance_manager
         .instance_uniforms
         .write_buffer(&render_device, &render_queue);
@@ -546,8 +586,8 @@ pub fn prepare_meshlet_per_frame_resources(
 
     let needed_buffer_size = 4 * instance_manager.scene_instance_count as u64;
     let second_pass_candidates = match &mut resource_manager.second_pass_candidates {
-        Some(buffer) if buffer.size() >= needed_buffer_size => buffer.clone(),
-        slot => {
+        | Some(buffer) if buffer.size() >= needed_buffer_size => buffer.clone(),
+        | slot => {
             let buffer = render_device.create_buffer(&BufferDescriptor {
                 label: Some("meshlet_second_pass_candidates"),
                 size: needed_buffer_size,
@@ -556,7 +596,7 @@ pub fn prepare_meshlet_per_frame_resources(
             });
             *slot = Some(buffer.clone());
             buffer
-        }
+        },
     };
 
     for (view_entity, view, render_layers, (_, shadow_view)) in &views {
@@ -577,8 +617,8 @@ pub fn prepare_meshlet_per_frame_resources(
             // and the instance is not a shadow caster, hide the instance for this view
             if !render_layers
                 .unwrap_or(&RenderLayers::default())
-                .intersects(layers)
-                || (shadow_view.is_some() && *not_shadow_caster)
+                .intersects(layers) ||
+                (shadow_view.is_some() && *not_shadow_caster)
             {
                 let vec = instance_visibility.get_mut();
                 let index = instance_index / 32;
@@ -742,8 +782,8 @@ pub fn prepare_meshlet_per_frame_resources(
 
         let previous_depth_pyramid =
             match resource_manager.previous_depth_pyramids.get(&view_entity) {
-                Some(texture_view) => texture_view.clone(),
-                None => depth_pyramid.all_mips.clone(),
+                | Some(texture_view) => texture_view.clone(),
+                | None => depth_pyramid.all_mips.clone(),
             };
         resource_manager
             .previous_depth_pyramids

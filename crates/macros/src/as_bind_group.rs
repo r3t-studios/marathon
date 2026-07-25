@@ -1,13 +1,38 @@
-use bevy_macro_utils::{get_lit_bool, get_lit_str, BevyManifest, Symbol};
+use bevy_macro_utils::{
+    BevyManifest,
+    Symbol,
+    get_lit_bool,
+    get_lit_str,
+};
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
-use quote::{quote, ToTokens};
+use proc_macro2::{
+    Ident,
+    Span,
+};
+use quote::{
+    ToTokens,
+    quote,
+};
 use syn::{
+    Data,
+    DataStruct,
+    Error,
+    Fields,
+    LitInt,
+    LitStr,
+    Meta,
+    MetaList,
+    Result,
     parenthesized,
-    parse::{Parse, ParseStream},
+    parse::{
+        Parse,
+        ParseStream,
+    },
     punctuated::Punctuated,
-    token::{Comma, DotDot},
-    Data, DataStruct, Error, Fields, LitInt, LitStr, Meta, MetaList, Result,
+    token::{
+        Comma,
+        DotDot,
+    },
 };
 
 const UNIFORM_ATTRIBUTE_NAME: Symbol = Symbol("uniform");
@@ -154,8 +179,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
 
     // Read struct-level attributes, second pass.
     for attr in &ast.attrs {
-        if let Some(attr_ident) = attr.path().get_ident()
-            && (attr_ident == UNIFORM_ATTRIBUTE_NAME || attr_ident == DATA_ATTRIBUTE_NAME)
+        if let Some(attr_ident) = attr.path().get_ident() &&
+            (attr_ident == UNIFORM_ATTRIBUTE_NAME || attr_ident == DATA_ATTRIBUTE_NAME)
         {
             let UniformBindingAttr {
                 binding_type,
@@ -164,7 +189,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                 binding_array: binding_array_binding,
             } = get_uniform_binding_attr(attr)?;
             match binding_type {
-                UniformBindingAttrType::Uniform => {
+                | UniformBindingAttrType::Uniform => {
                     binding_impls.push(quote! {{
                             use #render_path::render_resource::AsBindGroupShaderType;
                             let mut buffer = #render_path::render_resource::encase::UniformBuffer::new(Vec::new());
@@ -183,21 +208,21 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         }});
 
                     match (&binding_array_binding, &attr_bindless_count) {
-                        (&None, &Some(_)) => {
+                        | (&None, &Some(_)) => {
                             return Err(Error::new_spanned(
                                 attr,
                                 "Must specify `binding_array(...)` with `#[uniform]` if the \
                                     object is bindless",
                             ));
-                        }
-                        (&Some(_), &None) => {
+                        },
+                        | (&Some(_), &None) => {
                             return Err(Error::new_spanned(
                                 attr,
                                 "`binding_array(...)` with `#[uniform]` requires the object to \
                                     be bindless",
                             ));
-                        }
-                        _ => {}
+                        },
+                        | _ => {},
                     }
 
                     let binding_array_binding = binding_array_binding.unwrap_or(0);
@@ -222,9 +247,9 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         binding_index,
                         quote! { #render_path::render_resource::BindlessResourceType::Buffer },
                     );
-                }
+                },
 
-                UniformBindingAttrType::Data => {
+                | UniformBindingAttrType::Data => {
                     binding_impls.push(quote! {{
                             use #render_path::render_resource::AsBindGroupShaderType;
                             use #render_path::render_resource::encase::{ShaderType, internal::WriteInto};
@@ -271,7 +296,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         binding_index,
                         quote! { #render_path::render_resource::BindlessResourceType::DataBuffer },
                     );
-                }
+                },
             }
 
             // Push the non-bindless binding layout.
@@ -321,16 +346,16 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
     }
 
     let fields = match &ast.data {
-        Data::Struct(DataStruct {
+        | Data::Struct(DataStruct {
             fields: Fields::Named(fields),
             ..
         }) => &fields.named,
-        _ => {
+        | _ => {
             return Err(Error::new_spanned(
                 ast,
                 "Expected a struct with named fields",
             ));
-        }
+        },
     };
 
     // Count the number of sampler fields needed. We might have to disable
@@ -381,51 +406,58 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
             }
 
             match &mut binding_states[binding_index as usize] {
-                value @ BindingState::Free => {
+                | value @ BindingState::Free => {
                     *value = match binding_type {
-                        BindingType::Uniform => BindingState::OccupiedMergeableUniform {
+                        | BindingType::Uniform => BindingState::OccupiedMergeableUniform {
                             uniform_fields: vec![field],
                         },
-                        _ => {
+                        | _ => {
                             // only populate bind group entries for non-uniforms
                             // uniform entries are deferred until the end
                             BindingState::Occupied {
                                 binding_type,
                                 ident: field_name,
                             }
-                        }
+                        },
                     }
-                }
-                BindingState::Occupied {
+                },
+                | BindingState::Occupied {
                     binding_type,
                     ident: occupied_ident,
                 } => {
                     return Err(Error::new_spanned(
                         attr,
-                        format!("The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by the field '{occupied_ident}' of type {binding_type:?}.")
+                        format!(
+                            "The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by the field '{occupied_ident}' of type {binding_type:?}."
+                        ),
                     ));
-                }
-                BindingState::OccupiedConvertedUniform => {
+                },
+                | BindingState::OccupiedConvertedUniform => {
                     return Err(Error::new_spanned(
                         attr,
-                        format!("The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by a struct-level uniform binding at the same index.")
+                        format!(
+                            "The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by a struct-level uniform binding at the same index."
+                        ),
                     ));
-                }
-                BindingState::OccupiedMergeableUniform { uniform_fields } => match binding_type {
-                    BindingType::Uniform => {
+                },
+                | BindingState::OccupiedMergeableUniform { uniform_fields } => match binding_type {
+                    | BindingType::Uniform => {
                         uniform_fields.push(field);
-                    }
-                    _ => {
+                    },
+                    | _ => {
                         return Err(Error::new_spanned(
-                                attr,
-                                format!("The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by a {:?}.", BindingType::Uniform)
-                            ));
-                    }
+                            attr,
+                            format!(
+                                "The '{field_name}' field cannot be assigned to binding {binding_index} because it is already occupied by a {:?}.",
+                                BindingType::Uniform
+                            ),
+                        ));
+                    },
                 },
             }
 
             match binding_type {
-                BindingType::Uniform => {
+                | BindingType::Uniform => {
                     if attr_bindless_count.is_some() {
                         return Err(Error::new_spanned(
                             attr,
@@ -434,10 +466,11 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         ));
                     }
 
-                    // uniform codegen is deferred to account for combined uniform bindings
-                }
+                    // uniform codegen is deferred to account for combined
+                    // uniform bindings
+                },
 
-                BindingType::Storage => {
+                | BindingType::Storage => {
                     let StorageAttrs {
                         visibility,
                         binding_array: binding_array_binding,
@@ -532,9 +565,9 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                             );
                         });
                     }
-                }
+                },
 
-                BindingType::StorageTexture => {
+                | BindingType::StorageTexture => {
                     if attr_bindless_count.is_some() {
                         return Err(Error::new_spanned(
                             attr,
@@ -554,7 +587,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
 
                     let fallback_image = get_fallback_image(&render_path, dimension);
 
-                    // insert fallible texture-based entries at 0 so that if we fail here, we exit before allocating any buffers
+                    // insert fallible texture-based entries at 0 so that if we fail here, we exit
+                    // before allocating any buffers
                     binding_impls.insert(0, quote! {
                         ( #binding_index,
                           #render_path::render_resource::OwnedBindingResource::TextureView(
@@ -585,9 +619,9 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                             }
                         );
                     });
-                }
+                },
 
-                BindingType::Texture => {
+                | BindingType::Texture => {
                     let TextureAttrs {
                         dimension,
                         sample_type,
@@ -600,7 +634,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
 
                     let fallback_image = get_fallback_image(&render_path, *dimension);
 
-                    // insert fallible texture-based entries at 0 so that if we fail here, we exit before allocating any buffers
+                    // insert fallible texture-based entries at 0 so that if we fail here, we exit
+                    // before allocating any buffers
                     binding_impls.insert(0, quote! {
                         (
                             #binding_index,
@@ -636,36 +671,36 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                     });
 
                     let bindless_resource_type = match *dimension {
-                        BindingTextureDimension::D1 => {
+                        | BindingTextureDimension::D1 => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::Texture1d
                             }
-                        }
-                        BindingTextureDimension::D2 => {
+                        },
+                        | BindingTextureDimension::D2 => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::Texture2d
                             }
-                        }
-                        BindingTextureDimension::D2Array => {
+                        },
+                        | BindingTextureDimension::D2Array => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::Texture2dArray
                             }
-                        }
-                        BindingTextureDimension::Cube => {
+                        },
+                        | BindingTextureDimension::Cube => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::TextureCube
                             }
-                        }
-                        BindingTextureDimension::CubeArray => {
+                        },
+                        | BindingTextureDimension::CubeArray => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::TextureCubeArray
                             }
-                        }
-                        BindingTextureDimension::D3 => {
+                        },
+                        | BindingTextureDimension::D3 => {
                             quote! {
                                 #render_path::render_resource::BindlessResourceType::Texture3d
                             }
-                        }
+                        },
                     };
 
                     // Add the texture to the `BindlessResourceType` list in the
@@ -676,9 +711,9 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         binding_index,
                         bindless_resource_type,
                     );
-                }
+                },
 
-                BindingType::Sampler => {
+                | BindingType::Sampler => {
                     let SamplerAttrs {
                         sampler_binding_type,
                         visibility,
@@ -694,20 +729,21 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                     let fallback_image = get_fallback_image(&render_path, *dimension);
 
                     let expected_samplers = match sampler_binding_type {
-                        SamplerBindingType::Filtering => {
+                        | SamplerBindingType::Filtering => {
                             quote!( [#render_path::render_resource::TextureSampleType::Float { filterable: true }] )
-                        }
-                        SamplerBindingType::NonFiltering => quote!([
+                        },
+                        | SamplerBindingType::NonFiltering => quote!([
                             #render_path::render_resource::TextureSampleType::Float { filterable: false },
                             #render_path::render_resource::TextureSampleType::Sint,
                             #render_path::render_resource::TextureSampleType::Uint,
                         ]),
-                        SamplerBindingType::Comparison => {
+                        | SamplerBindingType::Comparison => {
                             quote!( [#render_path::render_resource::TextureSampleType::Depth] )
-                        }
+                        },
                     };
 
-                    // insert fallible texture-based entries at 0 so that if we fail here, we exit before allocating any buffers
+                    // insert fallible texture-based entries at 0 so that if we fail here, we exit
+                    // before allocating any buffers
                     binding_impls.insert(0, quote! {
                         (
                             #binding_index,
@@ -769,7 +805,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                             #render_path::render_resource::BindlessResourceType::SamplerFiltering
                         },
                     );
-                }
+                },
             }
         }
     }
@@ -781,7 +817,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
     let mut field_struct_impls = Vec::new();
 
     let uniform_binding_type_declarations = match attr_bindless_count {
-        Some(_) => {
+        | Some(_) => {
             quote! {
                 let (#uniform_binding_type, #uniform_buffer_usages) =
                     if Self::bindless_supported(render_device) && !force_no_bindless {
@@ -796,21 +832,22 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         )
                     };
             }
-        }
-        None => {
+        },
+        | None => {
             quote! {
                 let (#uniform_binding_type, #uniform_buffer_usages) = (
                     #render_path::render_resource::BufferBindingType::Uniform,
                     #render_path::render_resource::BufferUsages::UNIFORM,
                 );
             }
-        }
+        },
     };
 
     for (binding_index, binding_state) in binding_states.iter().enumerate() {
         let binding_index = binding_index as u32;
         if let BindingState::OccupiedMergeableUniform { uniform_fields } = binding_state {
-            // single field uniform bindings for a given index can use a straightforward binding
+            // single field uniform bindings for a given index can use a straightforward
+            // binding
             if uniform_fields.len() == 1 {
                 let field = &uniform_fields[0];
                 let field_name = field.ident.as_ref().unwrap();
@@ -844,7 +881,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                         }
                     );
                 });
-            // multi-field uniform bindings for a given index require an intermediate struct to derive ShaderType
+            // multi-field uniform bindings for a given index require an
+            // intermediate struct to derive ShaderType
             } else {
                 let uniform_struct_name = Ident::new(
                     &format!("_{struct_name}AsBindGroupUniformStructBindGroup{binding_index}"),
@@ -909,47 +947,47 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
     // the limit on certain platforms. See
     // https://github.com/bevyengine/bevy/issues/16988.
     let bindless_count_syntax = match attr_bindless_count {
-        Some(BindlessSlabResourceLimitAttr::Auto) => {
+        | Some(BindlessSlabResourceLimitAttr::Auto) => {
             quote! { #render_path::render_resource::AUTO_BINDLESS_SLAB_RESOURCE_LIMIT }
-        }
-        Some(BindlessSlabResourceLimitAttr::Limit(ref count)) => {
+        },
+        | Some(BindlessSlabResourceLimitAttr::Limit(ref count)) => {
             quote! { #count }
-        }
-        None => quote! { 0 },
+        },
+        | None => quote! { 0 },
     };
 
     // Calculate the actual bindless index table range, taking the
     // `#[bindless(index_table(range(M..N)))]` attribute into account.
     let bindless_index_table_range = match attr_bindless_index_table_range {
-        None => {
+        | None => {
             let resource_count = bindless_resource_types.len() as u32;
             quote! {
                 #render_path::render_resource::BindlessIndex(0)..
                 #render_path::render_resource::BindlessIndex(#resource_count)
             }
-        }
-        Some(BindlessIndexTableRangeAttr { start, end }) => {
+        },
+        | Some(BindlessIndexTableRangeAttr { start, end }) => {
             quote! {
                 #render_path::render_resource::BindlessIndex(#start)..
                 #render_path::render_resource::BindlessIndex(#end)
             }
-        }
+        },
     };
 
     // Calculate the actual binding number of the bindless index table, taking
     // the `#[bindless(index_table(binding(B)))]` into account.
     let bindless_index_table_binding_number = match attr_bindless_index_table_binding {
-        None => quote! { #render_path::render_resource::BindingNumber(0) },
-        Some(binding_number) => {
+        | None => quote! { #render_path::render_resource::BindingNumber(0) },
+        | Some(binding_number) => {
             quote! { #render_path::render_resource::BindingNumber(#binding_number) }
-        }
+        },
     };
 
     // Calculate the actual number of bindless slots, taking hardware
     // limitations into account.
     let (bindless_slot_count, actual_bindless_slot_count_declaration, bindless_descriptor_syntax) =
         match attr_bindless_count {
-            Some(ref bindless_count) => {
+            | Some(ref bindless_count) => {
                 let bindless_supported_syntax = quote! {
                         fn bindless_supported(
                             render_device: &#render_path::renderer::RenderDevice
@@ -972,7 +1010,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                     };
                 };
                 let bindless_slot_count_declaration = match bindless_count {
-                    BindlessSlabResourceLimitAttr::Auto => {
+                    | BindlessSlabResourceLimitAttr::Auto => {
                         quote! {
                             fn bindless_slot_count() -> Option<
                                 #render_path::render_resource::BindlessSlabResourceLimit
@@ -980,8 +1018,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                                 Some(#render_path::render_resource::BindlessSlabResourceLimit::Auto)
                             }
                         }
-                    }
-                    BindlessSlabResourceLimitAttr::Limit(lit) => {
+                    },
+                    | BindlessSlabResourceLimitAttr::Limit(lit) => {
                         quote! {
                             fn bindless_slot_count() -> Option<
                                 #render_path::render_resource::BindlessSlabResourceLimit
@@ -989,7 +1027,7 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                                 Some(#render_path::render_resource::BindlessSlabResourceLimit::Custom(#lit))
                             }
                         }
-                    }
+                    },
                 };
 
                 let bindless_buffer_descriptor_count = bindless_buffer_descriptors.len();
@@ -1029,8 +1067,8 @@ pub fn derive_as_bind_group(ast: syn::DeriveInput) -> Result<TokenStream> {
                     actual_bindless_slot_count_declaration,
                     bindless_descriptor_syntax,
                 )
-            }
-            None => (
+            },
+            | None => (
                 TokenStream::new().into(),
                 quote! { let #actual_bindless_slot_count: Option<::core::num::NonZeroU32> = None; },
                 quote! { None },
@@ -1267,8 +1305,8 @@ fn get_uniform_binding_attr(attr: &syn::Attribute) -> Result<UniformBindingAttr>
     let binding_index = uniform_binding_meta.lit_int.base10_parse()?;
     let ident = uniform_binding_meta.ident;
     let binding_array = match uniform_binding_meta.binding_array {
-        None => None,
-        Some(binding_array) => Some(binding_array.base10_parse()?),
+        | None => None,
+        | Some(binding_array) => Some(binding_array.base10_parse()?),
     };
 
     Ok(UniformBindingAttr {
@@ -1287,8 +1325,8 @@ fn get_binding_nested_attr(attr: &syn::Attribute) -> Result<(u32, Vec<Meta>)> {
     let binding_meta = attr.parse_args_with(BindingMeta::parse)?;
 
     match binding_meta {
-        BindingMeta::IndexOnly(lit_int) => Ok((lit_int.base10_parse()?, Vec::new())),
-        BindingMeta::IndexWithOptions(BindingIndexOptions {
+        | BindingMeta::IndexOnly(lit_int) => Ok((lit_int.base10_parse()?, Vec::new())),
+        | BindingMeta::IndexWithOptions(BindingIndexOptions {
             lit_int,
             _comma: _,
             meta_list,
@@ -1341,15 +1379,15 @@ impl VisibilityFlags {
 impl ShaderStageVisibility {
     fn hygienic_quote(&self, path: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         match self {
-            ShaderStageVisibility::All => quote! {
+            | ShaderStageVisibility::All => quote! {
                 if cfg!(feature = "webgpu") {
                     todo!("Please use a more specific shader stage: https://github.com/gfx-rs/wgpu/issues/7708")
                 } else {
                     #path::ShaderStages::all()
                 }
             },
-            ShaderStageVisibility::None => quote! { #path::ShaderStages::NONE },
-            ShaderStageVisibility::Flags(flags) => {
+            | ShaderStageVisibility::None => quote! { #path::ShaderStages::NONE },
+            | ShaderStageVisibility::Flags(flags) => {
                 let mut quoted = Vec::new();
 
                 if flags.vertex {
@@ -1363,7 +1401,7 @@ impl ShaderStageVisibility {
                 }
 
                 quote! { #(#quoted)|* }
-            }
+            },
         }
     }
 }
@@ -1386,12 +1424,12 @@ fn get_visibility_flag_value(meta_list: &MetaList) -> Result<ShaderStageVisibili
     if flags.is_empty() {
         return Err(Error::new_spanned(
             meta_list,
-            "Invalid visibility format. Must be `visibility(flags)`, flags can be `all`, `none`, or a list-combination of `vertex`, `fragment` and/or `compute`."
+            "Invalid visibility format. Must be `visibility(flags)`, flags can be `all`, `none`, or a list-combination of `vertex`, `fragment` and/or `compute`.",
         ));
     }
 
-    if flags.len() == 1
-        && let Some(flag) = flags.first()
+    if flags.len() == 1 &&
+        let Some(flag) = flags.first()
     {
         if flag == VISIBILITY_ALL {
             return Ok(ShaderStageVisibility::All);
@@ -1412,7 +1450,7 @@ fn get_visibility_flag_value(meta_list: &MetaList) -> Result<ShaderStageVisibili
         } else {
             return Err(Error::new_spanned(
                 flag,
-                "Not a valid visibility flag. Must be `all`, `none`, or a list-combination of `vertex`, `fragment` and/or `compute`."
+                "Not a valid visibility flag. Must be `all`, `none`, or a list-combination of `vertex`, `fragment` and/or `compute`.",
             ));
         }
     }
@@ -1449,12 +1487,12 @@ enum BindingTextureSampleType {
 impl ToTokens for BindingTextureDimension {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(match self {
-            BindingTextureDimension::D1 => quote! { TextureViewDimension::D1 },
-            BindingTextureDimension::D2 => quote! { TextureViewDimension::D2 },
-            BindingTextureDimension::D2Array => quote! { TextureViewDimension::D2Array },
-            BindingTextureDimension::Cube => quote! { TextureViewDimension::Cube },
-            BindingTextureDimension::CubeArray => quote! { TextureViewDimension::CubeArray },
-            BindingTextureDimension::D3 => quote! { TextureViewDimension::D3 },
+            | BindingTextureDimension::D1 => quote! { TextureViewDimension::D1 },
+            | BindingTextureDimension::D2 => quote! { TextureViewDimension::D2 },
+            | BindingTextureDimension::D2Array => quote! { TextureViewDimension::D2Array },
+            | BindingTextureDimension::Cube => quote! { TextureViewDimension::Cube },
+            | BindingTextureDimension::CubeArray => quote! { TextureViewDimension::CubeArray },
+            | BindingTextureDimension::D3 => quote! { TextureViewDimension::D3 },
         });
     }
 }
@@ -1462,12 +1500,12 @@ impl ToTokens for BindingTextureDimension {
 impl ToTokens for BindingTextureSampleType {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(match self {
-            BindingTextureSampleType::Float { filterable } => {
+            | BindingTextureSampleType::Float { filterable } => {
                 quote! { TextureSampleType::Float { filterable: #filterable } }
-            }
-            BindingTextureSampleType::Depth => quote! { TextureSampleType::Depth },
-            BindingTextureSampleType::Sint => quote! { TextureSampleType::Sint },
-            BindingTextureSampleType::Uint => quote! { TextureSampleType::Uint },
+            },
+            | BindingTextureSampleType::Depth => quote! { TextureSampleType::Depth },
+            | BindingTextureSampleType::Sint => quote! { TextureSampleType::Sint },
+            | BindingTextureSampleType::Uint => quote! { TextureSampleType::Uint },
         });
     }
 }
@@ -1522,37 +1560,40 @@ fn get_storage_texture_binding_attr(metas: Vec<Meta>) -> Result<StorageTextureAt
     let mut storage_texture_attrs = StorageTextureAttrs::default();
 
     for meta in metas {
-        use syn::Meta::{List, NameValue};
+        use syn::Meta::{
+            List,
+            NameValue,
+        };
         match meta {
             // Parse #[storage_texture(0, dimension = "...")].
-            NameValue(m) if m.path == DIMENSION => {
+            | NameValue(m) if m.path == DIMENSION => {
                 let value = get_lit_str(DIMENSION, &m.value)?;
                 storage_texture_attrs.dimension = get_texture_dimension_value(value)?;
-            }
+            },
             // Parse #[storage_texture(0, format = ...))].
-            NameValue(m) if m.path == IMAGE_FORMAT => {
+            | NameValue(m) if m.path == IMAGE_FORMAT => {
                 storage_texture_attrs.image_format = m.value.into_token_stream();
-            }
+            },
             // Parse #[storage_texture(0, access = ...))].
-            NameValue(m) if m.path == ACCESS => {
+            | NameValue(m) if m.path == ACCESS => {
                 storage_texture_attrs.access = m.value.into_token_stream();
-            }
+            },
             // Parse #[storage_texture(0, visibility(...))].
-            List(m) if m.path == VISIBILITY => {
+            | List(m) if m.path == VISIBILITY => {
                 storage_texture_attrs.visibility = get_visibility_flag_value(&m)?;
-            }
-            NameValue(m) => {
+            },
+            | NameValue(m) => {
                 return Err(Error::new_spanned(
                     m.path,
                     "Not a valid name. Available attributes: `dimension`, `image_format`, `access`.",
                 ));
-            }
-            _ => {
+            },
+            | _ => {
                 return Err(Error::new_spanned(
                     meta,
                     "Not a name value pair: `foo = \"...\"`",
                 ));
-            }
+            },
         }
     }
 
@@ -1590,43 +1631,46 @@ fn get_texture_attrs(metas: Vec<Meta>) -> Result<TextureAttrs> {
     let mut visibility = ShaderStageVisibility::vertex_fragment();
 
     for meta in metas {
-        use syn::Meta::{List, NameValue};
+        use syn::Meta::{
+            List,
+            NameValue,
+        };
         match meta {
             // Parse #[texture(0, dimension = "...")].
-            NameValue(m) if m.path == DIMENSION => {
+            | NameValue(m) if m.path == DIMENSION => {
                 let value = get_lit_str(DIMENSION, &m.value)?;
                 dimension = get_texture_dimension_value(value)?;
-            }
+            },
             // Parse #[texture(0, sample_type = "...")].
-            NameValue(m) if m.path == SAMPLE_TYPE => {
+            | NameValue(m) if m.path == SAMPLE_TYPE => {
                 let value = get_lit_str(SAMPLE_TYPE, &m.value)?;
                 sample_type = get_texture_sample_type_value(value)?;
-            }
+            },
             // Parse #[texture(0, multisampled = "...")].
-            NameValue(m) if m.path == MULTISAMPLED => {
+            | NameValue(m) if m.path == MULTISAMPLED => {
                 multisampled = get_lit_bool(MULTISAMPLED, &m.value)?;
-            }
+            },
             // Parse #[texture(0, filterable = "...")].
-            NameValue(m) if m.path == FILTERABLE => {
+            | NameValue(m) if m.path == FILTERABLE => {
                 filterable = get_lit_bool(FILTERABLE, &m.value)?.into();
                 filterable_ident = m.path.into();
-            }
+            },
             // Parse #[texture(0, visibility(...))].
-            List(m) if m.path == VISIBILITY => {
+            | List(m) if m.path == VISIBILITY => {
                 visibility = get_visibility_flag_value(&m)?;
-            }
-            NameValue(m) => {
+            },
+            | NameValue(m) => {
                 return Err(Error::new_spanned(
                     m.path,
-                    "Not a valid name. Available attributes: `dimension`, `sample_type`, `multisampled`, or `filterable`."
+                    "Not a valid name. Available attributes: `dimension`, `sample_type`, `multisampled`, or `filterable`.",
                 ));
-            }
-            _ => {
+            },
+            | _ => {
                 return Err(Error::new_spanned(
                     meta,
                     "Not a name value pair: `foo = \"...\"`",
                 ));
-            }
+            },
         }
     }
 
@@ -1635,15 +1679,15 @@ fn get_texture_attrs(metas: Vec<Meta>) -> Result<TextureAttrs> {
     if let Some(filterable) = filterable {
         let path = filterable_ident.unwrap();
         match sample_type {
-            BindingTextureSampleType::Float { filterable: _ } => {
+            | BindingTextureSampleType::Float { filterable: _ } => {
                 sample_type = BindingTextureSampleType::Float { filterable }
-            }
-            _ => {
+            },
+            | _ => {
                 return Err(Error::new_spanned(
                     path,
                     "Type must be `float` to use the `filterable` attribute.",
                 ));
-            }
+            },
         };
     }
 
@@ -1657,14 +1701,14 @@ fn get_texture_attrs(metas: Vec<Meta>) -> Result<TextureAttrs> {
 
 fn get_texture_dimension_value(lit_str: &LitStr) -> Result<BindingTextureDimension> {
     match lit_str.value().as_str() {
-        DIM_1D => Ok(BindingTextureDimension::D1),
-        DIM_2D => Ok(BindingTextureDimension::D2),
-        DIM_2D_ARRAY => Ok(BindingTextureDimension::D2Array),
-        DIM_3D => Ok(BindingTextureDimension::D3),
-        DIM_CUBE => Ok(BindingTextureDimension::Cube),
-        DIM_CUBE_ARRAY => Ok(BindingTextureDimension::CubeArray),
+        | DIM_1D => Ok(BindingTextureDimension::D1),
+        | DIM_2D => Ok(BindingTextureDimension::D2),
+        | DIM_2D_ARRAY => Ok(BindingTextureDimension::D2Array),
+        | DIM_3D => Ok(BindingTextureDimension::D3),
+        | DIM_CUBE => Ok(BindingTextureDimension::Cube),
+        | DIM_CUBE_ARRAY => Ok(BindingTextureDimension::CubeArray),
 
-        _ => Err(Error::new_spanned(
+        | _ => Err(Error::new_spanned(
             lit_str,
             "Not a valid dimension. Must be `1d`, `2d`, `2d_array`, `3d`, `cube` or `cube_array`.",
         )),
@@ -1673,12 +1717,12 @@ fn get_texture_dimension_value(lit_str: &LitStr) -> Result<BindingTextureDimensi
 
 fn get_texture_sample_type_value(lit_str: &LitStr) -> Result<BindingTextureSampleType> {
     match lit_str.value().as_str() {
-        FLOAT => Ok(BindingTextureSampleType::Float { filterable: true }),
-        DEPTH => Ok(BindingTextureSampleType::Depth),
-        S_INT => Ok(BindingTextureSampleType::Sint),
-        U_INT => Ok(BindingTextureSampleType::Uint),
+        | FLOAT => Ok(BindingTextureSampleType::Float { filterable: true }),
+        | DEPTH => Ok(BindingTextureSampleType::Depth),
+        | S_INT => Ok(BindingTextureSampleType::Sint),
+        | U_INT => Ok(BindingTextureSampleType::Uint),
 
-        _ => Err(Error::new_spanned(
+        | _ => Err(Error::new_spanned(
             lit_str,
             "Not a valid sample type. Must be `float`, `depth`, `s_int` or `u_int`.",
         )),
@@ -1702,9 +1746,9 @@ enum SamplerBindingType {
 impl ToTokens for SamplerBindingType {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(match self {
-            SamplerBindingType::Filtering => quote! { SamplerBindingType::Filtering },
-            SamplerBindingType::NonFiltering => quote! { SamplerBindingType::NonFiltering },
-            SamplerBindingType::Comparison => quote! { SamplerBindingType::Comparison },
+            | SamplerBindingType::Filtering => quote! { SamplerBindingType::Filtering },
+            | SamplerBindingType::NonFiltering => quote! { SamplerBindingType::NonFiltering },
+            | SamplerBindingType::Comparison => quote! { SamplerBindingType::Comparison },
         });
     }
 }
@@ -1720,29 +1764,32 @@ fn get_sampler_attrs(metas: Vec<Meta>) -> Result<SamplerAttrs> {
     let mut visibility = ShaderStageVisibility::vertex_fragment();
 
     for meta in metas {
-        use syn::Meta::{List, NameValue};
+        use syn::Meta::{
+            List,
+            NameValue,
+        };
         match meta {
             // Parse #[sampler(0, sampler_type = "..."))].
-            NameValue(m) if m.path == SAMPLER_TYPE => {
+            | NameValue(m) if m.path == SAMPLER_TYPE => {
                 let value = get_lit_str(DIMENSION, &m.value)?;
                 sampler_binding_type = get_sampler_binding_type_value(value)?;
-            }
+            },
             // Parse #[sampler(0, visibility(...))].
-            List(m) if m.path == VISIBILITY => {
+            | List(m) if m.path == VISIBILITY => {
                 visibility = get_visibility_flag_value(&m)?;
-            }
-            NameValue(m) => {
+            },
+            | NameValue(m) => {
                 return Err(Error::new_spanned(
                     m.path,
                     "Not a valid name. Available attributes: `sampler_type`.",
                 ));
-            }
-            _ => {
+            },
+            | _ => {
                 return Err(Error::new_spanned(
                     meta,
                     "Not a name value pair: `foo = \"...\"`",
                 ));
-            }
+            },
         }
     }
 
@@ -1754,11 +1801,11 @@ fn get_sampler_attrs(metas: Vec<Meta>) -> Result<SamplerAttrs> {
 
 fn get_sampler_binding_type_value(lit_str: &LitStr) -> Result<SamplerBindingType> {
     match lit_str.value().as_str() {
-        FILTERING => Ok(SamplerBindingType::Filtering),
-        NON_FILTERING => Ok(SamplerBindingType::NonFiltering),
-        COMPARISON => Ok(SamplerBindingType::Comparison),
+        | FILTERING => Ok(SamplerBindingType::Filtering),
+        | NON_FILTERING => Ok(SamplerBindingType::NonFiltering),
+        | COMPARISON => Ok(SamplerBindingType::Comparison),
 
-        _ => Err(Error::new_spanned(
+        | _ => Err(Error::new_spanned(
             lit_str,
             "Not a valid dimension. Must be `filtering`, `non_filtering`, or `comparison`.",
         )),
@@ -1783,28 +1830,31 @@ fn get_storage_binding_attr(metas: Vec<Meta>) -> Result<StorageAttrs> {
     let mut buffer = false;
 
     for meta in metas {
-        use syn::Meta::{List, Path};
+        use syn::Meta::{
+            List,
+            Path,
+        };
         match meta {
             // Parse #[storage(0, visibility(...))].
-            List(m) if m.path == VISIBILITY => {
+            | List(m) if m.path == VISIBILITY => {
                 visibility = get_visibility_flag_value(&m)?;
-            }
+            },
             // Parse #[storage(0, binding_array(...))] for bindless mode.
-            List(m) if m.path == BINDING_ARRAY_MODIFIER_NAME => {
+            | List(m) if m.path == BINDING_ARRAY_MODIFIER_NAME => {
                 binding_array = Some(get_binding_array_flag_value(&m)?);
-            }
-            Path(path) if path == READ_ONLY => {
+            },
+            | Path(path) if path == READ_ONLY => {
                 read_only = true;
-            }
-            Path(path) if path == BUFFER => {
+            },
+            | Path(path) if path == BUFFER => {
                 buffer = true;
-            }
-            _ => {
+            },
+            | _ => {
                 return Err(Error::new_spanned(
                     meta,
                     "Not a valid attribute. Available attributes: `read_only`, `visibility`",
                 ));
-            }
+            },
         }
     }
 

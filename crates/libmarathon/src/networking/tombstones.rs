@@ -243,20 +243,29 @@ pub fn handle_local_deletions_system(
         if let Some(ref mut buffer) = write_buffer {
             // Serialize the vector clock using rkyv
             match rkyv::to_bytes::<rkyv::rancor::Failure>(&node_clock.clock).map(|b| b.to_vec()) {
-                Ok(clock_bytes) => {
+                | Ok(clock_bytes) => {
                     if let Err(e) = buffer.add(crate::persistence::PersistenceOp::RecordTombstone {
                         entity_id: networked.network_id,
                         deleting_node: node_clock.node_id,
                         deletion_clock: bytes::Bytes::from(clock_bytes),
                     }) {
-                        error!("Failed to persist tombstone for entity {:?}: {}", networked.network_id, e);
+                        error!(
+                            "Failed to persist tombstone for entity {:?}: {}",
+                            networked.network_id, e
+                        );
                     } else {
-                        debug!("Persisted tombstone for entity {:?} to database", networked.network_id);
+                        debug!(
+                            "Persisted tombstone for entity {:?} to database",
+                            networked.network_id
+                        );
                     }
                 },
-                Err(e) => {
-                    error!("Failed to serialize vector clock for tombstone persistence: {:?}", e);
-                }
+                | Err(e) => {
+                    error!(
+                        "Failed to serialize vector clock for tombstone persistence: {:?}",
+                        e
+                    );
+                },
             }
         }
 
@@ -275,13 +284,14 @@ pub fn handle_local_deletions_system(
 
         // Broadcast deletion if online
         if let Some(ref bridge) = bridge {
-            let message =
-                crate::networking::VersionedMessage::new(crate::networking::SyncMessage::EntityDelta {
+            let message = crate::networking::VersionedMessage::new(
+                crate::networking::SyncMessage::EntityDelta {
                     entity_id: delta.entity_id,
                     node_id: delta.node_id,
                     vector_clock: delta.vector_clock.clone(),
                     operations: delta.operations.clone(),
-                });
+                },
+            );
 
             if let Err(e) = bridge.send(message) {
                 error!("Failed to broadcast Delete operation: {}", e);

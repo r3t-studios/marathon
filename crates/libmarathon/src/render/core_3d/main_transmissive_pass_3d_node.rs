@@ -1,21 +1,41 @@
-use super::ViewTransmissionTexture;
-use crate::render::core_3d::Transmissive3d;
-use bevy_camera::{Camera3d, MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::*, query::QueryItem};
-use bevy_image::ToExtents;
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::ViewSortedRenderPhases,
-    render_resource::{RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
-};
 use core::ops::Range;
+
+use bevy_camera::{
+    Camera3d,
+    MainPassResolutionOverride,
+    Viewport,
+};
+use bevy_ecs::{
+    prelude::*,
+    query::QueryItem,
+};
+use bevy_image::ToExtents;
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
+
+use super::ViewTransmissionTexture;
+use crate::render::{
+    camera::ExtractedCamera,
+    core_3d::Transmissive3d,
+    diagnostic::RecordDiagnostics,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::ViewSortedRenderPhases,
+    render_resource::{
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    view::{
+        ExtractedView,
+        ViewDepthTexture,
+        ViewTarget,
+    },
+};
 
 /// A [`bevy_render::render_graph::Node`] that runs the [`Transmissive3d`]
 /// [`ViewSortedRenderPhases`].
@@ -78,18 +98,23 @@ impl ViewNode for MainTransmissivePass3dNode {
                 let transmission =
                     transmission.expect("`ViewTransmissionTexture` should exist at this point");
 
-                // `transmissive_phase.items` are depth sorted, so we split them into N = `screen_space_specular_transmission_steps`
-                // ranges, rendering them back-to-front in multiple steps, allowing multiple levels of transparency.
+                // `transmissive_phase.items` are depth sorted, so we split them into N =
+                // `screen_space_specular_transmission_steps` ranges, rendering
+                // them back-to-front in multiple steps, allowing multiple levels of
+                // transparency.
                 //
-                // Note: For the sake of simplicity, we currently split items evenly among steps. In the future, we
-                // might want to use a more sophisticated heuristic (e.g. based on view bounds, or with an exponential
-                // falloff so that nearby objects have more levels of transparency available to them)
+                // Note: For the sake of simplicity, we currently split items evenly among
+                // steps. In the future, we might want to use a more
+                // sophisticated heuristic (e.g. based on view bounds, or with an exponential
+                // falloff so that nearby objects have more levels of transparency available to
+                // them)
                 for range in split_range(
                     0..transmissive_phase.items.len(),
                     screen_space_specular_transmission_steps,
                 ) {
-                    // Copy the main texture to the transmission texture, allowing to use the color output of the
-                    // previous step (or of the `Opaque3d` phase, for the first step) as a transmissive color input
+                    // Copy the main texture to the transmission texture, allowing to use the color
+                    // output of the previous step (or of the `Opaque3d` phase,
+                    // for the first step) as a transmissive color input
                     render_context.command_encoder().copy_texture_to_texture(
                         target.main_texture().as_image_copy(),
                         transmission.texture.as_image_copy(),

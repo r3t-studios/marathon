@@ -4,8 +4,17 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::{EngineCommand, EngineEvent, EngineHandle, NetworkingManager, PersistenceManager};
-use crate::networking::{SessionId, VectorClock};
+use super::{
+    EngineCommand,
+    EngineEvent,
+    EngineHandle,
+    NetworkingManager,
+    PersistenceManager,
+};
+use crate::networking::{
+    SessionId,
+    VectorClock,
+};
 
 pub struct EngineCore {
     handle: EngineHandle,
@@ -58,24 +67,24 @@ impl EngineCore {
     /// Returns true to continue running, false to shutdown
     async fn handle_command(&mut self, cmd: EngineCommand) -> bool {
         match cmd {
-            EngineCommand::StartNetworking { session_id } => {
+            | EngineCommand::StartNetworking { session_id } => {
                 self.start_networking(session_id).await;
-            }
-            EngineCommand::StopNetworking => {
+            },
+            | EngineCommand::StopNetworking => {
                 self.stop_networking().await;
-            }
-            EngineCommand::JoinSession { session_id } => {
+            },
+            | EngineCommand::JoinSession { session_id } => {
                 self.join_session(session_id).await;
-            }
-            EngineCommand::LeaveSession => {
+            },
+            | EngineCommand::LeaveSession => {
                 self.stop_networking().await;
-            }
-            EngineCommand::SaveSession => {
+            },
+            | EngineCommand::SaveSession => {
                 // Session state is auto-saved by save_session_on_shutdown_system in Bevy
                 // This command is a no-op, as persistence is handled by Bevy systems
                 tracing::debug!("SaveSession command received (session auto-save handled by Bevy)");
-            }
-            EngineCommand::LoadSession { session_id } => {
+            },
+            | EngineCommand::LoadSession { session_id } => {
                 // Loading a session means switching to a different session
                 // This requires restarting networking with the new session
                 tracing::info!("LoadSession command received for {}", session_id.to_code());
@@ -87,18 +96,18 @@ impl EngineCore {
 
                 // Start networking with the new session
                 self.start_networking(session_id).await;
-            }
-            EngineCommand::TickClock => {
+            },
+            | EngineCommand::TickClock => {
                 self.tick_clock();
-            }
-            EngineCommand::Shutdown => {
+            },
+            | EngineCommand::Shutdown => {
                 tracing::info!("Shutdown command received");
                 return false;
-            }
+            },
             // TODO: Handle CRDT and lock commands in Phase 2
-            _ => {
+            | _ => {
                 tracing::debug!("Unhandled command: {:?}", cmd);
-            }
+            },
         }
         true
     }
@@ -118,7 +127,10 @@ impl EngineCore {
             return;
         }
 
-        tracing::info!("Starting networking initialization for session {}", session_id.to_code());
+        tracing::info!(
+            "Starting networking initialization for session {}",
+            session_id.to_code()
+        );
 
         // Test mode: Skip actual networking and send event immediately
         #[cfg(feature = "fast_tests")]
@@ -129,7 +141,10 @@ impl EngineCore {
                 node_id: self.node_id,
                 bridge,
             });
-            tracing::info!("Networking started (test mode) for session {}", session_id.to_code());
+            tracing::info!(
+                "Networking started (test mode) for session {}",
+                session_id.to_code()
+            );
 
             // Create a dummy task that just waits
             let task = tokio::spawn(async {
@@ -163,8 +178,14 @@ impl EngineCore {
         });
 
         let task = tokio::spawn(async move {
-            match NetworkingManager::new(session_id.clone(), Some(progress_tx), cancel_token_clone.clone()).await {
-                Ok((net_manager, bridge)) => {
+            match NetworkingManager::new(
+                session_id.clone(),
+                Some(progress_tx),
+                cancel_token_clone.clone(),
+            )
+            .await
+            {
+                | Ok((net_manager, bridge)) => {
                     let node_id = net_manager.node_id();
 
                     // Notify Bevy that networking started
@@ -177,13 +198,13 @@ impl EngineCore {
 
                     // Run the networking manager loop with cancellation support
                     net_manager.run(event_tx.clone(), cancel_token_clone).await;
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     let _ = event_tx.send(EngineEvent::NetworkingFailed {
                         error: e.to_string(),
                     });
                     tracing::error!("Failed to start networking: {}", e);
-                }
+                },
             }
         });
 

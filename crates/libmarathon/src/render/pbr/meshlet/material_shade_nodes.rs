@@ -1,37 +1,66 @@
-use super::{
-    material_pipeline_prepare::{
-        MeshletViewMaterialsDeferredGBufferPrepass, MeshletViewMaterialsMainOpaquePass,
-        MeshletViewMaterialsPrepass,
-    },
-    resource_manager::{MeshletViewBindGroups, MeshletViewResources},
-    InstanceManager,
-};
-use crate::render::pbr::{
-    MeshViewBindGroup, PrepassViewBindGroup, ViewEnvironmentMapUniformOffset, ViewFogUniformOffset,
-    ViewLightProbesUniformOffset, ViewLightsUniformOffset, ViewScreenSpaceReflectionsUniformOffset,
-};
-use bevy_camera::MainPassResolutionOverride;
-use bevy_camera::Viewport;
-use crate::render::prepass::{
-    MotionVectorPrepass, PreviousViewUniformOffset, ViewPrepassTextures,
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
 };
 use bevy_ecs::{
-    query::{Has, QueryItem},
+    query::{
+        Has,
+        QueryItem,
+    },
     world::World,
+};
+
+use super::{
+    InstanceManager,
+    material_pipeline_prepare::{
+        MeshletViewMaterialsDeferredGBufferPrepass,
+        MeshletViewMaterialsMainOpaquePass,
+        MeshletViewMaterialsPrepass,
+    },
+    resource_manager::{
+        MeshletViewBindGroups,
+        MeshletViewResources,
+    },
 };
 use crate::render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+    pbr::{
+        MeshViewBindGroup,
+        PrepassViewBindGroup,
+        ViewEnvironmentMapUniformOffset,
+        ViewFogUniformOffset,
+        ViewLightProbesUniformOffset,
+        ViewLightsUniformOffset,
+        ViewScreenSpaceReflectionsUniformOffset,
+    },
+    prepass::{
+        MotionVectorPrepass,
+        PreviousViewUniformOffset,
+        ViewPrepassTextures,
+    },
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
     render_resource::{
-        LoadOp, Operations, PipelineCache, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+        LoadOp,
+        Operations,
+        PipelineCache,
+        RenderPassDepthStencilAttachment,
+        RenderPassDescriptor,
         StoreOp,
     },
     renderer::RenderContext,
-    view::{ViewTarget, ViewUniformOffset},
+    view::{
+        ViewTarget,
+        ViewUniformOffset,
+    },
 };
 
-/// Fullscreen shading pass based on the visibility buffer generated from rasterizing meshlets.
+/// Fullscreen shading pass based on the visibility buffer generated from
+/// rasterizing meshlets.
 #[derive(Default)]
 pub struct MeshletMainOpaquePass3dNode;
 impl ViewNode for MeshletMainOpaquePass3dNode {
@@ -133,8 +162,8 @@ impl ViewNode for MeshletMainOpaquePass3dNode {
         for (material_id, material_pipeline_id, material_bind_group) in
             meshlet_view_materials.iter()
         {
-            if instance_manager.material_present_in_scene(material_id)
-                && let Some(material_pipeline) =
+            if instance_manager.material_present_in_scene(material_id) &&
+                let Some(material_pipeline) =
                     pipeline_cache.get_render_pipeline(*material_pipeline_id)
             {
                 let x = *material_id * 3;
@@ -150,7 +179,8 @@ impl ViewNode for MeshletMainOpaquePass3dNode {
     }
 }
 
-/// Fullscreen pass to generate prepass textures based on the visibility buffer generated from rasterizing meshlets.
+/// Fullscreen pass to generate prepass textures based on the visibility buffer
+/// generated from rasterizing meshlets.
 #[derive(Default)]
 pub struct MeshletPrepassNode;
 impl ViewNode for MeshletPrepassNode {
@@ -265,8 +295,8 @@ impl ViewNode for MeshletPrepassNode {
         for (material_id, material_pipeline_id, material_bind_group) in
             meshlet_view_materials.iter()
         {
-            if instance_manager.material_present_in_scene(material_id)
-                && let Some(material_pipeline) =
+            if instance_manager.material_present_in_scene(material_id) &&
+                let Some(material_pipeline) =
                     pipeline_cache.get_render_pipeline(*material_pipeline_id)
             {
                 let x = *material_id * 3;
@@ -282,7 +312,8 @@ impl ViewNode for MeshletPrepassNode {
     }
 }
 
-/// Fullscreen pass to generate a gbuffer based on the visibility buffer generated from rasterizing meshlets.
+/// Fullscreen pass to generate a gbuffer based on the visibility buffer
+/// generated from rasterizing meshlets.
 #[derive(Default)]
 pub struct MeshletDeferredGBufferPrepassNode;
 impl ViewNode for MeshletDeferredGBufferPrepassNode {
@@ -403,8 +434,8 @@ impl ViewNode for MeshletDeferredGBufferPrepassNode {
         for (material_id, material_pipeline_id, material_bind_group) in
             meshlet_view_materials.iter()
         {
-            if instance_manager.material_present_in_scene(material_id)
-                && let Some(material_pipeline) =
+            if instance_manager.material_present_in_scene(material_id) &&
+                let Some(material_pipeline) =
                     pipeline_cache.get_render_pipeline(*material_pipeline_id)
             {
                 let x = *material_id * 3;

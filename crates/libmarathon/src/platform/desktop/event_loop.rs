@@ -3,11 +3,21 @@
 //! This module creates and manages the main window and event loop.
 //! It converts winit events to InputEvents and provides them to the engine.
 
+use winit::{
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{
+        ActiveEventLoop,
+        ControlFlow,
+        EventLoop,
+    },
+    window::{
+        Window,
+        WindowId,
+    },
+};
+
 use super::input;
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId};
 
 /// Main event loop runner for desktop platforms
 pub struct DesktopApp {
@@ -28,13 +38,13 @@ impl ApplicationHandler for DesktopApp {
                 .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
 
             match event_loop.create_window(window_attributes) {
-                Ok(window) => {
+                | Ok(window) => {
                     tracing::info!("Created winit window");
                     self.window = Some(window);
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     tracing::error!("Failed to create window: {}", e);
-                }
+                },
             }
         }
     }
@@ -49,19 +59,19 @@ impl ApplicationHandler for DesktopApp {
         input::push_window_event(&event);
 
         match event {
-            WindowEvent::CloseRequested => {
+            | WindowEvent::CloseRequested => {
                 tracing::info!("Window close requested");
                 event_loop.exit();
-            }
+            },
 
-            WindowEvent::RedrawRequested => {
+            | WindowEvent::RedrawRequested => {
                 // Rendering happens via Bevy
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
-            }
+            },
 
-            _ => {}
+            | _ => {},
         }
     }
 

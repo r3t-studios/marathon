@@ -1,9 +1,18 @@
-use crate::render::pbr::meshlet::asset::{BvhNode, MeshletCullData};
-
-use super::{asset::Meshlet, persistent_buffer::PersistentGpuBufferable};
 use std::sync::Arc;
+
 use bevy_math::Vec2;
-use crate::render::render_resource::BufferAddress;
+
+use super::{
+    asset::Meshlet,
+    persistent_buffer::PersistentGpuBufferable,
+};
+use crate::render::{
+    pbr::meshlet::asset::{
+        BvhNode,
+        MeshletCullData,
+    },
+    render_resource::BufferAddress,
+};
 
 impl PersistentGpuBufferable for Arc<[BvhNode]> {
     type Metadata = u32;
@@ -67,10 +76,10 @@ impl PersistentGpuBufferable for Arc<[Meshlet]> {
             let size = size_of::<Meshlet>();
             let i = i * size;
             let bytes = bytemuck::cast::<_, [u8; size_of::<Meshlet>()]>(Meshlet {
-                start_vertex_position_bit: meshlet.start_vertex_position_bit
-                    + vertex_position_offset,
-                start_vertex_attribute_id: meshlet.start_vertex_attribute_id
-                    + vertex_attribute_offset,
+                start_vertex_position_bit: meshlet.start_vertex_position_bit +
+                    vertex_position_offset,
+                start_vertex_attribute_id: meshlet.start_vertex_attribute_id +
+                    vertex_attribute_offset,
                 start_index_id: meshlet.start_index_id + index_offset,
                 ..*meshlet
             });

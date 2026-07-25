@@ -1,13 +1,28 @@
-use crate::render::pbr::Material;
-use bevy_asset::{AsAssetId, AssetId, Handle};
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{component::Component, reflect::ReflectComponent};
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
+use bevy_asset::{
+    AsAssetId,
+    AssetId,
+    Handle,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_ecs::{
+    component::Component,
+    reflect::ReflectComponent,
+};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
 use derive_more::derive::From;
+
+use crate::render::pbr::Material;
 
 /// A [material](Material) used for rendering a [`Mesh3d`].
 ///
-/// See [`Material`] for general information about 3D materials and how to implement your own materials.
+/// See [`Material`] for general information about 3D materials and how to
+/// implement your own materials.
 ///
 /// [`Mesh3d`]: bevy_mesh::Mesh3d
 ///

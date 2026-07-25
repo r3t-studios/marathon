@@ -1,17 +1,33 @@
-use crate::render::core_2d::Transparent2d;
 use bevy_ecs::prelude::*;
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::{TrackedRenderPass, ViewSortedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
-};
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
+
+use crate::render::{
+    camera::ExtractedCamera,
+    core_2d::Transparent2d,
+    diagnostic::RecordDiagnostics,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::{
+        TrackedRenderPass,
+        ViewSortedRenderPhases,
+    },
+    render_resource::{
+        CommandEncoderDescriptor,
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    view::{
+        ExtractedView,
+        ViewDepthTexture,
+        ViewTarget,
+    },
+};
 
 #[derive(Default)]
 pub struct MainTransparentPass2dNode {}
@@ -46,8 +62,8 @@ impl ViewNode for MainTransparentPass2dNode {
 
         let color_attachments = [Some(target.get_color_attachment())];
         // NOTE: For the transparent pass we load the depth buffer. There should be no
-        // need to write to it, but store is set to `true` as a workaround for issue #3776,
-        // https://github.com/bevyengine/bevy/issues/3776
+        // need to write to it, but store is set to `true` as a workaround for issue
+        // #3776, https://github.com/bevyengine/bevy/issues/3776
         // so that wgpu does not clear the depth buffer.
         // As the opaque and alpha mask passes run first, opaque meshes can occlude
         // transparent ones.
@@ -60,7 +76,8 @@ impl ViewNode for MainTransparentPass2dNode {
                     label: Some("main_transparent_pass_2d_command_encoder"),
                 });
 
-            // This needs to run at least once to clear the background color, even if there are no items to render
+            // This needs to run at least once to clear the background color, even if there
+            // are no items to render
             {
                 #[cfg(feature = "trace")]
                 let _main_pass_2d = info_span!("main_transparent_pass_2d").entered();
@@ -95,8 +112,9 @@ impl ViewNode for MainTransparentPass2dNode {
                 pass_span.end(&mut render_pass);
             }
 
-            // WebGL2 quirk: if ending with a render pass with a custom viewport, the viewport isn't
-            // reset for the next render pass so add an empty render pass without a custom viewport
+            // WebGL2 quirk: if ending with a render pass with a custom viewport, the
+            // viewport isn't reset for the next render pass so add an empty
+            // render pass without a custom viewport
             #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
             if camera.viewport.is_some() {
                 #[cfg(feature = "trace")]

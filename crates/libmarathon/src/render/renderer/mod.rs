@@ -4,31 +4,63 @@ pub mod raw_vulkan_init;
 mod render_device;
 mod wgpu_wrapper;
 
-pub use graph_runner::*;
-pub use render_device::*;
-pub use wgpu_wrapper::WgpuWrapper;
-
-use crate::render::{
-    diagnostic::{internal::DiagnosticsRecorder, RecordDiagnostics},
-    render_graph::RenderGraph,
-    render_phase::TrackedRenderPass,
-    render_resource::RenderPassDescriptor,
-    settings::{RenderResources, WgpuSettings, WgpuSettingsPriority},
-    view::{ExtractedWindows, ViewTarget},
-};
 use std::sync::Arc;
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::{prelude::*, system::SystemState};
+
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_ecs::{
+    prelude::*,
+    system::SystemState,
+};
 use bevy_platform::time::Instant;
 use bevy_time::TimeSender;
 use bevy_window::RawHandleWrapperHolder;
-use tracing::{debug, error, info, info_span, warn};
+pub use graph_runner::*;
+pub use render_device::*;
+use tracing::{
+    debug,
+    error,
+    info,
+    info_span,
+    warn,
+};
 use wgpu::{
-    Adapter, AdapterInfo, Backends, CommandBuffer, CommandEncoder, DeviceType, Instance, Queue,
-    RequestAdapterOptions, Trace,
+    Adapter,
+    AdapterInfo,
+    Backends,
+    CommandBuffer,
+    CommandEncoder,
+    DeviceType,
+    Instance,
+    Queue,
+    RequestAdapterOptions,
+    Trace,
+};
+pub use wgpu_wrapper::WgpuWrapper;
+
+use crate::render::{
+    diagnostic::{
+        RecordDiagnostics,
+        internal::DiagnosticsRecorder,
+    },
+    render_graph::RenderGraph,
+    render_phase::TrackedRenderPass,
+    render_resource::RenderPassDescriptor,
+    settings::{
+        RenderResources,
+        WgpuSettings,
+        WgpuSettingsPriority,
+    },
+    view::{
+        ExtractedWindows,
+        ViewTarget,
+    },
 };
 
-/// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
+/// Updates the [`RenderGraph`] with all of its nodes and then runs it to render
+/// the entire frame.
 pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, With<ViewTarget>>>) {
     world.resource_scope(|world, mut graph: Mut<RenderGraph>| {
         graph.update(world);
@@ -53,32 +85,33 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
     );
 
     match res {
-        Ok(Some(diagnostics_recorder)) => {
+        | Ok(Some(diagnostics_recorder)) => {
             world.insert_resource(diagnostics_recorder);
-        }
-        Ok(None) => {}
-        Err(e) => {
+        },
+        | Ok(None) => {},
+        | Err(e) => {
             error!("Error running render graph:");
             {
                 let mut src: &dyn core::error::Error = &e;
                 loop {
                     error!("> {}", src);
                     match src.source() {
-                        Some(s) => src = s,
-                        None => break,
+                        | Some(s) => src = s,
+                        | None => break,
                     }
                 }
             }
 
             panic!("Error running render graph: {e}");
-        }
+        },
     }
 
     {
         let _span = info_span!("present_frames").entered();
 
         // Remove ViewTarget components to ensure swap chain TextureViews are dropped.
-        // If all TextureViews aren't dropped before present, acquiring the next swap chain texture will fail.
+        // If all TextureViews aren't dropped before present, acquiring the next swap
+        // chain texture will fail.
         let view_entities = state.get(world).iter().collect::<Vec<_>>();
         for view_entity in view_entities {
             world.entity_mut(view_entity).remove::<ViewTarget>();
@@ -109,12 +142,15 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
     let time_sender = world.resource::<TimeSender>();
     if let Err(error) = time_sender.0.try_send(Instant::now()) {
         match error {
-            bevy_time::TrySendError::Full(_) => {
-                panic!("The TimeSender channel should always be empty during render. You might need to add the bevy::core::time_system to your app.",);
-            }
-            bevy_time::TrySendError::Disconnected(_) => {
-                // ignore disconnected errors, the main world probably just got dropped during shutdown
-            }
+            | bevy_time::TrySendError::Full(_) => {
+                panic!(
+                    "The TimeSender channel should always be empty during render. You might need to add the bevy::core::time_system to your app.",
+                );
+            },
+            | bevy_time::TrySendError::Disconnected(_) => {
+                // ignore disconnected errors, the main world probably just got
+                // dropped during shutdown
+            },
         }
     }
 }
@@ -128,8 +164,9 @@ pub struct RenderQueue(pub Arc<WgpuWrapper<Queue>>);
 #[derive(Resource, Clone, Debug, Deref, DerefMut)]
 pub struct RenderAdapter(pub Arc<WgpuWrapper<Adapter>>);
 
-/// The GPU instance is used to initialize the [`RenderQueue`] and [`RenderDevice`],
-/// as well as to create [`WindowSurfaces`](crate::view::window::WindowSurfaces).
+/// The GPU instance is used to initialize the [`RenderQueue`] and
+/// [`RenderDevice`], as well as to create
+/// [`WindowSurfaces`](crate::view::window::WindowSurfaces).
 #[derive(Resource, Clone, Deref, DerefMut)]
 pub struct RenderInstance(pub Arc<WgpuWrapper<Instance>>);
 
@@ -157,8 +194,8 @@ fn find_adapter_by_name(
     {
         tracing::trace!("Checking adapter: {:?}", adapter.get_info());
         let info = adapter.get_info();
-        if let Some(surface) = compatible_surface
-            && !adapter.is_surface_supported(surface)
+        if let Some(surface) = compatible_surface &&
+            !adapter.is_surface_supported(surface)
         {
             continue;
         }
@@ -170,8 +207,8 @@ fn find_adapter_by_name(
     None
 }
 
-/// Initializes the renderer by retrieving and preparing the GPU instance, device and queue
-/// for the specified backend.
+/// Initializes the renderer by retrieving and preparing the GPU instance,
+/// device and queue for the specified backend.
 pub async fn initialize_renderer(
     backends: Backends,
     primary_window: Option<RawHandleWrapperHolder>,
@@ -278,16 +315,17 @@ pub async fn initialize_renderer(
         );
     }
 
-    // Maybe get features and limits based on what is supported by the adapter/backend
+    // Maybe get features and limits based on what is supported by the
+    // adapter/backend
     let mut features = wgpu::Features::empty();
     let mut limits = options.limits.clone();
     if matches!(options.priority, WgpuSettingsPriority::Functionality) {
         features = adapter.features();
         if adapter_info.device_type == DeviceType::DiscreteGpu {
-            // `MAPPABLE_PRIMARY_BUFFERS` can have a significant, negative performance impact for
-            // discrete GPUs due to having to transfer data across the PCI-E bus and so it
-            // should not be automatically enabled in this case. It is however beneficial for
-            // integrated GPUs.
+            // `MAPPABLE_PRIMARY_BUFFERS` can have a significant, negative performance
+            // impact for discrete GPUs due to having to transfer data across
+            // the PCI-E bus and so it should not be automatically enabled in
+            // this case. It is however beneficial for integrated GPUs.
             features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         }
 
@@ -298,15 +336,17 @@ pub async fn initialize_renderer(
     if let Some(disabled_features) = options.disabled_features {
         features.remove(disabled_features);
     }
-    // NOTE: |= is used here to ensure that any explicitly-enabled features are respected.
+    // NOTE: |= is used here to ensure that any explicitly-enabled features are
+    // respected.
     features |= options.features;
 
     // Enforce the limit constraints
     if let Some(constrained_limits) = options.constrained_limits.as_ref() {
-        // NOTE: Respect the configured limits as an 'upper bound'. This means for 'max' limits, we
-        // take the minimum of the calculated limits according to the adapter/backend and the
-        // specified max_limits. For 'min' limits, take the maximum instead. This is intended to
-        // err on the side of being conservative. We can't claim 'higher' limits that are supported
+        // NOTE: Respect the configured limits as an 'upper bound'. This means for 'max'
+        // limits, we take the minimum of the calculated limits according to the
+        // adapter/backend and the specified max_limits. For 'min' limits, take
+        // the maximum instead. This is intended to err on the side of being
+        // conservative. We can't claim 'higher' limits that are supported
         // but we can constrain to 'lower' limits.
         limits = wgpu::Limits {
             max_texture_dimension_1d: limits
@@ -496,8 +536,8 @@ impl<'w> RenderContext<'w> {
         &self.render_device
     }
 
-    /// Gets the diagnostics recorder, used to track elapsed time and pipeline statistics
-    /// of various render and compute passes.
+    /// Gets the diagnostics recorder, used to track elapsed time and pipeline
+    /// statistics of various render and compute passes.
     pub fn diagnostic_recorder(&self) -> impl RecordDiagnostics + use<> {
         self.diagnostics_recorder.clone()
     }
@@ -563,10 +603,11 @@ impl<'w> RenderContext<'w> {
 
     /// Finalizes and returns the queue of [`CommandBuffer`]s.
     ///
-    /// This function will wait until all command buffer generation tasks are complete
-    /// by running them in parallel (where supported).
+    /// This function will wait until all command buffer generation tasks are
+    /// complete by running them in parallel (where supported).
     ///
-    /// The [`CommandBuffer`]s will be returned in the order that they were added.
+    /// The [`CommandBuffer`]s will be returned in the order that they were
+    /// added.
     pub fn finish(
         mut self,
     ) -> (
@@ -590,15 +631,15 @@ impl<'w> RenderContext<'w> {
                         self.command_buffer_queue.into_iter().enumerate()
                     {
                         match queued_command_buffer {
-                            QueuedCommandBuffer::Ready(command_buffer) => {
+                            | QueuedCommandBuffer::Ready(command_buffer) => {
                                 command_buffers.push((i, command_buffer));
-                            }
-                            QueuedCommandBuffer::Task(command_buffer_generation_task) => {
+                            },
+                            | QueuedCommandBuffer::Task(command_buffer_generation_task) => {
                                 let render_device = self.render_device.clone();
                                 task_pool.spawn(async move {
                                     (i, command_buffer_generation_task(render_device))
                                 });
-                            }
+                            },
                         }
                     }
                 });
@@ -608,13 +649,13 @@ impl<'w> RenderContext<'w> {
         #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
         for (i, queued_command_buffer) in self.command_buffer_queue.into_iter().enumerate() {
             match queued_command_buffer {
-                QueuedCommandBuffer::Ready(command_buffer) => {
+                | QueuedCommandBuffer::Ready(command_buffer) => {
                     command_buffers.push((i, command_buffer));
-                }
-                QueuedCommandBuffer::Task(command_buffer_generation_task) => {
+                },
+                | QueuedCommandBuffer::Task(command_buffer_generation_task) => {
                     let render_device = self.render_device.clone();
                     command_buffers.push((i, command_buffer_generation_task(render_device)));
-                }
+                },
             }
         }
 

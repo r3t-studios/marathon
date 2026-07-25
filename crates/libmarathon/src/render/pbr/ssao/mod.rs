@@ -1,45 +1,120 @@
-use crate::render::pbr::NodePbr;
-use bevy_app::{App, Plugin};
-use bevy_asset::{embedded_asset, load_embedded_asset, Handle};
-use bevy_camera::{Camera, Camera3d};
-use crate::render::{
-    core_3d::graph::{Core3d, Node3d},
-    prepass::{DepthPrepass, NormalPrepass, ViewPrepassTextures},
+use core::mem;
+
+use bevy_app::{
+    App,
+    Plugin,
+};
+use bevy_asset::{
+    Handle,
+    embedded_asset,
+    load_embedded_asset,
+};
+use bevy_camera::{
+    Camera,
+    Camera3d,
 };
 use bevy_ecs::{
-    prelude::{Component, Entity},
-    query::{Has, QueryItem, With},
+    prelude::{
+        Component,
+        Entity,
+    },
+    query::{
+        Has,
+        QueryItem,
+        With,
+    },
     reflect::ReflectComponent,
     resource::Resource,
     schedule::IntoScheduleConfigs,
-    system::{Commands, Query, Res, ResMut},
-    world::{FromWorld, World},
+    system::{
+        Commands,
+        Query,
+        Res,
+        ResMut,
+    },
+    world::{
+        FromWorld,
+        World,
+    },
 };
 use bevy_image::ToExtents;
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
+use bevy_shader::{
+    Shader,
+    ShaderDefVal,
+    load_shader_library,
+};
+use bevy_utils::prelude::default;
+use tracing::{
+    error,
+    warn,
+};
+
 use crate::render::{
-    camera::{ExtractedCamera, TemporalJitter},
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
+    camera::{
+        ExtractedCamera,
+        TemporalJitter,
+    },
+    core_3d::graph::{
+        Core3d,
+        Node3d,
+    },
     diagnostic::RecordDiagnostics,
     extract_component::ExtractComponent,
-    globals::{GlobalsBuffer, GlobalsUniform},
-    render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner},
+    globals::{
+        GlobalsBuffer,
+        GlobalsUniform,
+    },
+    pbr::NodePbr,
+    prepass::{
+        DepthPrepass,
+        NormalPrepass,
+        ViewPrepassTextures,
+    },
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        RenderGraphExt,
+        ViewNode,
+        ViewNodeRunner,
+    },
     render_resource::{
         binding_types::{
-            sampler, texture_2d, texture_depth_2d, texture_storage_2d, uniform_buffer,
+            sampler,
+            texture_2d,
+            texture_depth_2d,
+            texture_storage_2d,
+            uniform_buffer,
         },
         *,
     },
-    renderer::{RenderAdapter, RenderContext, RenderDevice, RenderQueue},
+    renderer::{
+        RenderAdapter,
+        RenderContext,
+        RenderDevice,
+        RenderQueue,
+    },
     sync_component::SyncComponentPlugin,
     sync_world::RenderEntity,
-    texture::{CachedTexture, TextureCache},
-    view::{Msaa, ViewUniform, ViewUniformOffset, ViewUniforms},
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
+    texture::{
+        CachedTexture,
+        TextureCache,
+    },
+    view::{
+        Msaa,
+        ViewUniform,
+        ViewUniformOffset,
+        ViewUniforms,
+    },
 };
-use bevy_shader::{load_shader_library, Shader, ShaderDefVal};
-use bevy_utils::prelude::default;
-use core::mem;
-use tracing::{error, warn};
 
 /// Plugin for screen space ambient occlusion.
 pub struct ScreenSpaceAmbientOcclusionPlugin;
@@ -67,7 +142,9 @@ impl Plugin for ScreenSpaceAmbientOcclusionPlugin {
             .allowed_usages
             .contains(TextureUsages::STORAGE_BINDING)
         {
-            warn!("ScreenSpaceAmbientOcclusionPlugin not loaded. GPU lacks support: TextureFormat::R16Float does not support TextureUsages::STORAGE_BINDING.");
+            warn!(
+                "ScreenSpaceAmbientOcclusionPlugin not loaded. GPU lacks support: TextureFormat::R16Float does not support TextureUsages::STORAGE_BINDING."
+            );
             return;
         }
 
@@ -75,10 +152,12 @@ impl Plugin for ScreenSpaceAmbientOcclusionPlugin {
             .world()
             .resource::<RenderDevice>()
             .limits()
-            .max_storage_textures_per_shader_stage
-            < 5
+            .max_storage_textures_per_shader_stage <
+            5
         {
-            warn!("ScreenSpaceAmbientOcclusionPlugin not loaded. GPU lacks support: Limits::max_storage_textures_per_shader_stage is less than 5.");
+            warn!(
+                "ScreenSpaceAmbientOcclusionPlugin not loaded. GPU lacks support: Limits::max_storage_textures_per_shader_stage is less than 5."
+            );
             return;
         }
 
@@ -113,8 +192,9 @@ impl Plugin for ScreenSpaceAmbientOcclusionPlugin {
 /// Component to apply screen space ambient occlusion to a 3d camera.
 ///
 /// Screen space ambient occlusion (SSAO) approximates small-scale,
-/// local occlusion of _indirect_ diffuse light between objects, based on what's visible on-screen.
-/// SSAO does not apply to direct lighting, such as point or directional lights.
+/// local occlusion of _indirect_ diffuse light between objects, based on what's
+/// visible on-screen. SSAO does not apply to direct lighting, such as point or
+/// directional lights.
 ///
 /// This darkens creases, e.g. on staircases, and gives nice contact shadows
 /// where objects meet, giving entities a more "grounded" feel.
@@ -127,7 +207,8 @@ impl Plugin for ScreenSpaceAmbientOcclusionPlugin {
 /// TAA (`TemporalAntiAliasing`).
 /// Doing so greatly reduces SSAO noise.
 ///
-/// SSAO is not supported on `WebGL2`, and is not currently supported on `WebGPU`.
+/// SSAO is not supported on `WebGL2`, and is not currently supported on
+/// `WebGPU`.
 #[derive(Component, ExtractComponent, Reflect, PartialEq, Clone, Debug)]
 #[reflect(Component, Debug, Default, PartialEq, Clone)]
 #[require(DepthPrepass, NormalPrepass)]
@@ -137,8 +218,9 @@ pub struct ScreenSpaceAmbientOcclusion {
     pub quality_level: ScreenSpaceAmbientOcclusionQualityLevel,
     /// A constant estimated thickness of objects.
     ///
-    /// This value is used to decide how far behind an object a ray of light needs to be in order
-    /// to pass behind it. Any ray closer than that will be occluded.
+    /// This value is used to decide how far behind an object a ray of light
+    /// needs to be in order to pass behind it. Any ray closer than that
+    /// will be occluded.
     pub constant_object_thickness: f32,
 }
 
@@ -162,7 +244,8 @@ pub enum ScreenSpaceAmbientOcclusionQualityLevel {
     Custom {
         /// Higher slice count means less noise, but worse performance.
         slice_count: u32,
-        /// Samples per slice side is also tweakable, but recommended to be left at 2 or 3.
+        /// Samples per slice side is also tweakable, but recommended to be left
+        /// at 2 or 3.
         samples_per_slice_side: u32,
     },
 }
@@ -170,11 +253,11 @@ pub enum ScreenSpaceAmbientOcclusionQualityLevel {
 impl ScreenSpaceAmbientOcclusionQualityLevel {
     fn sample_counts(&self) -> (u32, u32) {
         match self {
-            Self::Low => (1, 2),    // 4 spp (1 * (2 * 2)), plus optional temporal samples
-            Self::Medium => (2, 2), // 8 spp (2 * (2 * 2)), plus optional temporal samples
-            Self::High => (3, 3),   // 18 spp (3 * (3 * 2)), plus optional temporal samples
-            Self::Ultra => (9, 3),  // 54 spp (9 * (3 * 2)), plus optional temporal samples
-            Self::Custom {
+            | Self::Low => (1, 2), // 4 spp (1 * (2 * 2)), plus optional temporal samples
+            | Self::Medium => (2, 2), // 8 spp (2 * (2 * 2)), plus optional temporal samples
+            | Self::High => (3, 3), // 18 spp (3 * (3 * 2)), plus optional temporal samples
+            | Self::Ultra => (9, 3), // 54 spp (9 * (3 * 2)), plus optional temporal samples
+            | Self::Custom {
                 slice_count: slices,
                 samples_per_slice_side,
             } => (*slices, *samples_per_slice_side),

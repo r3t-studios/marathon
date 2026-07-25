@@ -1,24 +1,40 @@
-use super::{
-    CachedComputePipelineId, CachedRenderPipelineId, ComputePipeline, ComputePipelineDescriptor,
-    PipelineCache, RenderPipeline, RenderPipelineDescriptor,
+use core::{
+    hash::Hash,
+    marker::PhantomData,
 };
+
 use bevy_ecs::error::BevyError;
 use bevy_platform::{
     collections::{
-        hash_map::{Entry, VacantEntry},
         HashMap,
+        hash_map::{
+            Entry,
+            VacantEntry,
+        },
     },
     hash::FixedHasher,
 };
-use core::{hash::Hash, marker::PhantomData};
+pub use libmarathon_macros::{
+    Specializer,
+    SpecializerKey,
+};
 use tracing::error;
 use variadics_please::all_tuples;
 
-pub use libmarathon_macros::{Specializer, SpecializerKey};
+use super::{
+    CachedComputePipelineId,
+    CachedRenderPipelineId,
+    ComputePipeline,
+    ComputePipelineDescriptor,
+    PipelineCache,
+    RenderPipeline,
+    RenderPipelineDescriptor,
+};
 
-/// Defines a type that is able to be "specialized" and cached by creating and transforming
-/// its descriptor type. This is implemented for [`RenderPipeline`] and [`ComputePipeline`], and
-/// likely will not have much utility for other types.
+/// Defines a type that is able to be "specialized" and cached by creating and
+/// transforming its descriptor type. This is implemented for [`RenderPipeline`]
+/// and [`ComputePipeline`], and likely will not have much utility for other
+/// types.
 ///
 /// See docs on [`Specializer`] for more info.
 pub trait Specializable {
@@ -29,8 +45,8 @@ pub trait Specializable {
 }
 
 impl Specializable for RenderPipeline {
-    type Descriptor = RenderPipelineDescriptor;
     type CachedId = CachedRenderPipelineId;
+    type Descriptor = RenderPipelineDescriptor;
 
     fn queue(pipeline_cache: &PipelineCache, descriptor: Self::Descriptor) -> Self::CachedId {
         pipeline_cache.queue_render_pipeline(descriptor)
@@ -45,9 +61,8 @@ impl Specializable for RenderPipeline {
 }
 
 impl Specializable for ComputePipeline {
-    type Descriptor = ComputePipelineDescriptor;
-
     type CachedId = CachedComputePipelineId;
+    type Descriptor = ComputePipelineDescriptor;
 
     fn queue(pipeline_cache: &PipelineCache, descriptor: Self::Descriptor) -> Self::CachedId {
         pipeline_cache.queue_compute_pipeline(descriptor)
@@ -100,7 +115,9 @@ impl Specializable for ComputePipeline {
 /// struct A;
 /// struct B;
 /// #[derive(Copy, Clone, PartialEq, Eq, Hash, SpecializerKey)]
-/// struct BKey { contrived_number: u32 };
+/// struct BKey {
+///     contrived_number: u32,
+/// };
 ///
 /// impl Specializer<RenderPipeline> for A {
 ///     type Key = ();
@@ -108,8 +125,8 @@ impl Specializable for ComputePipeline {
 ///     fn specialize(
 ///         &self,
 ///         key: (),
-///         descriptor: &mut RenderPipelineDescriptor
-///     ) -> Result<(), BevyError>  {
+///         descriptor: &mut RenderPipelineDescriptor,
+///     ) -> Result<(), BevyError> {
 /// #       let _ = descriptor;
 ///         // mutate the descriptor here
 ///         Ok(key)
@@ -122,7 +139,7 @@ impl Specializable for ComputePipeline {
 ///     fn specialize(
 ///         &self,
 ///         key: BKey,
-///         descriptor: &mut RenderPipelineDescriptor
+///         descriptor: &mut RenderPipelineDescriptor,
 ///     ) -> Result<BKey, BevyError> {
 /// #       let _ = descriptor;
 ///         // mutate the descriptor here
@@ -186,27 +203,27 @@ pub trait Specializer<T: Specializable>: Send + Sync + 'static {
 /// Defines a type that is able to be used as a key for [`Specializer`]s
 ///
 /// <div class = "warning">
-/// <strong>Most types should implement this trait with the included derive macro.</strong> <br/>
-/// This generates a "canonical" key type, with <code>IS_CANONICAL = true</code>, and <code>Canonical = Self</code>
-/// </div>
+/// <strong>Most types should implement this trait with the included derive
+/// macro.</strong> <br/> This generates a "canonical" key type, with
+/// <code>IS_CANONICAL = true</code>, and <code>Canonical = Self</code> </div>
 ///
 /// ## What's a "canonical" key?
 ///
-/// The specialization API memoizes pipelines based on the hash of each key, but this
-/// can still produce duplicates. For example, if one used a list of vertex attributes
-/// as a key, even if all the same attributes were present they could be in any order.
-/// In each case, though the keys would be "different" they would produce the same
-/// pipeline.
+/// The specialization API memoizes pipelines based on the hash of each key, but
+/// this can still produce duplicates. For example, if one used a list of vertex
+/// attributes as a key, even if all the same attributes were present they could
+/// be in any order. In each case, though the keys would be "different" they
+/// would produce the same pipeline.
 ///
 /// To address this, during specialization keys are processed into a [canonical]
-/// (or "standard") form that represents the actual descriptor that was produced.
-/// In the previous example, that would be the final `VertexBufferLayout` contained
-/// by the pipeline descriptor. This new key is used by [`Variants`] to
-/// perform additional checks for duplicates, but only if required. If a key is
-/// canonical from the start, then there's no need.
+/// (or "standard") form that represents the actual descriptor that was
+/// produced. In the previous example, that would be the final
+/// `VertexBufferLayout` contained by the pipeline descriptor. This new key is
+/// used by [`Variants`] to perform additional checks for duplicates, but only
+/// if required. If a key is canonical from the start, then there's no need.
 ///
-/// For implementors: the main property of a canonical key is that if two keys hash
-/// differently, they should nearly always produce different descriptors.
+/// For implementors: the main property of a canonical key is that if two keys
+/// hash differently, they should nearly always produce different descriptors.
 ///
 /// [canonical]: https://en.wikipedia.org/wiki/Canonicalization
 pub trait SpecializerKey: Clone + Hash + Eq {
@@ -292,8 +309,8 @@ impl<T: Specializable, S: Specializer<T>> Variants<T, S> {
     ) -> Result<T::CachedId, BevyError> {
         let entry = self.primary_cache.entry(key.clone());
         match entry {
-            Entry::Occupied(entry) => Ok(entry.get().clone()),
-            Entry::Vacant(entry) => Self::specialize_slow(
+            | Entry::Occupied(entry) => Ok(entry.get().clone()),
+            | Entry::Vacant(entry) => Self::specialize_slow(
                 &self.specializer,
                 self.base_descriptor.clone(),
                 pipeline_cache,
@@ -324,7 +341,7 @@ impl<T: Specializable, S: Specializer<T>> Variants<T, S> {
         }
 
         let id = match secondary_cache.entry(canonical_key) {
-            Entry::Occupied(entry) => {
+            | Entry::Occupied(entry) => {
                 if cfg!(debug_assertions) {
                     let stored_descriptor =
                         <T as Specializable>::get_descriptor(pipeline_cache, entry.get().clone());
@@ -341,8 +358,8 @@ impl<T: Specializable, S: Specializer<T>> Variants<T, S> {
                     }
                 }
                 entry.into_mut().clone()
-            }
-            Entry::Vacant(entry) => entry
+            },
+            | Entry::Vacant(entry) => entry
                 .insert(<T as Specializable>::queue(pipeline_cache, descriptor))
                 .clone(),
         };

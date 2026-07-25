@@ -6,10 +6,21 @@
 
 use anyhow::Result;
 use bevy::prelude::*;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{
+    Receiver,
+    Sender,
+    unbounded,
+};
 use libmarathon::{
-    engine::{EngineBridge, EngineCommand},
-    networking::{ControlCommand, ControlResponse, SessionId},
+    engine::{
+        EngineBridge,
+        EngineCommand,
+    },
+    networking::{
+        ControlCommand,
+        ControlResponse,
+        SessionId,
+    },
 };
 use uuid::Uuid;
 
@@ -46,13 +57,8 @@ pub fn cleanup_control_socket(
 /// Commands that can be sent from the control socket to the app
 #[derive(Debug, Clone)]
 pub enum AppCommand {
-    SpawnEntity {
-        entity_type: String,
-        position: Vec3,
-    },
-    DeleteEntity {
-        entity_id: Uuid,
-    },
+    SpawnEntity { entity_type: String, position: Vec3 },
+    DeleteEntity { entity_id: Uuid },
 }
 
 /// Queue for app-level commands from control socket
@@ -91,8 +97,10 @@ pub fn start_control_socket_system(
     socket_path_res: Res<ControlSocketPath>,
     bridge: Res<EngineBridge>,
 ) {
-    use tokio::io::AsyncReadExt;
-    use tokio::net::UnixListener;
+    use tokio::{
+        io::AsyncReadExt,
+        net::UnixListener,
+    };
 
     let socket_path = socket_path_res.0.clone();
     info!("Starting control socket at {}", socket_path);
@@ -117,14 +125,14 @@ pub fn start_control_socket_system(
             let _ = std::fs::remove_file(&socket_path);
 
             let listener = match UnixListener::bind(&socket_path) {
-                Ok(l) => {
+                | Ok(l) => {
                     info!("Control socket listening at {}", socket_path);
                     l
-                }
-                Err(e) => {
+                },
+                | Err(e) => {
                     error!("Failed to bind control socket: {}", e);
                     return;
-                }
+                },
             };
 
             // Accept connections in a loop with shutdown support
@@ -206,30 +214,33 @@ async fn handle_command(
     app_queue: &AppCommandQueue,
 ) -> ControlResponse {
     match command {
-        ControlCommand::JoinSession { session_code } => {
+        | ControlCommand::JoinSession { session_code } => {
             match SessionId::from_code(&session_code) {
-                Ok(session_id) => {
+                | Ok(session_id) => {
                     bridge.send_command(EngineCommand::StartNetworking {
                         session_id: session_id.clone(),
                     });
                     ControlResponse::Ok {
                         message: format!("Starting networking with session: {}", session_id),
                     }
-                }
-                Err(e) => ControlResponse::Error {
+                },
+                | Err(e) => ControlResponse::Error {
                     error: format!("Invalid session code: {}", e),
                 },
             }
-        }
+        },
 
-        ControlCommand::LeaveSession => {
+        | ControlCommand::LeaveSession => {
             bridge.send_command(EngineCommand::StopNetworking);
             ControlResponse::Ok {
                 message: "Stopping networking".to_string(),
             }
-        }
+        },
 
-        ControlCommand::SpawnEntity { entity_type, position } => {
+        | ControlCommand::SpawnEntity {
+            entity_type,
+            position,
+        } => {
             app_queue.send(AppCommand::SpawnEntity {
                 entity_type,
                 position: Vec3::from_array(position),
@@ -237,16 +248,16 @@ async fn handle_command(
             ControlResponse::Ok {
                 message: "Entity spawn command queued".to_string(),
             }
-        }
+        },
 
-        ControlCommand::DeleteEntity { entity_id } => {
+        | ControlCommand::DeleteEntity { entity_id } => {
             app_queue.send(AppCommand::DeleteEntity { entity_id });
             ControlResponse::Ok {
                 message: format!("Entity delete command queued for {}", entity_id),
             }
-        }
+        },
 
-        _ => ControlResponse::Error {
+        | _ => ControlResponse::Error {
             error: format!("Command {:?} not yet implemented", command),
         },
     }
@@ -262,21 +273,22 @@ pub fn process_app_commands(
 
     while let Some(command) = queue.try_recv() {
         match command {
-            AppCommand::SpawnEntity { entity_type, position } => {
-                match entity_type.as_str() {
-                    "cube" => {
-                        info!("Spawning cube at {:?}", position);
-                        spawn_cube_writer.write(crate::cube::SpawnCubeEvent { position });
-                    }
-                    _ => {
-                        warn!("Unknown entity type: {}", entity_type);
-                    }
-                }
-            }
-            AppCommand::DeleteEntity { entity_id } => {
+            | AppCommand::SpawnEntity {
+                entity_type,
+                position,
+            } => match entity_type.as_str() {
+                | "cube" => {
+                    info!("Spawning cube at {:?}", position);
+                    spawn_cube_writer.write(crate::cube::SpawnCubeEvent { position });
+                },
+                | _ => {
+                    warn!("Unknown entity type: {}", entity_type);
+                },
+            },
+            | AppCommand::DeleteEntity { entity_id } => {
                 info!("Deleting entity {}", entity_id);
                 delete_cube_writer.write(crate::cube::DeleteCubeEvent { entity_id });
-            }
+            },
         }
     }
 }

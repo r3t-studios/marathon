@@ -1,8 +1,20 @@
-use bevy_app::{App, SubApp};
-use bevy_ecs::world::{FromWorld, World};
+use bevy_app::{
+    App,
+    SubApp,
+};
+use bevy_ecs::world::{
+    FromWorld,
+    World,
+};
 use tracing::warn;
 
-use super::{IntoRenderNodeArray, Node, RenderGraph, RenderLabel, RenderSubGraph};
+use super::{
+    IntoRenderNodeArray,
+    Node,
+    RenderGraph,
+    RenderLabel,
+    RenderSubGraph,
+};
 
 /// Adds common [`RenderGraph`] operations to [`SubApp`] (and [`App`]).
 pub trait RenderGraphExt {

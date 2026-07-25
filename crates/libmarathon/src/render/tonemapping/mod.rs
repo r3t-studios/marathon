@@ -1,28 +1,67 @@
 use bevy_app::prelude::*;
 use bevy_asset::{
-    embedded_asset, load_embedded_asset, AssetServer, Assets, Handle, RenderAssetUsages,
+    AssetServer,
+    Assets,
+    Handle,
+    RenderAssetUsages,
+    embedded_asset,
+    load_embedded_asset,
 };
 use bevy_camera::Camera;
 use bevy_ecs::prelude::*;
-use bevy_image::{CompressedImageFormats, Image, ImageSampler, ImageType};
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
-use crate::render::{
-    extract_component::{ExtractComponent, ExtractComponentPlugin},
-    extract_resource::{ExtractResource, ExtractResourcePlugin},
-    render_asset::RenderAssets,
-    render_resource::{
-        binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
-        *,
-    },
-    renderer::RenderDevice,
-    texture::{FallbackImage, GpuImage},
-    view::{ExtractedView, ViewTarget, ViewUniform},
-    Render, RenderApp, RenderStartup, RenderSystems,
+use bevy_image::{
+    CompressedImageFormats,
+    Image,
+    ImageSampler,
+    ImageType,
 };
-use bevy_shader::{load_shader_library, Shader, ShaderDefVal};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
+use bevy_shader::{
+    Shader,
+    ShaderDefVal,
+    load_shader_library,
+};
 use bitflags::bitflags;
 #[cfg(not(feature = "tonemapping_luts"))]
 use tracing::error;
+
+use crate::render::{
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    extract_component::{
+        ExtractComponent,
+        ExtractComponentPlugin,
+    },
+    extract_resource::{
+        ExtractResource,
+        ExtractResourcePlugin,
+    },
+    render_asset::RenderAssets,
+    render_resource::{
+        binding_types::{
+            sampler,
+            texture_2d,
+            texture_3d,
+            uniform_buffer,
+        },
+        *,
+    },
+    renderer::RenderDevice,
+    texture::{
+        FallbackImage,
+        GpuImage,
+    },
+    view::{
+        ExtractedView,
+        ViewTarget,
+        ViewUniform,
+    },
+};
 
 mod node;
 
@@ -110,7 +149,8 @@ pub struct TonemappingPipeline {
     fragment_shader: Handle<Shader>,
 }
 
-/// Optionally enables a tonemapping shader that attempts to map linear input stimulus into a perceptually uniform image for a given [`Camera`] entity.
+/// Optionally enables a tonemapping shader that attempts to map linear input
+/// stimulus into a perceptually uniform image for a given [`Camera`] entity.
 #[derive(
     Component, Debug, Hash, Clone, Copy, Reflect, Default, ExtractComponent, PartialEq, Eq,
 )]
@@ -122,43 +162,47 @@ pub enum Tonemapping {
     /// Suffers from lots hue shifting, brights don't desaturate naturally.
     /// Bright primaries and secondaries don't desaturate at all.
     Reinhard,
-    /// Suffers from hue shifting. Brights don't desaturate much at all across the spectrum.
+    /// Suffers from hue shifting. Brights don't desaturate much at all across
+    /// the spectrum.
     ReinhardLuminance,
     /// Same base implementation that Godot 4.0 uses for Tonemap ACES.
     /// <https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl>
-    /// Not neutral, has a very specific aesthetic, intentional and dramatic hue shifting.
-    /// Bright greens and reds turn orange. Bright blues turn magenta.
-    /// Significantly increased contrast. Brights desaturate across the spectrum.
+    /// Not neutral, has a very specific aesthetic, intentional and dramatic hue
+    /// shifting. Bright greens and reds turn orange. Bright blues turn
+    /// magenta. Significantly increased contrast. Brights desaturate across
+    /// the spectrum.
     AcesFitted,
     /// By Troy Sobotka
     /// <https://github.com/sobotka/AgX>
-    /// Very neutral. Image is somewhat desaturated when compared to other tonemappers.
-    /// Little to no hue shifting. Subtle [Abney shifting](https://en.wikipedia.org/wiki/Abney_effect).
+    /// Very neutral. Image is somewhat desaturated when compared to other
+    /// tonemappers. Little to no hue shifting. Subtle [Abney shifting](https://en.wikipedia.org/wiki/Abney_effect).
     /// NOTE: Requires the `tonemapping_luts` cargo feature.
     AgX,
     /// By Tomasz Stachowiak
-    /// Has little hue shifting in the darks and mids, but lots in the brights. Brights desaturate across the spectrum.
-    /// Is sort of between Reinhard and `ReinhardLuminance`. Conceptually similar to reinhard-jodie.
-    /// Designed as a compromise if you want e.g. decent skin tones in low light, but can't afford to re-do your
-    /// VFX to look good without hue shifting.
+    /// Has little hue shifting in the darks and mids, but lots in the brights.
+    /// Brights desaturate across the spectrum. Is sort of between Reinhard
+    /// and `ReinhardLuminance`. Conceptually similar to reinhard-jodie.
+    /// Designed as a compromise if you want e.g. decent skin tones in low
+    /// light, but can't afford to re-do your VFX to look good without hue
+    /// shifting.
     SomewhatBoringDisplayTransform,
     /// Current Bevy default.
     /// By Tomasz Stachowiak
     /// <https://github.com/h3r2tic/tony-mc-mapface>
-    /// Very neutral. Subtle but intentional hue shifting. Brights desaturate across the spectrum.
-    /// Comment from author:
-    /// Tony is a display transform intended for real-time applications such as games.
-    /// It is intentionally boring, does not increase contrast or saturation, and stays close to the
-    /// input stimulus where compression isn't necessary.
-    /// Brightness-equivalent luminance of the input stimulus is compressed. The non-linearity resembles Reinhard.
-    /// Color hues are preserved during compression, except for a deliberate [Bezold–Brücke shift](https://en.wikipedia.org/wiki/Bezold%E2%80%93Br%C3%BCcke_shift).
+    /// Very neutral. Subtle but intentional hue shifting. Brights desaturate
+    /// across the spectrum. Comment from author:
+    /// Tony is a display transform intended for real-time applications such as
+    /// games. It is intentionally boring, does not increase contrast or
+    /// saturation, and stays close to the input stimulus where compression
+    /// isn't necessary. Brightness-equivalent luminance of the input
+    /// stimulus is compressed. The non-linearity resembles Reinhard. Color hues are preserved during compression, except for a deliberate [Bezold–Brücke shift](https://en.wikipedia.org/wiki/Bezold%E2%80%93Br%C3%BCcke_shift).
     /// To avoid posterization, selective desaturation is employed, with care to avoid the [Abney effect](https://en.wikipedia.org/wiki/Abney_effect).
     /// NOTE: Requires the `tonemapping_luts` cargo feature.
     #[default]
     TonyMcMapface,
     /// Default Filmic Display Transform from blender.
-    /// Somewhat neutral. Suffers from hue shifting. Brights desaturate across the spectrum.
-    /// NOTE: Requires the `tonemapping_luts` cargo feature.
+    /// Somewhat neutral. Suffers from hue shifting. Brights desaturate across
+    /// the spectrum. NOTE: Requires the `tonemapping_luts` cargo feature.
     BlenderFilmic,
 }
 
@@ -228,13 +272,13 @@ impl SpecializedRenderPipeline for TonemappingPipeline {
         }
 
         match key.tonemapping {
-            Tonemapping::None => shader_defs.push("TONEMAP_METHOD_NONE".into()),
-            Tonemapping::Reinhard => shader_defs.push("TONEMAP_METHOD_REINHARD".into()),
-            Tonemapping::ReinhardLuminance => {
+            | Tonemapping::None => shader_defs.push("TONEMAP_METHOD_NONE".into()),
+            | Tonemapping::Reinhard => shader_defs.push("TONEMAP_METHOD_REINHARD".into()),
+            | Tonemapping::ReinhardLuminance => {
                 shader_defs.push("TONEMAP_METHOD_REINHARD_LUMINANCE".into());
-            }
-            Tonemapping::AcesFitted => shader_defs.push("TONEMAP_METHOD_ACES_FITTED".into()),
-            Tonemapping::AgX => {
+            },
+            | Tonemapping::AcesFitted => shader_defs.push("TONEMAP_METHOD_ACES_FITTED".into()),
+            | Tonemapping::AgX => {
                 #[cfg(not(feature = "tonemapping_luts"))]
                 error!(
                     "AgX tonemapping requires the `tonemapping_luts` feature.
@@ -242,11 +286,11 @@ impl SpecializedRenderPipeline for TonemappingPipeline {
                     or use a different `Tonemapping` method for your `Camera2d`/`Camera3d`."
                 );
                 shader_defs.push("TONEMAP_METHOD_AGX".into());
-            }
-            Tonemapping::SomewhatBoringDisplayTransform => {
+            },
+            | Tonemapping::SomewhatBoringDisplayTransform => {
                 shader_defs.push("TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM".into());
-            }
-            Tonemapping::TonyMcMapface => {
+            },
+            | Tonemapping::TonyMcMapface => {
                 #[cfg(not(feature = "tonemapping_luts"))]
                 error!(
                     "TonyMcMapFace tonemapping requires the `tonemapping_luts` feature.
@@ -254,8 +298,8 @@ impl SpecializedRenderPipeline for TonemappingPipeline {
                     or use a different `Tonemapping` method for your `Camera2d`/`Camera3d`."
                 );
                 shader_defs.push("TONEMAP_METHOD_TONY_MC_MAPFACE".into());
-            }
-            Tonemapping::BlenderFilmic => {
+            },
+            | Tonemapping::BlenderFilmic => {
                 #[cfg(not(feature = "tonemapping_luts"))]
                 error!(
                     "BlenderFilmic tonemapping requires the `tonemapping_luts` feature.
@@ -263,7 +307,7 @@ impl SpecializedRenderPipeline for TonemappingPipeline {
                     or use a different `Tonemapping` method for your `Camera2d`/`Camera3d`."
                 );
                 shader_defs.push("TONEMAP_METHOD_BLENDER_FILMIC".into());
-            }
+            },
         }
         RenderPipelineDescriptor {
             label: Some("tonemapping pipeline".into()),
@@ -365,7 +409,8 @@ pub fn prepare_view_tonemapping_pipelines(
             .insert(ViewTonemappingPipeline(pipeline));
     }
 }
-/// Enables a debanding shader that applies dithering to mitigate color banding in the final image for a given [`Camera`] entity.
+/// Enables a debanding shader that applies dithering to mitigate color banding
+/// in the final image for a given [`Camera`] entity.
 #[derive(
     Component, Debug, Hash, Clone, Copy, Reflect, Default, ExtractComponent, PartialEq, Eq,
 )]
@@ -384,15 +429,16 @@ pub fn get_lut_bindings<'a>(
     fallback_image: &'a FallbackImage,
 ) -> (&'a TextureView, &'a Sampler) {
     let image = match tonemapping {
-        // AgX lut texture used when tonemapping doesn't need a texture since it's very small (32x32x32)
-        Tonemapping::None
-        | Tonemapping::Reinhard
-        | Tonemapping::ReinhardLuminance
-        | Tonemapping::AcesFitted
-        | Tonemapping::AgX
-        | Tonemapping::SomewhatBoringDisplayTransform => &tonemapping_luts.agx,
-        Tonemapping::TonyMcMapface => &tonemapping_luts.tony_mc_mapface,
-        Tonemapping::BlenderFilmic => &tonemapping_luts.blender_filmic,
+        // AgX lut texture used when tonemapping doesn't need a texture since it's very small
+        // (32x32x32)
+        | Tonemapping::None |
+        Tonemapping::Reinhard |
+        Tonemapping::ReinhardLuminance |
+        Tonemapping::AcesFitted |
+        Tonemapping::AgX |
+        Tonemapping::SomewhatBoringDisplayTransform => &tonemapping_luts.agx,
+        | Tonemapping::TonyMcMapface => &tonemapping_luts.tony_mc_mapface,
+        | Tonemapping::BlenderFilmic => &tonemapping_luts.blender_filmic,
     };
     let lut_image = images.get(image).unwrap_or(&fallback_image.d3);
     (&lut_image.texture_view, &lut_image.sampler)

@@ -3,13 +3,15 @@
 //
 // This code is vendored from bevy_egui: https://github.com/vladbat00/bevy_egui
 // Original author: Vladyslav Batyrenko <vladyslav.batyrenko@gmail.com>
-// Adapted for Marathon engine with simplified feature set (desktop-only, single window).
+// Adapted for Marathon engine with simplified feature set (desktop-only, single
+// window).
 
 #![allow(clippy::type_complexity)]
 
 //! Debug UI integration using egui for the Marathon engine.
 //!
-//! This is a vendored and simplified version of bevy_egui, stripped down to support:
+//! This is a vendored and simplified version of bevy_egui, stripped down to
+//! support:
 //! - Desktop platforms only (no WASM/web)
 //! - Single window
 //! - No picking/accessibility features
@@ -24,31 +26,61 @@ pub mod output;
 /// Rendering Egui with [`bevy_render`].
 pub mod render;
 
-pub use egui;
-
-use self::input::*;
-use bevy::app::prelude::*;
-use bevy::asset::{AssetEvent, AssetId, Assets, Handle, load_internal_asset};
-use bevy::prelude::{Deref, DerefMut, Shader};
-use bevy::ecs::{
-    prelude::*,
-    query::{QueryData, QuerySingleError},
-    schedule::{InternedScheduleLabel, ScheduleLabel},
-    system::SystemParam,
-};
-use bevy::image::{Image, ImageSampler};
-use bevy::input::InputSystems;
 #[allow(unused_imports)]
 use bevy::log;
-use bevy::platform::collections::{HashMap, HashSet};
-use bevy::reflect::Reflect;
-use bevy::render::{
-    ExtractSchedule, Render, RenderApp, RenderSystems,
-    extract_resource::{ExtractResource, ExtractResourcePlugin},
-    render_resource::SpecializedRenderPipelines,
+use bevy::{
+    app::prelude::*,
+    asset::{
+        AssetEvent,
+        AssetId,
+        Assets,
+        Handle,
+        load_internal_asset,
+    },
+    ecs::{
+        prelude::*,
+        query::{
+            QueryData,
+            QuerySingleError,
+        },
+        schedule::{
+            InternedScheduleLabel,
+            ScheduleLabel,
+        },
+        system::SystemParam,
+    },
+    image::{
+        Image,
+        ImageSampler,
+    },
+    input::InputSystems,
+    platform::collections::{
+        HashMap,
+        HashSet,
+    },
+    prelude::{
+        Deref,
+        DerefMut,
+        Shader,
+    },
+    reflect::Reflect,
+    render::{
+        ExtractSchedule,
+        Render,
+        RenderApp,
+        RenderSystems,
+        extract_resource::{
+            ExtractResource,
+            ExtractResourcePlugin,
+        },
+        render_resource::SpecializedRenderPipelines,
+    },
+    window::CursorIcon,
 };
-use bevy::window::CursorIcon;
+pub use egui;
 use output::process_output_system;
+
+use self::input::*;
 
 /// Adds all Egui resources and render graph nodes.
 pub struct EguiPlugin {
@@ -67,13 +99,15 @@ impl Default for EguiPlugin {
 /// A resource for storing global plugin settings.
 #[derive(Clone, Debug, Resource, Reflect)]
 pub struct EguiGlobalSettings {
-    /// Set this to `false` if you want to control the creation of [`EguiContext`] instances manually.
+    /// Set this to `false` if you want to control the creation of
+    /// [`EguiContext`] instances manually.
     pub auto_create_primary_context: bool,
     /// Controls running of the input systems.
     pub input_system_settings: EguiInputSystemSettings,
     /// Controls whether `bevy_egui` updates [`CursorIcon`], enabled by default.
     pub enable_cursor_icon_updates: bool,
-    /// Controls whether focused non-window contexts can be updated (disabled for simplicity).
+    /// Controls whether focused non-window contexts can be updated (disabled
+    /// for simplicity).
     #[reflect(ignore)]
     pub enable_focused_non_window_context_updates: bool,
 }
@@ -92,7 +126,8 @@ impl Default for EguiGlobalSettings {
 /// A component for storing Egui context settings.
 #[derive(Clone, Debug, Component, Reflect)]
 pub struct EguiContextSettings {
-    /// If set to `true`, a user is expected to call [`egui::Context::run`] manually.
+    /// If set to `true`, a user is expected to call [`egui::Context::run`]
+    /// manually.
     pub run_manually: bool,
     /// Global scale factor for Egui widgets (`1.0` by default).
     pub scale_factor: f32,
@@ -100,7 +135,8 @@ pub struct EguiContextSettings {
     pub input_system_settings: EguiInputSystemSettings,
     /// Controls whether updates [`CursorIcon`], enabled by default.
     pub enable_cursor_icon_updates: bool,
-    /// Controls whether IME (Input Method Editor) is enabled (disabled for simplicity).
+    /// Controls whether IME (Input Method Editor) is enabled (disabled for
+    /// simplicity).
     #[reflect(ignore)]
     pub enable_ime: bool,
 }
@@ -128,7 +164,8 @@ impl PartialEq for EguiContextSettings {
 pub struct EguiInputSystemSettings {
     /// Controls running of the [`write_modifiers_keys_state_system`] system.
     pub run_write_modifiers_keys_state_system: bool,
-    /// Controls running of the [`write_window_pointer_moved_messages_system`] system.
+    /// Controls running of the [`write_window_pointer_moved_messages_system`]
+    /// system.
     pub run_write_window_pointer_moved_messages_system: bool,
     /// Controls running of the [`write_pointer_button_messages_system`] system.
     pub run_write_pointer_button_messages_system: bool,
@@ -261,7 +298,8 @@ type EguiContextsQuery<'w, 's> = Query<
 >;
 
 #[derive(SystemParam)]
-/// A helper SystemParam that provides a way to get [`EguiContext`] with less boilerplate.
+/// A helper SystemParam that provides a way to get [`EguiContext`] with less
+/// boilerplate.
 pub struct EguiContexts<'w, 's> {
     q: EguiContextsQuery<'w, 's>,
     user_textures: ResMut<'w, EguiUserTextures>,
@@ -274,11 +312,11 @@ impl EguiContexts<'_, '_> {
         self.q.iter_mut().fold(
             Err(QuerySingleError::NoEntities("".into())),
             |result, (ctx, primary)| match (&result, primary) {
-                (Err(QuerySingleError::MultipleEntities(_)), _) => result,
-                (Err(QuerySingleError::NoEntities(_)), Some(_)) => Ok(ctx.into_inner().get_mut()),
-                (Err(QuerySingleError::NoEntities(_)), None) => result,
-                (Ok(_), Some(_)) => Err(QuerySingleError::MultipleEntities("".into())),
-                (Ok(_), None) => result,
+                | (Err(QuerySingleError::MultipleEntities(_)), _) => result,
+                | (Err(QuerySingleError::NoEntities(_)), Some(_)) => Ok(ctx.into_inner().get_mut()),
+                | (Err(QuerySingleError::NoEntities(_)), None) => result,
+                | (Ok(_), Some(_)) => Err(QuerySingleError::MultipleEntities("".into())),
+                | (Ok(_), None) => result,
             },
         )
     }
@@ -369,8 +407,8 @@ impl EguiTextureHandle {
     /// Returns an [`AssetId`] of a wrapped handle.
     pub fn asset_id(&self) -> AssetId<Image> {
         match self {
-            EguiTextureHandle::Strong(handle) => handle.id(),
-            EguiTextureHandle::Weak(asset_id) => *asset_id,
+            | EguiTextureHandle::Strong(handle) => handle.id(),
+            | EguiTextureHandle::Weak(asset_id) => *asset_id,
         }
     }
 }
@@ -509,16 +547,14 @@ impl Plugin for EguiPlugin {
                 .chain()
                 .in_set(EguiPreUpdateSet::InitContexts),
         );
-        // NOTE: Replaced bevy_egui's Bevy-message input systems with custom InputEventBuffer reader
-        // The old systems expected Bevy's InputPlugin messages (CursorMoved, MouseButtonInput, etc.)
-        // We disabled InputPlugin since we own winit, so we read from InputEventBuffer instead
+        // NOTE: Replaced bevy_egui's Bevy-message input systems with custom
+        // InputEventBuffer reader The old systems expected Bevy's InputPlugin
+        // messages (CursorMoved, MouseButtonInput, etc.) We disabled
+        // InputPlugin since we own winit, so we read from InputEventBuffer instead
         // But we still need write_egui_input_system to consume EguiInputEvent messages
         app.add_systems(
             PreUpdate,
-            (
-                input::custom_input_system,
-                input::write_egui_input_system,
-            )
+            (input::custom_input_system, input::write_egui_input_system)
                 .chain()
                 .in_set(EguiPreUpdateSet::ProcessInput),
         );
@@ -575,8 +611,7 @@ impl Plugin for EguiPlugin {
             .world_mut()
             .resource_mut::<bevy::render::render_graph::RenderGraph>();
 
-        if let Some(graph_2d) =
-            graph.get_sub_graph_mut(bevy::core_pipeline::core_2d::graph::Core2d)
+        if let Some(graph_2d) = graph.get_sub_graph_mut(bevy::core_pipeline::core_2d::graph::Core2d)
         {
             graph_2d.add_sub_graph(render::graph::SubGraphEgui, egui_graph_2d);
             graph_2d.add_node(
@@ -597,8 +632,7 @@ impl Plugin for EguiPlugin {
             );
         }
 
-        if let Some(graph_3d) =
-            graph.get_sub_graph_mut(bevy::core_pipeline::core_3d::graph::Core3d)
+        if let Some(graph_3d) = graph.get_sub_graph_mut(bevy::core_pipeline::core_3d::graph::Core3d)
         {
             graph_3d.add_sub_graph(render::graph::SubGraphEgui, egui_graph_3d);
             graph_3d.add_node(
@@ -630,10 +664,7 @@ impl Plugin for EguiPlugin {
                 .init_resource::<SpecializedRenderPipelines<render::EguiPipeline>>()
                 .init_resource::<render::systems::EguiTransforms>()
                 .init_resource::<render::systems::EguiRenderData>()
-                .add_systems(
-                    ExtractSchedule,
-                    render::extract_egui_camera_view_system,
-                )
+                .add_systems(ExtractSchedule, render::extract_egui_camera_view_system)
                 .add_systems(
                     Render,
                     render::systems::prepare_egui_transforms_system.in_set(RenderSystems::Prepare),
@@ -680,10 +711,16 @@ pub fn setup_primary_egui_context_system(
     mut egui_context_exists: Local<bool>,
 ) -> Result {
     for (camera_entity, context) in new_cameras {
-        log::info!("setup_primary_egui_context_system: processing camera {:?}", camera_entity);
+        log::info!(
+            "setup_primary_egui_context_system: processing camera {:?}",
+            camera_entity
+        );
 
         if context.is_some() || *egui_context_exists {
-            log::info!("setup_primary_egui_context_system: skipping camera {:?}, context already exists", camera_entity);
+            log::info!(
+                "setup_primary_egui_context_system: skipping camera {:?}, context already exists",
+                camera_entity
+            );
             *egui_context_exists = true;
             return Ok(());
         }
@@ -692,7 +729,10 @@ pub fn setup_primary_egui_context_system(
         // Do NOT override theme - egui will auto-detect system theme
         let context = EguiContext::default();
 
-        log::info!("Creating a primary Egui context for camera {:?}", camera_entity);
+        log::info!(
+            "Creating a primary Egui context for camera {:?}",
+            camera_entity
+        );
         let mut camera_commands = commands.get_entity(camera_entity)?;
         camera_commands.insert((context, PrimaryEguiContext));
         camera_commands.insert(EguiMultipassSchedule::new(EguiPrimaryContextPass));
@@ -816,7 +856,10 @@ pub fn run_egui_context_pass_loop_system(world: &mut World) {
         .collect();
 
     if !multipass_contexts.is_empty() {
-        log::info!("run_egui_context_pass_loop_system: processing {} contexts", multipass_contexts.len());
+        log::info!(
+            "run_egui_context_pass_loop_system: processing {} contexts",
+            multipass_contexts.len()
+        );
     }
 
     for (entity, ctx, input, EguiMultipassSchedule(multipass_schedule)) in &mut multipass_contexts {
@@ -843,7 +886,10 @@ pub fn run_egui_context_pass_loop_system(world: &mut World) {
             log::warn!("After run(), context has {} font families", num_families);
         });
 
-        log::info!("run_egui_context_pass_loop_system: generated output for entity {:?}", entity);
+        log::info!(
+            "run_egui_context_pass_loop_system: generated output for entity {:?}",
+            entity
+        );
 
         **contexts_query
             .get_mut(world, *entity)
@@ -875,14 +921,17 @@ pub fn update_egui_textures_system(
 
     for (entity, egui_render_output) in egui_render_output.iter_mut() {
         if !egui_render_output.textures_delta.set.is_empty() {
-            log::info!("update_egui_textures_system: {} texture updates", egui_render_output.textures_delta.set.len());
+            log::info!(
+                "update_egui_textures_system: {} texture updates",
+                egui_render_output.textures_delta.set.len()
+            );
         }
         for (texture_id, image_delta) in &egui_render_output.textures_delta.set {
             let color_image = render::as_color_image(&image_delta.image);
 
             let texture_id = match texture_id {
-                egui::TextureId::Managed(texture_id) => *texture_id,
-                egui::TextureId::User(_) => continue,
+                | egui::TextureId::Managed(texture_id) => *texture_id,
+                | egui::TextureId::User(_) => continue,
             };
 
             let sampler = ImageSampler::Descriptor(render::texture_options_as_sampler_descriptor(
@@ -890,8 +939,8 @@ pub fn update_egui_textures_system(
             ));
             if let Some(pos) = image_delta.pos {
                 // Partial update
-                if let Some(managed_texture) = egui_managed_textures.get_mut(&(entity, texture_id))
-                    && let Some(image) = image_assets.get_mut(managed_texture.handle.id())
+                if let Some(managed_texture) = egui_managed_textures.get_mut(&(entity, texture_id)) &&
+                    let Some(image) = image_assets.get_mut(managed_texture.handle.id())
                 {
                     if update_image_rect(image, pos, &color_image).is_err() {
                         log::error!(
@@ -906,8 +955,12 @@ pub fn update_egui_textures_system(
                 // Full update
                 let image = render::color_image_as_bevy_image(&color_image, sampler);
                 let handle = image_assets.add(image);
-                log::info!("update_egui_textures_system: created texture {:?} ({}x{})",
-                    texture_id, color_image.width(), color_image.height());
+                log::info!(
+                    "update_egui_textures_system: created texture {:?} ({}x{})",
+                    texture_id,
+                    color_image.width(),
+                    color_image.height()
+                );
                 egui_managed_textures.insert(
                     (entity, texture_id),
                     EguiManagedTexture {

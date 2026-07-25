@@ -1,7 +1,10 @@
 //! Shared iroh-gossip setup utilities for integration tests
 //!
 //! This module provides real iroh-gossip networking infrastructure that all
-//! integration tests should use. No shortcuts - always use real localhost connections.
+//! integration tests should use. No shortcuts - always use real localhost
+//! connections.
+
+use std::time::Duration;
 
 use anyhow::Result;
 use futures_lite::StreamExt;
@@ -11,12 +14,17 @@ use iroh::{
     protocol::Router,
 };
 use iroh_gossip::{
-    api::{GossipReceiver, GossipSender},
+    api::{
+        GossipReceiver,
+        GossipSender,
+    },
     net::Gossip,
     proto::TopicId,
 };
-use libmarathon::networking::{GossipBridge, VersionedMessage};
-use std::time::Duration;
+use libmarathon::networking::{
+    GossipBridge,
+    VersionedMessage,
+};
 use uuid::Uuid;
 
 /// Initialize a single iroh-gossip node
@@ -40,7 +48,10 @@ pub async fn init_gossip_node(
     println!("  Creating endpoint (localhost only for fast testing)...");
     // Create the Iroh endpoint bound to localhost only (no mDNS needed)
     let endpoint = Endpoint::builder()
-        .bind_addr_v4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0))
+        .bind_addr_v4(std::net::SocketAddrV4::new(
+            std::net::Ipv4Addr::LOCALHOST,
+            0,
+        ))
         .bind()
         .await?;
     let endpoint_id = endpoint.addr().id;
@@ -80,8 +91,8 @@ pub async fn init_gossip_node(
         // Connect to bootstrap peers (localhost connections are instant)
         for addr in &bootstrap_addrs {
             match endpoint.connect(addr.clone(), iroh_gossip::ALPN).await {
-                Ok(_conn) => println!("  ✓ Connected to {}", addr.id),
-                Err(e) => println!("  ✗ Connection failed: {}", e),
+                | Ok(_conn) => println!("  ✓ Connected to {}", addr.id),
+                | Err(e) => println!("  ✗ Connection failed: {}", e),
             }
         }
     }
@@ -93,9 +104,9 @@ pub async fn init_gossip_node(
     // Wait for join if we have bootstrap peers (should be instant on localhost)
     if has_bootstrap_peers {
         match tokio::time::timeout(Duration::from_millis(500), receiver.joined()).await {
-            Ok(Ok(())) => println!("  ✓ Join completed"),
-            Ok(Err(e)) => println!("  ✗ Join error: {}", e),
-            Err(_) => println!("  ⚠ Join timeout (proceeding anyway)"),
+            | Ok(Ok(())) => println!("  ✓ Join completed"),
+            | Ok(Err(e)) => println!("  ✗ Join error: {}", e),
+            | Err(_) => println!("  ⚠ Join timeout (proceeding anyway)"),
         }
     }
 
@@ -110,7 +121,8 @@ pub async fn init_gossip_node(
     Ok((endpoint, gossip, router, bridge))
 }
 
-/// Spawn background tasks to forward messages between iroh-gossip and GossipBridge
+/// Spawn background tasks to forward messages between iroh-gossip and
+/// GossipBridge
 ///
 /// This creates two tokio tasks:
 /// 1. Forward from bridge.outgoing → gossip sender (broadcasts to peers)
@@ -138,7 +150,7 @@ pub fn spawn_gossip_bridge_tasks(
                 );
                 // Serialize the message
                 match rkyv::to_bytes::<rkyv::rancor::Failure>(&versioned_msg).map(|b| b.to_vec()) {
-                    Ok(bytes) => {
+                    | Ok(bytes) => {
                         // Broadcast via gossip
                         if let Err(e) = sender.broadcast(bytes.into()).await {
                             eprintln!("[Node {}] Failed to broadcast message: {}", node_id, e);
@@ -148,8 +160,8 @@ pub fn spawn_gossip_bridge_tasks(
                                 node_id, msg_count
                             );
                         }
-                    }
-                    Err(e) => eprintln!(
+                    },
+                    | Err(e) => eprintln!(
                         "[Node {}] Failed to serialize message for broadcast: {}",
                         node_id, e
                     ),
@@ -169,7 +181,7 @@ pub fn spawn_gossip_bridge_tasks(
         loop {
             // Receive from gossip (GossipReceiver is a Stream)
             match tokio::time::timeout(Duration::from_millis(100), receiver.next()).await {
-                Ok(Some(Ok(event))) => {
+                | Ok(Some(Ok(event))) => {
                     println!(
                         "[Node {}] Received gossip event: {:?}",
                         node_id,
@@ -182,8 +194,10 @@ pub fn spawn_gossip_bridge_tasks(
                             node_id, msg_count
                         );
                         // Deserialize the message
-                        match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(&msg.content) {
-                            Ok(versioned_msg) => {
+                        match rkyv::from_bytes::<VersionedMessage, rkyv::rancor::Failure>(
+                            &msg.content,
+                        ) {
+                            | Ok(versioned_msg) => {
                                 // Push to bridge's incoming queue
                                 if let Err(e) = bridge_in.push_incoming(versioned_msg) {
                                     eprintln!(
@@ -196,25 +210,25 @@ pub fn spawn_gossip_bridge_tasks(
                                         node_id, msg_count
                                     );
                                 }
-                            }
-                            Err(e) => eprintln!(
+                            },
+                            | Err(e) => eprintln!(
                                 "[Node {}] Failed to deserialize gossip message: {}",
                                 node_id, e
                             ),
                         }
                     }
-                }
-                Ok(Some(Err(e))) => {
+                },
+                | Ok(Some(Err(e))) => {
                     eprintln!("[Node {}] Gossip receiver error: {}", node_id, e)
-                }
-                Ok(None) => {
+                },
+                | Ok(None) => {
                     // Stream ended
                     println!("[Node {}] Gossip stream ended", node_id);
                     break;
-                }
-                Err(_) => {
+                },
+                | Err(_) => {
                     // Timeout, no message available
-                }
+                },
             }
         }
     });
@@ -247,14 +261,14 @@ pub async fn setup_gossip_pair() -> Result<(
     let (ep1, _gossip1, router1, bridge1) = init_gossip_node(topic_id, vec![]).await?;
     println!("Node 1 initialized with ID: {}", ep1.addr().id);
 
-    // Get node 1's full address (ID + network addresses) for node 2 to bootstrap from
+    // Get node 1's full address (ID + network addresses) for node 2 to bootstrap
+    // from
     let node1_addr = ep1.addr().clone();
     println!("Node 1 full address: {:?}", node1_addr);
 
     // Initialize node 2 with node 1's full address as bootstrap peer
     println!("Initializing node 2 with bootstrap peer: {}", node1_addr.id);
-    let (ep2, _gossip2, router2, bridge2) =
-        init_gossip_node(topic_id, vec![node1_addr]).await?;
+    let (ep2, _gossip2, router2, bridge2) = init_gossip_node(topic_id, vec![node1_addr]).await?;
     println!("Node 2 initialized with ID: {}", ep2.addr().id);
 
     // Brief wait for gossip protocol to stabilize (localhost is fast)
@@ -273,7 +287,8 @@ pub async fn setup_gossip_pair() -> Result<(
 /// All nodes are subscribed to the same topic and connected via localhost.
 ///
 /// # Returns
-/// Tuple of (ep1, ep2, ep3, router1, router2, router3, bridge1, bridge2, bridge3)
+/// Tuple of (ep1, ep2, ep3, router1, router2, router3, bridge1, bridge2,
+/// bridge3)
 pub async fn setup_gossip_trio() -> Result<(
     Endpoint,
     Endpoint,
@@ -303,7 +318,10 @@ pub async fn setup_gossip_trio() -> Result<(
 
     // Initialize node 3 with both node 1 and node 2 as bootstrap
     let node2_addr = ep2.addr().clone();
-    println!("Initializing node 3 with bootstrap peers: {} and {}", node1_addr.id, node2_addr.id);
+    println!(
+        "Initializing node 3 with bootstrap peers: {} and {}",
+        node1_addr.id, node2_addr.id
+    );
     let (ep3, _gossip3, router3, bridge3) =
         init_gossip_node(topic_id, vec![node1_addr, node2_addr]).await?;
     println!("Node 3 initialized with ID: {}", ep3.addr().id);
@@ -311,5 +329,7 @@ pub async fn setup_gossip_trio() -> Result<(
     // Brief wait for gossip protocol to stabilize
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    Ok((ep1, ep2, ep3, router1, router2, router3, bridge1, bridge2, bridge3))
+    Ok((
+        ep1, ep2, ep3, router1, router2, router3, bridge1, bridge2, bridge3,
+    ))
 }

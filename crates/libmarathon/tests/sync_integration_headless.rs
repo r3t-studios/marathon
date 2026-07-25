@@ -14,7 +14,6 @@ use std::{
 };
 
 use anyhow::Result;
-use test_utils::{setup_gossip_pair, TestContext, wait_for_sync};
 use bevy::{
     MinimalPlugins,
     app::{
@@ -51,8 +50,8 @@ use libmarathon::{
         NetworkedTransform,
         NetworkingConfig,
         NetworkingPlugin,
-        Synced,
         SyncMessage,
+        Synced,
         VersionedMessage,
     },
     persistence::{
@@ -63,6 +62,11 @@ use libmarathon::{
 };
 // Note: Test components use rkyv instead of serde
 use tempfile::TempDir;
+use test_utils::{
+    TestContext,
+    setup_gossip_pair,
+    wait_for_sync,
+};
 use uuid::Uuid;
 
 // ============================================================================
@@ -90,14 +94,19 @@ struct TestHealth {
 // ============================================================================
 // Test-Specific Utilities
 // ============================================================================
-// Common utilities (TestContext, wait_for_sync, gossip setup) are in shared test_utils
-// These are specific to this test file (DB checks, TestPosition assertions)
+// Common utilities (TestContext, wait_for_sync, gossip setup) are in shared
+// test_utils These are specific to this test file (DB checks, TestPosition
+// assertions)
 
 use rusqlite::Connection;
 
-/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a fixed timestep)
+/// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a
+/// fixed timestep)
 fn update_with_fixed(app: &mut App) {
-    use bevy::prelude::{FixedUpdate, FixedPostUpdate};
+    use bevy::prelude::{
+        FixedPostUpdate,
+        FixedUpdate,
+    };
     // Run Main schedule (which includes Update)
     app.update();
     // Explicitly run FixedUpdate to ensure systems there execute
@@ -108,17 +117,17 @@ fn update_with_fixed(app: &mut App) {
 
 /// Check if an entity exists in the database
 fn entity_exists_in_db(db_path: &PathBuf, entity_id: Uuid) -> Result<bool> {
-        let conn = Connection::open(db_path)?;
-        let entity_id_bytes = entity_id.as_bytes();
+    let conn = Connection::open(db_path)?;
+    let entity_id_bytes = entity_id.as_bytes();
 
-        let exists: bool = conn.query_row(
-            "SELECT COUNT(*) > 0 FROM entities WHERE id = ?1",
-            [entity_id_bytes.as_slice()],
-            |row| row.get(0),
-        )?;
+    let exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM entities WHERE id = ?1",
+        [entity_id_bytes.as_slice()],
+        |row| row.get(0),
+    )?;
 
-        Ok(exists)
-    }
+    Ok(exists)
+}
 
 /// Check if a component exists for an entity in the database
 fn component_exists_in_db(
@@ -388,8 +397,8 @@ async fn test_basic_entity_sync() -> Result<()> {
     // assert_eq!(
     //     node2_position,
     //     Some(TestPosition { x: 10.0, y: 20.0 }),
-    //     "TestPosition data should be correctly persisted in Node 2 database after sync"
-    // );
+    //     "TestPosition data should be correctly persisted in Node 2 database after
+    // sync" );
     println!("✓ Node 2 persistence verified");
 
     println!("✓ Full sync and persistence test passed!");
@@ -724,7 +733,8 @@ async fn test_lock_heartbeat_renewal() -> Result<()> {
 
     // Spawn entity
     let entity_id = Uuid::new_v4();
-    let _ = app1.world_mut()
+    let _ = app1
+        .world_mut()
         .spawn((
             NetworkedEntity::with_id(entity_id, node1_id),
             TestPosition { x: 10.0, y: 20.0 },
@@ -764,8 +774,14 @@ async fn test_lock_heartbeat_renewal() -> Result<()> {
     {
         let registry1 = app1.world().resource::<EntityLockRegistry>();
         let registry2 = app2.world().resource::<EntityLockRegistry>();
-        assert!(registry1.is_locked(entity_id, node1_id), "Lock should exist on node 1");
-        assert!(registry2.is_locked(entity_id, node2_id), "Lock should exist on node 2");
+        assert!(
+            registry1.is_locked(entity_id, node1_id),
+            "Lock should exist on node 1"
+        );
+        assert!(
+            registry2.is_locked(entity_id, node2_id),
+            "Lock should exist on node 2"
+        );
         println!("✓ Lock acquired on both nodes");
     }
 
@@ -845,7 +861,8 @@ async fn test_lock_heartbeat_expiration() -> Result<()> {
 
     // Node 1 spawns entity and selects it
     let entity_id = Uuid::new_v4();
-    let _ = app1.world_mut()
+    let _ = app1
+        .world_mut()
         .spawn((
             NetworkedEntity::with_id(entity_id, node1_id),
             TestPosition { x: 10.0, y: 20.0 },
@@ -892,15 +909,16 @@ async fn test_lock_heartbeat_expiration() -> Result<()> {
     .await?;
     println!("✓ Lock acquired and propagated");
 
-    // Simulate node 1 crash: remove lock from node 1's registry without sending release
-    // This stops heartbeat broadcasts from node 1
+    // Simulate node 1 crash: remove lock from node 1's registry without sending
+    // release This stops heartbeat broadcasts from node 1
     {
         let mut registry = app1.world_mut().resource_mut::<EntityLockRegistry>();
         registry.force_release(entity_id);
         println!("✓ Simulated node 1 crash (stopped heartbeats)");
     }
 
-    // Force the lock to expire on node 2 (simulating 5+ seconds passing without heartbeats)
+    // Force the lock to expire on node 2 (simulating 5+ seconds passing without
+    // heartbeats)
     {
         let mut registry = app2.world_mut().resource_mut::<EntityLockRegistry>();
         registry.expire_lock_for_testing(entity_id);
@@ -954,7 +972,8 @@ async fn test_lock_release_stops_heartbeats() -> Result<()> {
 
     // Node 1 spawns entity and selects it
     let entity_id = Uuid::new_v4();
-    let _ = app1.world_mut()
+    let _ = app1
+        .world_mut()
         .spawn((
             NetworkedEntity::with_id(entity_id, node1_id),
             TestPosition { x: 10.0, y: 20.0 },
@@ -1045,7 +1064,8 @@ async fn test_lock_release_stops_heartbeats() -> Result<()> {
     Ok(())
 }
 
-/// Test 8: Offline-to-online sync (operations work offline and sync when online)
+/// Test 8: Offline-to-online sync (operations work offline and sync when
+/// online)
 ///
 /// This test verifies the offline-first CRDT architecture:
 /// - Spawning entities offline increments vector clock and logs operations
@@ -1056,8 +1076,13 @@ async fn test_lock_release_stops_heartbeats() -> Result<()> {
 /// - Tombstones prevent resurrection of deleted entities
 #[tokio::test(flavor = "multi_thread")]
 async fn test_offline_to_online_sync() -> Result<()> {
+    use libmarathon::networking::{
+        NodeVectorClock,
+        OperationLog,
+        ToDelete,
+        TombstoneRegistry,
+    };
     use test_utils::*;
-    use libmarathon::networking::{NodeVectorClock, OperationLog, TombstoneRegistry, ToDelete};
 
     println!("=== Starting test_offline_to_online_sync ===");
 
@@ -1074,7 +1099,8 @@ async fn test_offline_to_online_sync() -> Result<()> {
     println!("Node 2 ID (from bridge): {}", node2_id);
 
     // Phase 1: Create app1 in OFFLINE mode (no GossipBridge inserted yet)
-    // Important: Use the bridge's node_id so operations are recorded with the right ID
+    // Important: Use the bridge's node_id so operations are recorded with the right
+    // ID
     println!("\n--- Phase 1: Offline Operations on Node 1 ---");
     let mut app1 = {
         let mut app = App::new();
@@ -1174,7 +1200,10 @@ async fn test_offline_to_online_sync() -> Result<()> {
         let clock = app1.world().resource::<NodeVectorClock>();
         let seq = clock.clock.timestamps.get(&node1_id).copied().unwrap_or(0);
         println!("✓ Vector clock after second spawn: {}", seq);
-        assert!(seq > clock_after_spawn, "Clock should have incremented again");
+        assert!(
+            seq > clock_after_spawn,
+            "Clock should have incremented again"
+        );
         seq
     };
 
@@ -1197,7 +1226,10 @@ async fn test_offline_to_online_sync() -> Result<()> {
         let clock = app1.world().resource::<NodeVectorClock>();
         let seq = clock.clock.timestamps.get(&node1_id).copied().unwrap_or(0);
         println!("✓ Vector clock after modify: {}", seq);
-        assert!(seq > clock_after_second_spawn, "Clock should have incremented after modification");
+        assert!(
+            seq > clock_after_second_spawn,
+            "Clock should have incremented after modification"
+        );
         seq
     };
 
@@ -1215,7 +1247,10 @@ async fn test_offline_to_online_sync() -> Result<()> {
         let clock = app1.world().resource::<NodeVectorClock>();
         let seq = clock.clock.timestamps.get(&node1_id).copied().unwrap_or(0);
         println!("✓ Vector clock after delete: {}", seq);
-        assert!(seq > clock_after_modify, "Clock should have incremented after deletion");
+        assert!(
+            seq > clock_after_modify,
+            "Clock should have incremented after deletion"
+        );
         seq
     };
 
@@ -1229,7 +1264,10 @@ async fn test_offline_to_online_sync() -> Result<()> {
     // Verify tombstone recorded for entity B
     {
         let tombstones = app1.world().resource::<TombstoneRegistry>();
-        assert!(tombstones.is_deleted(entity_b), "Tombstone should be recorded for entity B");
+        assert!(
+            tombstones.is_deleted(entity_b),
+            "Tombstone should be recorded for entity B"
+        );
         println!("✓ Tombstone recorded for entity B");
     }
 
@@ -1237,8 +1275,14 @@ async fn test_offline_to_online_sync() -> Result<()> {
     {
         let op_log = app1.world().resource::<OperationLog>();
         let op_count = op_log.total_operations();
-        println!("✓ Operation log has {} operations recorded offline", op_count);
-        assert!(op_count >= 4, "Should have operations for: spawn A, spawn B, modify A, delete B");
+        println!(
+            "✓ Operation log has {} operations recorded offline",
+            op_count
+        );
+        assert!(
+            op_count >= 4,
+            "Should have operations for: spawn A, spawn B, modify A, delete B"
+        );
     }
 
     println!("\n--- Phase 2: Bringing Node 1 Online ---");
@@ -1288,10 +1332,9 @@ async fn test_offline_to_online_sync() -> Result<()> {
             if ne.network_id == entity_a {
                 found = true;
                 println!("✓ Entity A found on node 2");
-                println!("  Transform: ({}, {}, {})",
-                    transform.translation.x,
-                    transform.translation.y,
-                    transform.translation.z
+                println!(
+                    "  Transform: ({}, {}, {})",
+                    transform.translation.x, transform.translation.y, transform.translation.z
                 );
                 // Verify it has the MODIFIED position, not the original
                 assert!(
@@ -1312,7 +1355,10 @@ async fn test_offline_to_online_sync() -> Result<()> {
     // Verify entity B does NOT exist on node 2 (was deleted offline)
     {
         let count = count_entities_with_id(app2.world_mut(), entity_b);
-        assert_eq!(count, 0, "Entity B should NOT exist on node 2 (deleted offline)");
+        assert_eq!(
+            count, 0,
+            "Entity B should NOT exist on node 2 (deleted offline)"
+        );
         println!("✓ Entity B correctly does not exist on node 2");
     }
 
@@ -1338,7 +1384,8 @@ async fn test_offline_to_online_sync() -> Result<()> {
         println!("  Node 1 clock on app1: {}", node1_seq_on_app1);
         println!("  Node 1 clock on app2: {}", node1_seq_on_app2);
 
-        // Clock should be clock_after_delete + 1 because sending the SyncRequest increments it
+        // Clock should be clock_after_delete + 1 because sending the SyncRequest
+        // increments it
         assert_eq!(
             node1_seq_on_app1,
             clock_after_delete + 1,
@@ -1347,8 +1394,7 @@ async fn test_offline_to_online_sync() -> Result<()> {
 
         // Node 2 should have learned about node 1's clock through sync
         assert_eq!(
-            node1_seq_on_app2,
-            node1_seq_on_app1,
+            node1_seq_on_app2, node1_seq_on_app1,
             "Node 2 should have synced node 1's clock"
         );
 
@@ -1375,8 +1421,9 @@ async fn test_offline_to_online_sync() -> Result<()> {
 
 /// Test 12: Lock re-acquisition cycle (acquire → release → re-acquire)
 ///
-/// This test verifies that locks can be acquired, released, and then re-acquired multiple times.
-/// This is critical for normal editing workflows where users repeatedly select/deselect entities.
+/// This test verifies that locks can be acquired, released, and then
+/// re-acquired multiple times. This is critical for normal editing workflows
+/// where users repeatedly select/deselect entities.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_lock_reacquisition_cycle() -> Result<()> {
     use test_utils::*;
@@ -1422,7 +1469,9 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
 
     // Update LocalSelection to select the entity
     {
-        let mut selection = app1.world_mut().resource_mut::<libmarathon::networking::LocalSelection>();
+        let mut selection = app1
+            .world_mut()
+            .resource_mut::<libmarathon::networking::LocalSelection>();
         selection.clear();
         selection.insert(entity_id);
         println!("  Updated LocalSelection to select entity");
@@ -1432,8 +1481,8 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     wait_for_sync(&mut app1, &mut app2, Duration::from_secs(3), |w1, w2| {
         let lock1 = w1.resource::<EntityLockRegistry>();
         let lock2 = w2.resource::<EntityLockRegistry>();
-        lock1.is_locked_by(entity_id, node1_id, node1_id)
-            && lock2.is_locked_by(entity_id, node1_id, node2_id)
+        lock1.is_locked_by(entity_id, node1_id, node1_id) &&
+            lock2.is_locked_by(entity_id, node1_id, node2_id)
     })
     .await?;
 
@@ -1457,7 +1506,9 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     println!("\nPHASE 3: Node 1 releases lock (FIRST time)");
 
     {
-        let mut selection = app1.world_mut().resource_mut::<libmarathon::networking::LocalSelection>();
+        let mut selection = app1
+            .world_mut()
+            .resource_mut::<libmarathon::networking::LocalSelection>();
         selection.clear();
         println!("  Cleared LocalSelection");
     }
@@ -1490,7 +1541,9 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     println!("\nPHASE 4: Node 1 acquires lock (SECOND time) - THIS IS THE BUG");
 
     {
-        let mut selection = app1.world_mut().resource_mut::<libmarathon::networking::LocalSelection>();
+        let mut selection = app1
+            .world_mut()
+            .resource_mut::<libmarathon::networking::LocalSelection>();
         selection.clear();
         selection.insert(entity_id);
         println!("  Updated LocalSelection to select entity (again)");
@@ -1542,7 +1595,9 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     println!("\nPHASE 5: Node 1 releases lock (SECOND time)");
 
     {
-        let mut selection = app1.world_mut().resource_mut::<libmarathon::networking::LocalSelection>();
+        let mut selection = app1
+            .world_mut()
+            .resource_mut::<libmarathon::networking::LocalSelection>();
         selection.clear();
         println!("  Cleared LocalSelection");
     }
@@ -1561,7 +1616,9 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     println!("\nPHASE 6: Node 1 acquires lock (THIRD time) - verifying pattern");
 
     {
-        let mut selection = app1.world_mut().resource_mut::<libmarathon::networking::LocalSelection>();
+        let mut selection = app1
+            .world_mut()
+            .resource_mut::<libmarathon::networking::LocalSelection>();
         selection.clear();
         selection.insert(entity_id);
         println!("  Updated LocalSelection to select entity (third time)");
@@ -1571,8 +1628,8 @@ async fn test_lock_reacquisition_cycle() -> Result<()> {
     wait_for_sync(&mut app1, &mut app2, Duration::from_secs(3), |w1, w2| {
         let lock1 = w1.resource::<EntityLockRegistry>();
         let lock2 = w2.resource::<EntityLockRegistry>();
-        lock1.is_locked_by(entity_id, node1_id, node1_id)
-            && lock2.is_locked_by(entity_id, node1_id, node2_id)
+        lock1.is_locked_by(entity_id, node1_id, node1_id) &&
+            lock2.is_locked_by(entity_id, node1_id, node2_id)
     })
     .await?;
 

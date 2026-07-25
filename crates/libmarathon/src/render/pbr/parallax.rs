@@ -1,4 +1,7 @@
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
 
 /// The [parallax mapping] method to use to compute depth based on the
 /// material's [`depth_map`].
@@ -25,7 +28,8 @@ pub enum ParallaxMappingMethod {
     /// Discovers the best depth value based on binary search.
     ///
     /// Each iteration incurs a texture sample.
-    /// The result has fewer visual artifacts than [`ParallaxMappingMethod::Occlusion`].
+    /// The result has fewer visual artifacts than
+    /// [`ParallaxMappingMethod::Occlusion`].
     ///
     /// This method is named "Relief Mapping".
     Relief {
@@ -40,8 +44,8 @@ impl ParallaxMappingMethod {
 
     pub(crate) fn max_steps(&self) -> u32 {
         match self {
-            ParallaxMappingMethod::Occlusion => 0,
-            ParallaxMappingMethod::Relief { max_steps } => *max_steps,
+            | ParallaxMappingMethod::Occlusion => 0,
+            | ParallaxMappingMethod::Relief { max_steps } => *max_steps,
         }
     }
 }

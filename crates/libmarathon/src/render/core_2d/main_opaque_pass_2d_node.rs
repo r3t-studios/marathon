@@ -1,22 +1,41 @@
-use crate::render::core_2d::Opaque2d;
-use bevy_ecs::{prelude::World, query::QueryItem};
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
+use bevy_ecs::{
+    prelude::World,
+    query::QueryItem,
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
 use super::AlphaMask2d;
+use crate::render::{
+    camera::ExtractedCamera,
+    core_2d::Opaque2d,
+    diagnostic::RecordDiagnostics,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::{
+        TrackedRenderPass,
+        ViewBinnedRenderPhases,
+    },
+    render_resource::{
+        CommandEncoderDescriptor,
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    view::{
+        ExtractedView,
+        ViewDepthTexture,
+        ViewTarget,
+    },
+};
 
 /// A [`bevy_render::render_graph::Node`] that runs the
-/// [`Opaque2d`] [`ViewBinnedRenderPhases`] and [`AlphaMask2d`] [`ViewBinnedRenderPhases`]
+/// [`Opaque2d`] [`ViewBinnedRenderPhases`] and [`AlphaMask2d`]
+/// [`ViewBinnedRenderPhases`]
 #[derive(Default)]
 pub struct MainOpaquePass2dNode;
 impl ViewNode for MainOpaquePass2dNode {

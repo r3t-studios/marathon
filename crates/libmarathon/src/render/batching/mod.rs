@@ -1,7 +1,11 @@
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    system::{ResMut, SystemParam, SystemParamItem},
+    system::{
+        ResMut,
+        SystemParam,
+        SystemParamItem,
+    },
 };
 use bytemuck::Pod;
 use gpu_preprocessing::UntypedPhaseIndirectParametersBuffers;
@@ -9,10 +13,18 @@ use nonmax::NonMaxU32;
 
 use crate::render::{
     render_phase::{
-        BinnedPhaseItem, CachedRenderPipelinePhaseItem, DrawFunctionId, PhaseItemExtraIndex,
-        SortedPhaseItem, SortedRenderPhase, ViewBinnedRenderPhases,
+        BinnedPhaseItem,
+        CachedRenderPipelinePhaseItem,
+        DrawFunctionId,
+        PhaseItemExtraIndex,
+        SortedPhaseItem,
+        SortedRenderPhase,
+        ViewBinnedRenderPhases,
     },
-    render_resource::{CachedRenderPipelineId, GpuArrayBufferable},
+    render_resource::{
+        CachedRenderPipelineId,
+        GpuArrayBufferable,
+    },
     sync_world::MainEntity,
 };
 
@@ -31,11 +43,11 @@ pub struct NoAutomaticBatching;
 /// - View bindings are constant across a phase for a given draw function as
 ///   phases are per-view
 /// - `batch_and_prepare_render_phase` is the only system that performs this
-///   batching and has sole responsibility for preparing the per-object data.
-///   As such the mesh binding and dynamic offsets are assumed to only be
-///   variable as a result of the `batch_and_prepare_render_phase` system, e.g.
-///   due to having to split data across separate uniform bindings within the
-///   same buffer due to the maximum uniform buffer binding size.
+///   batching and has sole responsibility for preparing the per-object data. As
+///   such the mesh binding and dynamic offsets are assumed to only be variable
+///   as a result of the `batch_and_prepare_render_phase` system, e.g. due to
+///   having to split data across separate uniform bindings within the same
+///   buffer due to the maximum uniform buffer binding size.
 #[derive(PartialEq)]
 struct BatchMeta<T: PartialEq> {
     /// The pipeline id encompasses all pipeline configuration including vertex
@@ -55,12 +67,11 @@ impl<T: PartialEq> BatchMeta<T> {
             pipeline_id: item.cached_pipeline(),
             draw_function_id: item.draw_function(),
             dynamic_offset: match item.extra_index() {
-                PhaseItemExtraIndex::DynamicOffset(dynamic_offset) => {
+                | PhaseItemExtraIndex::DynamicOffset(dynamic_offset) => {
                     NonMaxU32::new(dynamic_offset)
-                }
-                PhaseItemExtraIndex::None | PhaseItemExtraIndex::IndirectParametersIndex { .. } => {
-                    None
-                }
+                },
+                | PhaseItemExtraIndex::None |
+                PhaseItemExtraIndex::IndirectParametersIndex { .. } => None,
             },
             user_data,
         }
@@ -161,8 +172,8 @@ pub trait GetFullBatchData: GetBatchData {
     ///   batch in the `MeshUniform` output buffer.
     ///
     /// * `batch_set_index` is the index of the batch set in the
-    ///   [`gpu_preprocessing::IndirectBatchSet`] buffer, if this batch belongs to
-    ///   a batch set.
+    ///   [`gpu_preprocessing::IndirectBatchSet`] buffer, if this batch belongs
+    ///   to a batch set.
     ///
     /// * `indirect_parameters_buffers` is the buffer in which to write the
     ///   metadata.
@@ -181,8 +192,7 @@ pub trait GetFullBatchData: GetBatchData {
 /// Sorts a render phase that uses bins.
 pub fn sort_binned_render_phase<BPI>(mut phases: ResMut<ViewBinnedRenderPhases<BPI>>)
 where
-    BPI: BinnedPhaseItem,
-{
+    BPI: BinnedPhaseItem, {
     for phase in phases.values_mut() {
         phase.multidrawable_meshes.sort_unstable_keys();
         phase.batchable_meshes.sort_unstable_keys();
@@ -204,12 +214,13 @@ fn batch_and_prepare_sorted_render_phase<I, GBD>(
     mut process_item: impl FnMut(&mut I) -> Option<GBD::CompareData>,
 ) where
     I: CachedRenderPipelinePhaseItem + SortedPhaseItem,
-    GBD: GetBatchData,
-{
+    GBD: GetBatchData, {
     let items = phase.items.iter_mut().map(|item| {
         let batch_data = match process_item(item) {
-            Some(compare_data) if I::AUTOMATIC_BATCHING => Some(BatchMeta::new(item, compare_data)),
-            _ => None,
+            | Some(compare_data) if I::AUTOMATIC_BATCHING => {
+                Some(BatchMeta::new(item, compare_data))
+            },
+            | _ => None,
         };
         (item.batch_range_mut(), batch_data)
     });

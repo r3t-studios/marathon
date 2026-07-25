@@ -373,7 +373,8 @@ pub fn handle_join_requests_system(
                                 expected.as_bytes(),
                             ) {
                                 error!("JoinRequest from {} rejected: {}", node_id, e);
-                                continue; // Skip this request, don't send FullState
+                                continue; // Skip this request, don't send
+                                // FullState
                             }
                             info!("Session secret validated for node {}", node_id);
                         },
@@ -382,7 +383,8 @@ pub fn handle_join_requests_system(
                                 "JoinRequest from {} missing required session secret, rejecting",
                                 node_id
                             );
-                            continue; // Reject requests without secret when one is configured
+                            continue; // Reject requests without secret when one
+                            // is configured
                         },
                     }
                 } else if session_secret.is_some() {

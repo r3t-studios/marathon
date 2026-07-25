@@ -8,7 +8,10 @@ pub use render_pass::*;
 
 /// Defines Egui node graph.
 pub mod graph {
-    use bevy::render::render_graph::{RenderLabel, RenderSubGraph};
+    use bevy::render::render_graph::{
+        RenderLabel,
+        RenderSubGraph,
+    };
 
     /// Egui subgraph (is run by [`super::RunEguiSubgraphOnEguiViewNode`]).
     #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderSubGraph)]
@@ -22,62 +25,135 @@ pub mod graph {
     }
 }
 
-use crate::debug_ui::{
-    EguiContextSettings, EguiRenderOutput, RenderComputedScaleFactor,
-    render::graph::{NodeEgui, SubGraphEgui},
-};
-use bevy::app::SubApp;
-use bevy::asset::{Handle, RenderAssetUsages, uuid_handle};
-use bevy::camera::Camera;
-use bevy::ecs::{
-    component::Component,
-    entity::Entity,
-    query::Has,
-    resource::Resource,
-    system::{Commands, Local, ResMut},
-    world::{FromWorld, World},
-};
-use bevy::image::{
-    BevyDefault, Image, ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor,
-};
-use bevy::math::{Mat4, UVec4};
-use bevy::mesh::VertexBufferLayout;
-use bevy::platform::collections::HashSet;
-use bevy::render::{
-    MainWorld,
-    render_graph::{Node, NodeRunError, RenderGraph, RenderGraphContext},
-    render_phase::TrackedRenderPass,
-    render_resource::{
-        BindGroupLayout, BindGroupLayoutEntries, FragmentState, RenderPipelineDescriptor,
-        SpecializedRenderPipeline, VertexState,
-        binding_types::{sampler, texture_2d, uniform_buffer},
-    },
-    renderer::{RenderContext, RenderDevice},
-    sync_world::{RenderEntity, TemporaryRenderEntity},
-    view::{ExtractedView, Hdr, RetainedViewEntity, ViewTarget},
-};
-use bevy::shader::{Shader, ShaderDefVal};
-use egui::{TextureFilter, TextureOptions};
 use std::num::NonZero;
+
+use bevy::{
+    app::SubApp,
+    asset::{
+        Handle,
+        RenderAssetUsages,
+        uuid_handle,
+    },
+    camera::Camera,
+    ecs::{
+        component::Component,
+        entity::Entity,
+        query::Has,
+        resource::Resource,
+        system::{
+            Commands,
+            Local,
+            ResMut,
+        },
+        world::{
+            FromWorld,
+            World,
+        },
+    },
+    image::{
+        BevyDefault,
+        Image,
+        ImageAddressMode,
+        ImageFilterMode,
+        ImageSampler,
+        ImageSamplerDescriptor,
+    },
+    math::{
+        Mat4,
+        UVec4,
+    },
+    mesh::VertexBufferLayout,
+    platform::collections::HashSet,
+    render::{
+        MainWorld,
+        render_graph::{
+            Node,
+            NodeRunError,
+            RenderGraph,
+            RenderGraphContext,
+        },
+        render_phase::TrackedRenderPass,
+        render_resource::{
+            BindGroupLayout,
+            BindGroupLayoutEntries,
+            FragmentState,
+            RenderPipelineDescriptor,
+            SpecializedRenderPipeline,
+            VertexState,
+            binding_types::{
+                sampler,
+                texture_2d,
+                uniform_buffer,
+            },
+        },
+        renderer::{
+            RenderContext,
+            RenderDevice,
+        },
+        sync_world::{
+            RenderEntity,
+            TemporaryRenderEntity,
+        },
+        view::{
+            ExtractedView,
+            Hdr,
+            RetainedViewEntity,
+            ViewTarget,
+        },
+    },
+    shader::{
+        Shader,
+        ShaderDefVal,
+    },
+};
+use egui::{
+    TextureFilter,
+    TextureOptions,
+};
 use wgpu_types::{
-    BlendState, ColorTargetState, ColorWrites, Extent3d, MultisampleState, PrimitiveState,
-    PushConstantRange, SamplerBindingType, ShaderStages, TextureDimension, TextureFormat,
-    TextureSampleType, VertexFormat, VertexStepMode,
+    BlendState,
+    ColorTargetState,
+    ColorWrites,
+    Extent3d,
+    MultisampleState,
+    PrimitiveState,
+    PushConstantRange,
+    SamplerBindingType,
+    ShaderStages,
+    TextureDimension,
+    TextureFormat,
+    TextureSampleType,
+    VertexFormat,
+    VertexStepMode,
+};
+
+use crate::debug_ui::{
+    EguiContextSettings,
+    EguiRenderOutput,
+    RenderComputedScaleFactor,
+    render::graph::{
+        NodeEgui,
+        SubGraphEgui,
+    },
 };
 
 mod render_pass;
 /// Plugin systems for the render app.
 pub mod systems;
 
-use systems::{EguiTextureId, EguiTransform};
+use systems::{
+    EguiTextureId,
+    EguiTransform,
+};
 
 /// A render-world component that lives on the main render target view and
 /// specifies the corresponding Egui view.
 ///
-/// For example, if Egui is being rendered to a 3D camera, this component lives on
-/// the 3D camera and contains the entity corresponding to the Egui view.
+/// For example, if Egui is being rendered to a 3D camera, this component lives
+/// on the 3D camera and contains the entity corresponding to the Egui view.
 ///
-/// Entity id of the temporary render entity with the corresponding extracted Egui view.
+/// Entity id of the temporary render entity with the corresponding extracted
+/// Egui view.
 #[derive(Component, Debug)]
 pub struct EguiCameraView(pub Entity);
 
@@ -85,7 +161,8 @@ pub struct EguiCameraView(pub Entity);
 /// corresponding main render target view.
 ///
 /// For example, if Egui is being rendered to a 3D camera, this component
-/// lives on the Egui view and contains the entity corresponding to the 3D camera.
+/// lives on the Egui view and contains the entity corresponding to the 3D
+/// camera.
 ///
 /// This is the inverse of [`EguiCameraView`].
 #[derive(Component, Debug)]
@@ -159,7 +236,8 @@ pub fn extract_egui_camera_view_system(
         const UI_CAMERA_TRANSFORM_OFFSET: f32 = -0.1;
 
         if let Some(physical_viewport_rect) = camera.physical_viewport_rect() {
-            // Use a projection matrix with the origin in the top left instead of the bottom left that comes with OrthographicProjection.
+            // Use a projection matrix with the origin in the top left instead of the bottom
+            // left that comes with OrthographicProjection.
             let projection_matrix = Mat4::orthographic_rh(
                 0.0,
                 physical_viewport_rect.width() as f32,
@@ -195,8 +273,8 @@ pub fn extract_egui_camera_view_system(
                     EguiViewTarget(render_entity),
                     egui_render_output,
                     RenderComputedScaleFactor {
-                        scale_factor: settings.scale_factor
-                            * camera.target_scaling_factor().unwrap_or(1.0),
+                        scale_factor: settings.scale_factor *
+                            camera.target_scaling_factor().unwrap_or(1.0),
                     },
                     TemporaryRenderEntity,
                 ))
@@ -245,8 +323,8 @@ impl FromWorld for EguiPipeline {
         // Check: max_binding_array_elements_per_shader_stage and
         // max_binding_array_sampler_elements-per_shader_stage
         // to be sure that device support provided limits
-        let bindless = if features.contains(wgpu_types::Features::TEXTURE_BINDING_ARRAY)
-            && features.contains(wgpu_types::Features::PUSH_CONSTANTS)
+        let bindless = if features.contains(wgpu_types::Features::TEXTURE_BINDING_ARRAY) &&
+            features.contains(wgpu_types::Features::PUSH_CONSTANTS)
         {
             settings.bindless_mode_array_size
         } else {
@@ -379,7 +457,7 @@ pub(crate) struct EguiDraw {
 
 pub(crate) fn as_color_image(image: &egui::ImageData) -> egui::ColorImage {
     match image {
-        egui::ImageData::Color(image) => (**image).clone(),
+        | egui::ImageData::Color(image) => (**image).clone(),
     }
 }
 
@@ -417,14 +495,14 @@ pub(crate) fn texture_options_as_sampler_descriptor(
 ) -> ImageSamplerDescriptor {
     fn convert_filter(filter: &TextureFilter) -> ImageFilterMode {
         match filter {
-            egui::TextureFilter::Nearest => ImageFilterMode::Nearest,
-            egui::TextureFilter::Linear => ImageFilterMode::Linear,
+            | egui::TextureFilter::Nearest => ImageFilterMode::Nearest,
+            | egui::TextureFilter::Linear => ImageFilterMode::Linear,
         }
     }
     let address_mode = match options.wrap_mode {
-        egui::TextureWrapMode::ClampToEdge => ImageAddressMode::ClampToEdge,
-        egui::TextureWrapMode::Repeat => ImageAddressMode::Repeat,
-        egui::TextureWrapMode::MirroredRepeat => ImageAddressMode::MirrorRepeat,
+        | egui::TextureWrapMode::ClampToEdge => ImageAddressMode::ClampToEdge,
+        | egui::TextureWrapMode::Repeat => ImageAddressMode::Repeat,
+        | egui::TextureWrapMode::MirroredRepeat => ImageAddressMode::MirrorRepeat,
     };
     ImageSamplerDescriptor {
         mag_filter: convert_filter(&options.magnification),
@@ -435,7 +513,8 @@ pub(crate) fn texture_options_as_sampler_descriptor(
     }
 }
 
-/// Callback to execute custom 'wgpu' rendering inside [`EguiPassNode`] render graph node.
+/// Callback to execute custom 'wgpu' rendering inside [`EguiPassNode`] render
+/// graph node.
 ///
 /// Rendering can be implemented using for example:
 /// * native wgpu rendering libraries,
@@ -443,11 +522,11 @@ pub(crate) fn texture_options_as_sampler_descriptor(
 pub struct EguiBevyPaintCallback(Box<dyn EguiBevyPaintCallbackImpl>);
 
 impl EguiBevyPaintCallback {
-    /// Creates a new [`egui::epaint::PaintCallback`] from a callback trait instance.
+    /// Creates a new [`egui::epaint::PaintCallback`] from a callback trait
+    /// instance.
     pub fn new_paint_callback<T>(rect: egui::Rect, callback: T) -> egui::epaint::PaintCallback
     where
-        T: EguiBevyPaintCallbackImpl + 'static,
-    {
+        T: EguiBevyPaintCallbackImpl + 'static, {
         let callback = Self(Box::new(callback));
         egui::epaint::PaintCallback {
             rect,
@@ -462,7 +541,8 @@ impl EguiBevyPaintCallback {
 
 /// Callback that executes custom rendering logic
 pub trait EguiBevyPaintCallbackImpl: Send + Sync {
-    /// Paint callback will be rendered in near future, all data must be finalized for render step
+    /// Paint callback will be rendered in near future, all data must be
+    /// finalized for render step
     fn update(
         &self,
         info: egui::PaintCallbackInfo,
@@ -490,8 +570,8 @@ pub trait EguiBevyPaintCallbackImpl: Send + Sync {
 
     /// Paint callback render step
     ///
-    /// Native wgpu RenderPass can be retrieved from [`TrackedRenderPass`] by calling
-    /// [`TrackedRenderPass::wgpu_pass`].
+    /// Native wgpu RenderPass can be retrieved from [`TrackedRenderPass`] by
+    /// calling [`TrackedRenderPass::wgpu_pass`].
     fn render<'pass>(
         &self,
         info: egui::PaintCallbackInfo,

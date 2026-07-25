@@ -27,8 +27,7 @@ use crate::networking::{
 /// use bevy::prelude::*;
 /// use libmarathon::networking::send_join_request_on_connect_system;
 ///
-/// App::new()
-///     .add_systems(Update, send_join_request_on_connect_system);
+/// App::new().add_systems(Update, send_join_request_on_connect_system);
 /// ```
 pub fn send_join_request_on_connect_system(
     current_session: ResMut<CurrentSession>,
@@ -62,7 +61,9 @@ pub fn send_join_request_on_connect_system(
     };
 
     // Get session secret if configured
-    let secret = session_secret.as_ref().map(|s| bytes::Bytes::from(s.as_bytes().to_vec()));
+    let secret = session_secret
+        .as_ref()
+        .map(|s| bytes::Bytes::from(s.as_bytes().to_vec()));
 
     // Build JoinRequest
     let last_known_clock = if current_session.last_known_clock.node_count() > 0 {
@@ -81,16 +82,16 @@ pub fn send_join_request_on_connect_system(
 
     // Send JoinRequest
     match bridge.send(request) {
-        Ok(()) => {
+        | Ok(()) => {
             info!(
                 "Sent JoinRequest for session {} (type: {:?})",
                 session_id.to_code(),
                 join_type
             );
-        }
-        Err(e) => {
+        },
+        | Err(e) => {
             error!("Failed to send JoinRequest: {}", e);
-        }
+        },
     }
 }
 
@@ -106,8 +107,7 @@ pub fn send_join_request_on_connect_system(
 /// use bevy::prelude::*;
 /// use libmarathon::networking::transition_session_state_system;
 ///
-/// App::new()
-///     .add_systems(Update, transition_session_state_system);
+/// App::new().add_systems(Update, transition_session_state_system);
 /// ```
 pub fn transition_session_state_system(world: &mut World) {
     // Only process state transitions when we have networking
@@ -146,13 +146,15 @@ pub fn transition_session_state_system(world: &mut World) {
     }
 
     match session_state {
-        SessionState::Joining => {
+        | SessionState::Joining => {
             // Start timer when JoinRequest is sent
             {
                 let mut timer = world.resource_mut::<JoinTimer>();
                 if join_request_sent && timer.0.is_none() {
                     timer.0 = Some(std::time::Instant::now());
-                    debug!("Started join timer - will transition to Active after timeout if no peers respond");
+                    debug!(
+                        "Started join timer - will transition to Active after timeout if no peers respond"
+                    );
                 }
             }
 
@@ -163,11 +165,10 @@ pub fn transition_session_state_system(world: &mut World) {
                 .count();
 
             // Transition to Active if:
-            // 1. We have received entities (entity_count > 0) AND have multiple nodes in clock
-            //    This ensures FullState was received and applied, OR
-            // 2. We've waited 3 seconds and either:
-            //    a) We have entities (sync completed), OR
-            //    b) No entities exist yet (we're the first node in session)
+            // 1. We have received entities (entity_count > 0) AND have multiple nodes in
+            //    clock This ensures FullState was received and applied, OR
+            // 2. We've waited 3 seconds and either: a) We have entities (sync completed),
+            //    OR b) No entities exist yet (we're the first node in session)
             let should_transition = if entity_count > 0 && clock_node_count > 1 {
                 // We've received and applied FullState with entities
                 info!(
@@ -211,26 +212,26 @@ pub fn transition_session_state_system(world: &mut World) {
                 let mut timer = world.resource_mut::<JoinTimer>();
                 timer.0 = None;
             }
-        }
-        SessionState::Active => {
+        },
+        | SessionState::Active => {
             // Already active, reset timer
             if let Some(mut timer) = world.get_resource_mut::<JoinTimer>() {
                 timer.0 = None;
             }
-        }
-        SessionState::Disconnected => {
+        },
+        | SessionState::Disconnected => {
             // If we reconnected (bridge exists), transition to Joining
             // This is handled by the networking startup logic
             if let Some(mut timer) = world.get_resource_mut::<JoinTimer>() {
                 timer.0 = None;
             }
-        }
-        SessionState::Created | SessionState::Left => {
+        },
+        | SessionState::Created | SessionState::Left => {
             // Should not be in these states when networking is active
             if let Some(mut timer) = world.get_resource_mut::<JoinTimer>() {
                 timer.0 = None;
             }
-        }
+        },
     }
 }
 
@@ -256,12 +257,13 @@ impl Default for JoinRequestSent {
 
 /// One-shot system to send JoinRequest only once when networking starts
 ///
-/// CRITICAL: Waits for at least one peer to connect via pkarr+DHT before sending
-/// JoinRequest. This prevents broadcasting to an empty network.
+/// CRITICAL: Waits for at least one peer to connect via pkarr+DHT before
+/// sending JoinRequest. This prevents broadcasting to an empty network.
 ///
 /// Timing:
 /// - If peers connect: Send JoinRequest immediately (they'll receive it)
-/// - If no peers after 1 second: Send anyway (we're probably first node in session)
+/// - If no peers after 1 second: Send anyway (we're probably first node in
+///   session)
 pub fn send_join_request_once_system(
     mut join_sent: ResMut<JoinRequestSent>,
     current_session: ResMut<CurrentSession>,
@@ -289,7 +291,8 @@ pub fn send_join_request_once_system(
         debug!("Started waiting for peers before sending JoinRequest (max 1 second)");
     }
 
-    // Check if we have any peers connected (node_count > 1 means we + at least 1 peer)
+    // Check if we have any peers connected (node_count > 1 means we + at least 1
+    // peer)
     let peer_count = node_clock.clock.node_count().saturating_sub(1);
     let wait_elapsed = join_sent.wait_started.unwrap().elapsed();
 
@@ -331,7 +334,9 @@ pub fn send_join_request_once_system(
     };
 
     // Get session secret if configured
-    let secret = session_secret.as_ref().map(|s| bytes::Bytes::from(s.as_bytes().to_vec()));
+    let secret = session_secret
+        .as_ref()
+        .map(|s| bytes::Bytes::from(s.as_bytes().to_vec()));
 
     // Build JoinRequest
     let last_known_clock = if current_session.last_known_clock.node_count() > 0 {
@@ -350,7 +355,7 @@ pub fn send_join_request_once_system(
 
     // Send JoinRequest
     match bridge.send(request) {
-        Ok(()) => {
+        | Ok(()) => {
             info!(
                 "Sent JoinRequest for session {} (type: {:?})",
                 session_id.to_code(),
@@ -361,17 +366,21 @@ pub fn send_join_request_once_system(
             // Transition to Active immediately if we're the first node
             // (Otherwise we'll wait for FullState)
             // Actually, let's always wait a bit for potential peers
-        }
-        Err(e) => {
+        },
+        | Err(e) => {
             error!("Failed to send JoinRequest: {}", e);
-        }
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::networking::{Session, SessionId, VectorClock};
+    use crate::networking::{
+        Session,
+        SessionId,
+        VectorClock,
+    };
 
     #[test]
     fn test_join_request_sent_tracking() {

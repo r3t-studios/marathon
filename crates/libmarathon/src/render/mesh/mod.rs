@@ -1,23 +1,44 @@
 pub mod allocator;
-use crate::render::{
-    render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssets},
-    render_resource::TextureView,
-    texture::GpuImage,
-    RenderApp,
-};
 use allocator::MeshAllocatorPlugin;
-use bevy_app::{App, Plugin, PostUpdate};
-use bevy_asset::{AssetId, RenderAssetUsages};
+use bevy_app::{
+    App,
+    Plugin,
+    PostUpdate,
+};
+use bevy_asset::{
+    AssetId,
+    RenderAssetUsages,
+};
 use bevy_ecs::{
     prelude::*,
     system::{
-        lifetimeless::{SRes, SResMut},
         SystemParamItem,
+        lifetimeless::{
+            SRes,
+            SResMut,
+        },
     },
 };
-use bevy_mesh::morph::{MeshMorphWeights, MorphWeights};
-use bevy_mesh::*;
+use bevy_mesh::{
+    morph::{
+        MeshMorphWeights,
+        MorphWeights,
+    },
+    *,
+};
 use wgpu::IndexFormat;
+
+use crate::render::{
+    RenderApp,
+    render_asset::{
+        PrepareAssetError,
+        RenderAsset,
+        RenderAssetPlugin,
+        RenderAssets,
+    },
+    render_resource::TextureView,
+    texture::GpuImage,
+};
 
 /// Makes sure that [`Mesh`]es are extracted and prepared for the GPU.
 /// Does *not* add the [`Mesh`] as an asset. Use [`MeshPlugin`] for that.
@@ -26,7 +47,8 @@ pub struct MeshRenderAssetPlugin;
 impl Plugin for MeshRenderAssetPlugin {
     fn build(&self, app: &mut App) {
         app
-            // 'Mesh' must be prepared after 'Image' as meshes rely on the morph target image being ready
+            // 'Mesh' must be prepared after 'Image' as meshes rely on the morph target image being
+            // ready
             .add_plugins(RenderAssetPlugin::<RenderMesh, GpuImage>::default())
             .add_plugins(MeshAllocatorPlugin);
 
@@ -113,11 +135,11 @@ pub enum RenderMeshBufferInfo {
 }
 
 impl RenderAsset for RenderMesh {
-    type SourceAsset = Mesh;
     type Param = (
         SRes<RenderAssets<GpuImage>>,
         SResMut<MeshVertexBufferLayouts>,
     );
+    type SourceAsset = Mesh;
 
     #[inline]
     fn asset_usage(mesh: &Self::SourceAsset) -> RenderAssetUsages {
@@ -144,21 +166,21 @@ impl RenderAsset for RenderMesh {
         _: Option<&Self>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         let morph_targets = match mesh.morph_targets() {
-            Some(mt) => {
+            | Some(mt) => {
                 let Some(target_image) = images.get(mt) else {
                     return Err(PrepareAssetError::RetryNextUpdate(mesh));
                 };
                 Some(target_image.texture_view.clone())
-            }
-            None => None,
+            },
+            | None => None,
         };
 
         let buffer_info = match mesh.indices() {
-            Some(indices) => RenderMeshBufferInfo::Indexed {
+            | Some(indices) => RenderMeshBufferInfo::Indexed {
                 count: indices.len() as u32,
                 index_format: indices.into(),
             },
-            None => RenderMeshBufferInfo::NonIndexed,
+            | None => RenderMeshBufferInfo::NonIndexed,
         };
 
         let mesh_vertex_buffer_layout =

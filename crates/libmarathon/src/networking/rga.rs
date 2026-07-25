@@ -42,7 +42,6 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-
 use crate::networking::vector_clock::{
     NodeId,
     VectorClock,
@@ -617,7 +616,8 @@ mod tests {
         seq.insert_after(Some(id_a), "bar".to_string(), node);
 
         let bytes = rkyv::to_bytes::<rkyv::rancor::Failure>(&seq).map(|b| b.to_vec())?;
-        let deserialized: Rga<String> = rkyv::from_bytes::<Rga<String>, rkyv::rancor::Failure>(&bytes)?;
+        let deserialized: Rga<String> =
+            rkyv::from_bytes::<Rga<String>, rkyv::rancor::Failure>(&bytes)?;
 
         assert_eq!(deserialized.len(), 2);
         let values: Vec<String> = deserialized.values().cloned().collect();

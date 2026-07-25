@@ -1,8 +1,20 @@
-use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::component::Component;
-use bevy_ecs::entity::{Entity, EntityHashMap};
-use bevy_ecs::reflect::ReflectComponent;
-use bevy_reflect::{std_traits::ReflectDefault, Reflect};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
+use bevy_ecs::{
+    component::Component,
+    entity::{
+        Entity,
+        EntityHashMap,
+    },
+    reflect::ReflectComponent,
+};
+use bevy_reflect::{
+    Reflect,
+    std_traits::ReflectDefault,
+};
+
 use crate::render::sync_world::MainEntity;
 
 #[derive(Component, Clone, Debug, Default, Reflect, Deref, DerefMut)]

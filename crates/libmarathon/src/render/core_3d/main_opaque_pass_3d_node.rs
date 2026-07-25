@@ -1,26 +1,50 @@
-use crate::render::{
-    core_3d::Opaque3d,
-    skybox::{SkyboxBindGroup, SkyboxPipelineId},
+use bevy_camera::{
+    MainPassResolutionOverride,
+    Viewport,
 };
-use bevy_camera::{MainPassResolutionOverride, Viewport};
-use bevy_ecs::{prelude::World, query::QueryItem};
-use crate::render::{
-    camera::ExtractedCamera,
-    diagnostic::RecordDiagnostics,
-    render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, PipelineCache, RenderPassDescriptor, StoreOp},
-    renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget, ViewUniformOffset},
+use bevy_ecs::{
+    prelude::World,
+    query::QueryItem,
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
 use super::AlphaMask3d;
+use crate::render::{
+    camera::ExtractedCamera,
+    core_3d::Opaque3d,
+    diagnostic::RecordDiagnostics,
+    render_graph::{
+        NodeRunError,
+        RenderGraphContext,
+        ViewNode,
+    },
+    render_phase::{
+        TrackedRenderPass,
+        ViewBinnedRenderPhases,
+    },
+    render_resource::{
+        CommandEncoderDescriptor,
+        PipelineCache,
+        RenderPassDescriptor,
+        StoreOp,
+    },
+    renderer::RenderContext,
+    skybox::{
+        SkyboxBindGroup,
+        SkyboxPipelineId,
+    },
+    view::{
+        ExtractedView,
+        ViewDepthTexture,
+        ViewTarget,
+        ViewUniformOffset,
+    },
+};
 
-/// A [`bevy_render::render_graph::Node`] that runs the [`Opaque3d`] and [`AlphaMask3d`]
-/// [`ViewBinnedRenderPhases`]s.
+/// A [`bevy_render::render_graph::Node`] that runs the [`Opaque3d`] and
+/// [`AlphaMask3d`] [`ViewBinnedRenderPhases`]s.
 #[derive(Default)]
 pub struct MainOpaquePass3dNode;
 impl ViewNode for MainOpaquePass3dNode {

@@ -1,43 +1,111 @@
-use super::ExtractedWindows;
-use crate::render::{
-    gpu_readback,
-    render_asset::RenderAssets,
-    render_resource::{
-        binding_types::texture_2d, BindGroup, BindGroupEntries, BindGroupLayout,
-        BindGroupLayoutEntries, Buffer, BufferUsages, CachedRenderPipelineId, FragmentState,
-        PipelineCache, RenderPipelineDescriptor, SpecializedRenderPipeline,
-        SpecializedRenderPipelines, Texture, TextureUsages, TextureView, VertexState,
+use core::ops::Deref;
+use std::{
+    borrow::Cow,
+    path::Path,
+    sync::{
+        Arc,
+        Mutex,
+        mpsc::{
+            Receiver,
+            Sender,
+        },
     },
-    renderer::RenderDevice,
-    texture::{GpuImage, ManualTextureViews, OutputColorAttachment},
-    view::{prepare_view_attachments, prepare_view_targets, ViewTargetAttachments, WindowSurfaces},
-    ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
 };
-use std::{borrow::Cow, sync::Arc};
-use bevy_app::{First, Plugin, Update};
-use bevy_asset::{embedded_asset, load_embedded_asset, AssetServer, Handle, RenderAssetUsages};
-use bevy_camera::{ManualTextureViewHandle, NormalizedRenderTarget, RenderTarget};
-use bevy_derive::{Deref, DerefMut};
+
+use bevy_app::{
+    First,
+    Plugin,
+    Update,
+};
+use bevy_asset::{
+    AssetServer,
+    Handle,
+    RenderAssetUsages,
+    embedded_asset,
+    load_embedded_asset,
+};
+use bevy_camera::{
+    ManualTextureViewHandle,
+    NormalizedRenderTarget,
+    RenderTarget,
+};
+use bevy_derive::{
+    Deref,
+    DerefMut,
+};
 use bevy_ecs::{
-    entity::EntityHashMap, message::message_update_system, prelude::*, system::SystemState,
+    entity::EntityHashMap,
+    message::message_update_system,
+    prelude::*,
+    system::SystemState,
 };
-use bevy_image::{Image, TextureFormatPixelInfo, ToExtents};
+use bevy_image::{
+    Image,
+    TextureFormatPixelInfo,
+    ToExtents,
+};
 use bevy_platform::collections::HashSet;
 use bevy_reflect::Reflect;
 use bevy_shader::Shader;
 use bevy_tasks::AsyncComputeTaskPool;
 use bevy_utils::default;
-use bevy_window::{PrimaryWindow, WindowRef};
-use core::ops::Deref;
-use std::{
-    path::Path,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Mutex,
+use bevy_window::{
+    PrimaryWindow,
+    WindowRef,
+};
+use tracing::{
+    error,
+    info,
+    warn,
+};
+use wgpu::{
+    CommandEncoder,
+    Extent3d,
+    TextureFormat,
+};
+
+use super::ExtractedWindows;
+use crate::render::{
+    ExtractSchedule,
+    MainWorld,
+    Render,
+    RenderApp,
+    RenderStartup,
+    RenderSystems,
+    gpu_readback,
+    render_asset::RenderAssets,
+    render_resource::{
+        BindGroup,
+        BindGroupEntries,
+        BindGroupLayout,
+        BindGroupLayoutEntries,
+        Buffer,
+        BufferUsages,
+        CachedRenderPipelineId,
+        FragmentState,
+        PipelineCache,
+        RenderPipelineDescriptor,
+        SpecializedRenderPipeline,
+        SpecializedRenderPipelines,
+        Texture,
+        TextureUsages,
+        TextureView,
+        VertexState,
+        binding_types::texture_2d,
+    },
+    renderer::RenderDevice,
+    texture::{
+        GpuImage,
+        ManualTextureViews,
+        OutputColorAttachment,
+    },
+    view::{
+        ViewTargetAttachments,
+        WindowSurfaces,
+        prepare_view_attachments,
+        prepare_view_targets,
     },
 };
-use tracing::{error, info, warn};
-use wgpu::{CommandEncoder, Extent3d, TextureFormat};
 
 #[derive(EntityEvent, Reflect, Deref, DerefMut, Debug)]
 #[reflect(Debug)]
@@ -49,15 +117,15 @@ pub struct ScreenshotCaptured {
 
 /// A component that signals to the renderer to capture a screenshot this frame.
 ///
-/// This component should be spawned on a new entity with an observer that will trigger
-/// with [`ScreenshotCaptured`] when the screenshot is ready.
+/// This component should be spawned on a new entity with an observer that will
+/// trigger with [`ScreenshotCaptured`] when the screenshot is ready.
 ///
-/// Screenshots are captured asynchronously and may not be available immediately after the frame
-/// that the component is spawned on. The observer should be used to handle the screenshot when it
-/// is ready.
+/// Screenshots are captured asynchronously and may not be available immediately
+/// after the frame that the component is spawned on. The observer should be
+/// used to handle the screenshot when it is ready.
 ///
-/// Note that the screenshot entity will be despawned after the screenshot is captured and the
-/// observer is triggered.
+/// Note that the screenshot entity will be despawned after the screenshot is
+/// captured and the observer is triggered.
 ///
 /// # Usage
 ///
@@ -66,20 +134,22 @@ pub struct ScreenshotCaptured {
 /// # use crate::render::view::screenshot::{save_to_disk, Screenshot};
 ///
 /// fn take_screenshot(mut commands: Commands) {
-///    commands.spawn(Screenshot::primary_window())
-///       .observe(save_to_disk("screenshot.png"));
+///     commands
+///         .spawn(Screenshot::primary_window())
+///         .observe(save_to_disk("screenshot.png"));
 /// }
 /// ```
 #[derive(Component, Deref, DerefMut, Reflect, Debug)]
 #[reflect(Component, Debug)]
 pub struct Screenshot(pub RenderTarget);
 
-/// A marker component that indicates that a screenshot is currently being captured.
+/// A marker component that indicates that a screenshot is currently being
+/// captured.
 #[derive(Component, Default)]
 pub struct Capturing;
 
-/// A marker component that indicates that a screenshot has been captured, the image is ready, and
-/// the screenshot entity can be despawned.
+/// A marker component that indicates that a screenshot has been captured, the
+/// image is ready, and the screenshot entity can be despawned.
 #[derive(Component, Default)]
 pub struct Captured;
 
@@ -131,27 +201,31 @@ pub fn save_to_disk(path: impl AsRef<Path>) -> impl FnMut(On<ScreenshotCaptured>
     move |screenshot_captured| {
         let img = screenshot_captured.image.clone();
         match img.try_into_dynamic() {
-            Ok(dyn_img) => match image::ImageFormat::from_path(&path) {
-                Ok(format) => {
-                    // discard the alpha channel which stores brightness values when HDR is enabled to make sure
-                    // the screenshot looks right
+            | Ok(dyn_img) => match image::ImageFormat::from_path(&path) {
+                | Ok(format) => {
+                    // discard the alpha channel which stores brightness values when HDR is enabled
+                    // to make sure the screenshot looks right
                     let img = dyn_img.to_rgb8();
                     #[cfg(not(target_arch = "wasm32"))]
                     match img.save_with_format(&path, format) {
-                        Ok(_) => info!("Screenshot saved to {}", path.display()),
-                        Err(e) => error!("Cannot save screenshot, IO error: {e}"),
+                        | Ok(_) => info!("Screenshot saved to {}", path.display()),
+                        | Err(e) => error!("Cannot save screenshot, IO error: {e}"),
                     }
 
                     #[cfg(target_arch = "wasm32")]
                     {
                         let save_screenshot = || {
                             use image::EncodableLayout;
-                            use wasm_bindgen::{JsCast, JsValue};
+                            use wasm_bindgen::{
+                                JsCast,
+                                JsValue,
+                            };
 
                             let mut image_buffer = std::io::Cursor::new(Vec::new());
                             img.write_to(&mut image_buffer, format)
                                 .map_err(|e| JsValue::from_str(&format!("{e}")))?;
-                            // SAFETY: `image_buffer` only exist in this closure, and is not used after this line
+                            // SAFETY: `image_buffer` only exist in this closure, and is not used
+                            // after this line
                             let parts = js_sys::Array::of1(&unsafe {
                                 js_sys::Uint8Array::view(image_buffer.into_inner().as_bytes())
                                     .into()
@@ -175,14 +249,14 @@ pub fn save_to_disk(path: impl AsRef<Path>) -> impl FnMut(On<ScreenshotCaptured>
                         };
 
                         match (save_screenshot)() {
-                            Ok(_) => info!("Screenshot saved to {}", path.display()),
-                            Err(e) => error!("Cannot save screenshot, error: {e:?}"),
+                            | Ok(_) => info!("Screenshot saved to {}", path.display()),
+                            | Err(e) => error!("Cannot save screenshot, error: {e:?}"),
                         };
                     }
-                }
-                Err(e) => error!("Cannot save screenshot, requested format not recognized: {e}"),
+                },
+                | Err(e) => error!("Cannot save screenshot, requested format not recognized: {e}"),
             },
-            Err(e) => error!("Cannot save screenshot, screen format cannot be understood: {e}"),
+            | Err(e) => error!("Cannot save screenshot, screen format cannot be understood: {e}"),
         }
     }
 }
@@ -243,7 +317,8 @@ fn extract_screenshots(
                 "Duplicate render target for screenshot, skipping entity {}: {:?}",
                 entity, render_target
             );
-            // If we don't despawn the entity here, it will be captured again in the next frame
+            // If we don't despawn the entity here, it will be captured again in the next
+            // frame
             commands.entity(entity).despawn();
             continue;
         }
@@ -270,7 +345,7 @@ fn prepare_screenshots(
     prepared.clear();
     for (entity, target) in targets.iter() {
         match target {
-            NormalizedRenderTarget::Window(window) => {
+            | NormalizedRenderTarget::Window(window) => {
                 let window = window.entity();
                 let Some(surface_data) = window_surfaces.surfaces.get(&window) else {
                     warn!("Unknown window for screenshot, skipping: {}", window);
@@ -295,8 +370,8 @@ fn prepare_screenshots(
                     target.clone(),
                     OutputColorAttachment::new(texture_view.clone(), format.add_srgb_suffix()),
                 );
-            }
-            NormalizedRenderTarget::Image(image) => {
+            },
+            | NormalizedRenderTarget::Image(image) => {
                 let Some(gpu_image) = images.get(&image.handle) else {
                     warn!("Unknown image for screenshot, skipping: {:?}", image);
                     continue;
@@ -315,8 +390,8 @@ fn prepare_screenshots(
                     target.clone(),
                     OutputColorAttachment::new(texture_view.clone(), format.add_srgb_suffix()),
                 );
-            }
-            NormalizedRenderTarget::TextureView(texture_view) => {
+            },
+            | NormalizedRenderTarget::TextureView(texture_view) => {
                 let Some(manual_texture_view) = manual_texture_views.get(texture_view) else {
                     warn!(
                         "Unknown manual texture view for screenshot, skipping: {:?}",
@@ -339,10 +414,10 @@ fn prepare_screenshots(
                     target.clone(),
                     OutputColorAttachment::new(texture_view.clone(), format.add_srgb_suffix()),
                 );
-            }
-            NormalizedRenderTarget::None { .. } => {
+            },
+            | NormalizedRenderTarget::None { .. } => {
                 // Nothing to screenshot!
-            }
+            },
         }
     }
 }
@@ -362,9 +437,9 @@ fn prepare_screenshot_state(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: TextureUsages::RENDER_ATTACHMENT
-            | TextureUsages::COPY_SRC
-            | TextureUsages::TEXTURE_BINDING,
+        usage: TextureUsages::RENDER_ATTACHMENT |
+            TextureUsages::COPY_SRC |
+            TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let texture_view = texture.create_view(&Default::default());
@@ -497,7 +572,7 @@ pub(crate) fn submit_screenshot_commands(world: &World, encoder: &mut CommandEnc
 
     for (entity, render_target) in targets.iter() {
         match render_target {
-            NormalizedRenderTarget::Window(window) => {
+            | NormalizedRenderTarget::Window(window) => {
                 let window = window.entity();
                 let Some(window) = windows.get(&window) else {
                     continue;
@@ -521,8 +596,8 @@ pub(crate) fn submit_screenshot_commands(world: &World, encoder: &mut CommandEnc
                     texture_format,
                     &texture_view,
                 );
-            }
-            NormalizedRenderTarget::Image(image) => {
+            },
+            | NormalizedRenderTarget::Image(image) => {
                 let Some(gpu_image) = gpu_images.get(&image.handle) else {
                     warn!("Unknown image for screenshot, skipping: {:?}", image);
                     continue;
@@ -541,8 +616,8 @@ pub(crate) fn submit_screenshot_commands(world: &World, encoder: &mut CommandEnc
                     texture_format,
                     texture_view,
                 );
-            }
-            NormalizedRenderTarget::TextureView(texture_view) => {
+            },
+            | NormalizedRenderTarget::TextureView(texture_view) => {
                 let Some(texture_view) = manual_texture_views.get(texture_view) else {
                     warn!(
                         "Unknown manual texture view for screenshot, skipping: {:?}",
@@ -564,10 +639,10 @@ pub(crate) fn submit_screenshot_commands(world: &World, encoder: &mut CommandEnc
                     texture_format,
                     texture_view,
                 );
-            }
-            NormalizedRenderTarget::None { .. } => {
+            },
+            | NormalizedRenderTarget::None { .. } => {
                 // Nothing to screenshot!
-            }
+            },
         };
     }
 }
@@ -641,7 +716,8 @@ pub(crate) fn collect_screenshots(world: &mut World) {
         let finish = async move {
             let (tx, rx) = async_channel::bounded(1);
             let buffer_slice = buffer.slice(..);
-            // The polling for this map call is done every frame when the command queue is submitted.
+            // The polling for this map call is done every frame when the command queue is
+            // submitted.
             buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
                 let err = result.err();
                 if err.is_some() {
@@ -651,7 +727,8 @@ pub(crate) fn collect_screenshots(world: &mut World) {
             });
             rx.recv().await.unwrap();
             let data = buffer_slice.get_mapped_range();
-            // we immediately move the data to CPU memory to avoid holding the mapped view for long
+            // we immediately move the data to CPU memory to avoid holding the mapped view
+            // for long
             let mut result = Vec::from(&*data);
             drop(data);
 

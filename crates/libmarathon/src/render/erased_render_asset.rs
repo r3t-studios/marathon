@@ -1,21 +1,62 @@
-use crate::render::{
-    render_resource::AsBindGroupError, ExtractSchedule, MainWorld, Render, RenderApp,
-    RenderSystems,
-};
-use bevy_app::{App, Plugin, SubApp};
-use bevy_asset::RenderAssetUsages;
-use bevy_asset::{Asset, AssetEvent, AssetId, Assets, UntypedAssetId};
-use bevy_ecs::{
-    prelude::{Commands, IntoScheduleConfigs, MessageReader, Res, ResMut, Resource},
-    schedule::{ScheduleConfigs, SystemSet},
-    system::{ScheduleSystem, StaticSystemParam, SystemParam, SystemParamItem, SystemState},
-    world::{FromWorld, Mut},
-};
-use bevy_platform::collections::{HashMap, HashSet};
-use crate::render::render_asset::RenderAssetBytesPerFrameLimiter;
 use core::marker::PhantomData;
+
+use bevy_app::{
+    App,
+    Plugin,
+    SubApp,
+};
+use bevy_asset::{
+    Asset,
+    AssetEvent,
+    AssetId,
+    Assets,
+    RenderAssetUsages,
+    UntypedAssetId,
+};
+use bevy_ecs::{
+    prelude::{
+        Commands,
+        IntoScheduleConfigs,
+        MessageReader,
+        Res,
+        ResMut,
+        Resource,
+    },
+    schedule::{
+        ScheduleConfigs,
+        SystemSet,
+    },
+    system::{
+        ScheduleSystem,
+        StaticSystemParam,
+        SystemParam,
+        SystemParamItem,
+        SystemState,
+    },
+    world::{
+        FromWorld,
+        Mut,
+    },
+};
+use bevy_platform::collections::{
+    HashMap,
+    HashSet,
+};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{
+    debug,
+    error,
+};
+
+use crate::render::{
+    ExtractSchedule,
+    MainWorld,
+    Render,
+    RenderApp,
+    RenderSystems,
+    render_asset::RenderAssetBytesPerFrameLimiter,
+    render_resource::AsBindGroupError,
+};
 
 #[derive(Debug, Error)]
 pub enum PrepareAssetError<E: Send + Sync + 'static> {
@@ -35,8 +76,8 @@ pub type ExtractAssetsSet = AssetExtractionSystems;
 
 /// Describes how an asset gets extracted and prepared for rendering.
 ///
-/// In the [`ExtractSchedule`] step the [`ErasedRenderAsset::SourceAsset`] is transferred
-/// from the "main world" into the "render world".
+/// In the [`ExtractSchedule`] step the [`ErasedRenderAsset::SourceAsset`] is
+/// transferred from the "main world" into the "render world".
 ///
 /// After that in the [`RenderSystems::PrepareAssets`] step the extracted asset
 /// is transformed into its GPU-representation of type [`ErasedRenderAsset`].
@@ -48,17 +89,20 @@ pub trait ErasedRenderAsset: Send + Sync + 'static {
 
     /// Specifies all ECS data required by [`ErasedRenderAsset::prepare_asset`].
     ///
-    /// For convenience use the [`lifetimeless`](bevy_ecs::system::lifetimeless) [`SystemParam`].
+    /// For convenience use the [`lifetimeless`](bevy_ecs::system::lifetimeless)
+    /// [`SystemParam`].
     type Param: SystemParam;
 
-    /// Whether or not to unload the asset after extracting it to the render world.
+    /// Whether or not to unload the asset after extracting it to the render
+    /// world.
     #[inline]
     fn asset_usage(_source_asset: &Self::SourceAsset) -> RenderAssetUsages {
         RenderAssetUsages::default()
     }
 
-    /// Size of the data the asset will upload to the gpu. Specifying a return value
-    /// will allow the asset to be throttled via [`RenderAssetBytesPerFrameLimiter`].
+    /// Size of the data the asset will upload to the gpu. Specifying a return
+    /// value will allow the asset to be throttled via
+    /// [`RenderAssetBytesPerFrameLimiter`].
     #[inline]
     #[expect(
         unused_variables,
@@ -68,7 +112,8 @@ pub trait ErasedRenderAsset: Send + Sync + 'static {
         None
     }
 
-    /// Prepares the [`ErasedRenderAsset::SourceAsset`] for the GPU by transforming it into a [`ErasedRenderAsset`].
+    /// Prepares the [`ErasedRenderAsset::SourceAsset`] for the GPU by
+    /// transforming it into a [`ErasedRenderAsset`].
     ///
     /// ECS data may be accessed via `param`.
     fn prepare_asset(
@@ -90,16 +135,20 @@ pub trait ErasedRenderAsset: Send + Sync + 'static {
     }
 }
 
-/// This plugin extracts the changed assets from the "app world" into the "render world"
-/// and prepares them for the GPU. They can then be accessed from the [`ErasedRenderAssets`] resource.
+/// This plugin extracts the changed assets from the "app world" into the
+/// "render world" and prepares them for the GPU. They can then be accessed from
+/// the [`ErasedRenderAssets`] resource.
 ///
 /// Therefore it sets up the [`ExtractSchedule`] and
-/// [`RenderSystems::PrepareAssets`] steps for the specified [`ErasedRenderAsset`].
+/// [`RenderSystems::PrepareAssets`] steps for the specified
+/// [`ErasedRenderAsset`].
 ///
-/// The `AFTER` generic parameter can be used to specify that `A::prepare_asset` should not be run until
-/// `prepare_assets::<AFTER>` has completed. This allows the `prepare_asset` function to depend on another
-/// prepared [`ErasedRenderAsset`], for example `Mesh::prepare_asset` relies on `ErasedRenderAssets::<GpuImage>` for morph
-/// targets, so the plugin is created as `ErasedRenderAssetPlugin::<RenderMesh, GpuImage>::default()`.
+/// The `AFTER` generic parameter can be used to specify that `A::prepare_asset`
+/// should not be run until `prepare_assets::<AFTER>` has completed. This allows
+/// the `prepare_asset` function to depend on another
+/// prepared [`ErasedRenderAsset`], for example `Mesh::prepare_asset` relies on
+/// `ErasedRenderAssets::<GpuImage>` for morph targets, so the plugin is created
+/// as `ErasedRenderAssetPlugin::<RenderMesh, GpuImage>::default()`.
 pub struct ErasedRenderAssetPlugin<
     A: ErasedRenderAsset,
     AFTER: ErasedRenderAssetDependency + 'static = (),
@@ -243,8 +292,8 @@ impl<A: ErasedRenderAsset> FromWorld for CachedExtractErasedRenderAssetSystemSta
     }
 }
 
-/// This system extracts all created or modified assets of the corresponding [`ErasedRenderAsset::SourceAsset`] type
-/// into the "render world".
+/// This system extracts all created or modified assets of the corresponding
+/// [`ErasedRenderAsset::SourceAsset`] type into the "render world".
 pub(crate) fn extract_erased_render_asset<A: ErasedRenderAsset>(
     mut commands: Commands,
     mut main_world: ResMut<MainWorld>,
@@ -330,8 +379,9 @@ impl<A: ErasedRenderAsset> Default for PrepareNextFrameAssets<A> {
     }
 }
 
-/// This system prepares all assets of the corresponding [`ErasedRenderAsset::SourceAsset`] type
-/// which where extracted this frame for the GPU.
+/// This system prepares all assets of the corresponding
+/// [`ErasedRenderAsset::SourceAsset`] type which where extracted this frame for
+/// the GPU.
 pub fn prepare_erased_assets<A: ErasedRenderAsset>(
     mut extracted_assets: ResMut<ExtractedAssets<A>>,
     mut render_assets: ResMut<ErasedRenderAssets<A::ErasedAsset>>,
@@ -364,20 +414,20 @@ pub fn prepare_erased_assets<A: ErasedRenderAsset>(
         };
 
         match A::prepare_asset(extracted_asset, id, &mut param) {
-            Ok(prepared_asset) => {
+            | Ok(prepared_asset) => {
                 render_assets.insert(id, prepared_asset);
                 bpf.write_bytes(write_bytes);
                 wrote_asset_count += 1;
-            }
-            Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
+            },
+            | Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
                 prepare_next_frame.assets.push((id, extracted_asset));
-            }
-            Err(PrepareAssetError::AsBindGroupError(e)) => {
+            },
+            | Err(PrepareAssetError::AsBindGroupError(e)) => {
                 error!(
                     "{} Bind group construction failed: {e}",
                     core::any::type_name::<A>()
                 );
-            }
+            },
         }
     }
 
@@ -403,20 +453,20 @@ pub fn prepare_erased_assets<A: ErasedRenderAsset>(
         };
 
         match A::prepare_asset(extracted_asset, id, &mut param) {
-            Ok(prepared_asset) => {
+            | Ok(prepared_asset) => {
                 render_assets.insert(id, prepared_asset);
                 bpf.write_bytes(write_bytes);
                 wrote_asset_count += 1;
-            }
-            Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
+            },
+            | Err(PrepareAssetError::RetryNextUpdate(extracted_asset)) => {
                 prepare_next_frame.assets.push((id, extracted_asset));
-            }
-            Err(PrepareAssetError::AsBindGroupError(e)) => {
+            },
+            | Err(PrepareAssetError::AsBindGroupError(e)) => {
                 error!(
                     "{} Bind group construction failed: {e}",
                     core::any::type_name::<A>()
                 );
-            }
+            },
         }
     }
 

@@ -1,6 +1,13 @@
-use crate::render::define_atomic_id;
-use crate::render::renderer::WgpuWrapper;
-use core::ops::{Bound, Deref, RangeBounds};
+use core::ops::{
+    Bound,
+    Deref,
+    RangeBounds,
+};
+
+use crate::render::{
+    define_atomic_id,
+    renderer::WgpuWrapper,
+};
 
 define_atomic_id!(BufferId);
 
@@ -17,16 +24,17 @@ impl Buffer {
     }
 
     pub fn slice(&self, bounds: impl RangeBounds<wgpu::BufferAddress>) -> BufferSlice<'_> {
-        // need to compute and store this manually because wgpu doesn't export offset and size on wgpu::BufferSlice
+        // need to compute and store this manually because wgpu doesn't export offset
+        // and size on wgpu::BufferSlice
         let offset = match bounds.start_bound() {
-            Bound::Included(&bound) => bound,
-            Bound::Excluded(&bound) => bound + 1,
-            Bound::Unbounded => 0,
+            | Bound::Included(&bound) => bound,
+            | Bound::Excluded(&bound) => bound + 1,
+            | Bound::Unbounded => 0,
         };
         let size = match bounds.end_bound() {
-            Bound::Included(&bound) => bound + 1,
-            Bound::Excluded(&bound) => bound,
-            Bound::Unbounded => self.value.size(),
+            | Bound::Included(&bound) => bound + 1,
+            | Bound::Excluded(&bound) => bound,
+            | Bound::Unbounded => self.value.size(),
         } - offset;
         BufferSlice {
             id: self.id,

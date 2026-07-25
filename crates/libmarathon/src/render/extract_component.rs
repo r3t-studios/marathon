@@ -1,21 +1,43 @@
-use crate::render::{
-    render_resource::{encase::internal::WriteInto, DynamicUniformBuffer, ShaderType},
-    renderer::{RenderDevice, RenderQueue},
-    sync_component::SyncComponentPlugin,
-    sync_world::RenderEntity,
-    Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
+use core::{
+    marker::PhantomData,
+    ops::Deref,
 };
-use bevy_app::{App, Plugin};
+
+use bevy_app::{
+    App,
+    Plugin,
+};
 use bevy_camera::visibility::ViewVisibility;
 use bevy_ecs::{
     bundle::NoBundleEffect,
     component::Component,
     prelude::*,
-    query::{QueryFilter, QueryItem, ReadOnlyQueryData},
+    query::{
+        QueryFilter,
+        QueryItem,
+        ReadOnlyQueryData,
+    },
 };
-use core::{marker::PhantomData, ops::Deref};
-
 pub use libmarathon_macros::ExtractComponent;
+
+use crate::render::{
+    Extract,
+    ExtractSchedule,
+    Render,
+    RenderApp,
+    RenderSystems,
+    render_resource::{
+        DynamicUniformBuffer,
+        ShaderType,
+        encase::internal::WriteInto,
+    },
+    renderer::{
+        RenderDevice,
+        RenderQueue,
+    },
+    sync_component::SyncComponentPlugin,
+    sync_world::RenderEntity,
+};
 
 /// Stores the index of a uniform inside of [`ComponentUniforms`].
 #[derive(Component)]
@@ -33,8 +55,8 @@ impl<C: Component> DynamicUniformIndex<C> {
 
 /// Describes how a component gets extracted for rendering.
 ///
-/// Therefore the component is transferred from the "app world" into the "render world"
-/// in the [`ExtractSchedule`] step.
+/// Therefore the component is transferred from the "app world" into the "render
+/// world" in the [`ExtractSchedule`] step.
 pub trait ExtractComponent: Component {
     /// ECS [`ReadOnlyQueryData`] to fetch the components to extract.
     type QueryData: ReadOnlyQueryData;
@@ -43,17 +65,19 @@ pub trait ExtractComponent: Component {
 
     /// The output from extraction.
     ///
-    /// Returning `None` based on the queried item will remove the component from the entity in
-    /// the render world. This can be used, for example, to conditionally extract camera settings
-    /// in order to disable a rendering feature on the basis of those settings, without removing
+    /// Returning `None` based on the queried item will remove the component
+    /// from the entity in the render world. This can be used, for example,
+    /// to conditionally extract camera settings in order to disable a
+    /// rendering feature on the basis of those settings, without removing
     /// the component from the entity in the main world.
     ///
     /// The output may be different from the queried component.
     /// This can be useful for example if only a subset of the fields are useful
     /// in the render world.
     ///
-    /// `Out` has a [`Bundle`] trait bound instead of a [`Component`] trait bound in order to allow use cases
-    /// such as tuples of components as output.
+    /// `Out` has a [`Bundle`] trait bound instead of a [`Component`] trait
+    /// bound in order to allow use cases such as tuples of components as
+    /// output.
     type Out: Bundle<Effect: NoBundleEffect>;
 
     // TODO: https://github.com/rust-lang/rust/issues/29661
@@ -67,8 +91,8 @@ pub trait ExtractComponent: Component {
 /// by transforming them into uniforms.
 ///
 /// They can then be accessed from the [`ComponentUniforms`] resource.
-/// For referencing the newly created uniforms a [`DynamicUniformIndex`] is inserted
-/// for every processed entity.
+/// For referencing the newly created uniforms a [`DynamicUniformIndex`] is
+/// inserted for every processed entity.
 ///
 /// Therefore it sets up the [`RenderSystems::Prepare`] step
 /// for the specified [`ExtractComponent`].
@@ -124,7 +148,8 @@ impl<C: Component + ShaderType> Default for ComponentUniforms<C> {
 }
 
 /// This system prepares all components of the corresponding component type.
-/// They are transformed into uniforms and stored in the [`ComponentUniforms`] resource.
+/// They are transformed into uniforms and stored in the [`ComponentUniforms`]
+/// resource.
 fn prepare_uniform_components<C>(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -132,8 +157,7 @@ fn prepare_uniform_components<C>(
     mut component_uniforms: ResMut<ComponentUniforms<C>>,
     components: Query<(Entity, &C)>,
 ) where
-    C: Component + ShaderType + WriteInto + Clone,
-{
+    C: Component + ShaderType + WriteInto + Clone, {
     let components_iter = components.iter();
     let count = components_iter.len();
     let Some(mut writer) =
@@ -157,9 +181,11 @@ fn prepare_uniform_components<C>(
     commands.try_insert_batch(entities);
 }
 
-/// This plugin extracts the components into the render world for synced entities.
+/// This plugin extracts the components into the render world for synced
+/// entities.
 ///
-/// To do so, it sets up the [`ExtractSchedule`] step for the specified [`ExtractComponent`].
+/// To do so, it sets up the [`ExtractSchedule`] step for the specified
+/// [`ExtractComponent`].
 pub struct ExtractComponentPlugin<C, F = ()> {
     only_extract_visible: bool,
     marker: PhantomData<fn() -> (C, F)>,
@@ -197,7 +223,9 @@ impl<C: ExtractComponent> Plugin for ExtractComponentPlugin<C> {
     }
 }
 
-/// This system extracts all components of the corresponding [`ExtractComponent`], for entities that are synced via [`crate::sync_world::SyncToRenderWorld`].
+/// This system extracts all components of the corresponding
+/// [`ExtractComponent`], for entities that are synced via
+/// [`crate::sync_world::SyncToRenderWorld`].
 fn extract_components<C: ExtractComponent>(
     mut commands: Commands,
     mut previous_len: Local<usize>,
@@ -215,7 +243,9 @@ fn extract_components<C: ExtractComponent>(
     commands.try_insert_batch(values);
 }
 
-/// This system extracts all components of the corresponding [`ExtractComponent`], for entities that are visible and synced via [`crate::sync_world::SyncToRenderWorld`].
+/// This system extracts all components of the corresponding
+/// [`ExtractComponent`], for entities that are visible and synced via
+/// [`crate::sync_world::SyncToRenderWorld`].
 fn extract_visible_components<C: ExtractComponent>(
     mut commands: Commands,
     mut previous_len: Local<usize>,

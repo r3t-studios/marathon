@@ -1,10 +1,19 @@
-use crate::render::blit::{BlitPipeline, BlitPipelineKey};
 use bevy_app::prelude::*;
 use bevy_camera::CameraOutputMode;
 use bevy_ecs::prelude::*;
 use bevy_platform::collections::HashSet;
+
 use crate::render::{
-    camera::ExtractedCamera, render_resource::*, view::ViewTarget, Render, RenderApp, RenderSystems,
+    Render,
+    RenderApp,
+    RenderSystems,
+    blit::{
+        BlitPipeline,
+        BlitPipelineKey,
+    },
+    camera::ExtractedCamera,
+    render_resource::*,
+    view::ViewTarget,
 };
 
 mod node;
@@ -20,9 +29,9 @@ impl Plugin for UpscalingPlugin {
                 Render,
                 // This system should probably technically be run *after* all of the other systems
                 // that might modify `PipelineCache` via interior mutability, but for now,
-                // we've chosen to simply ignore the ambiguities out of a desire for a better refactor
-                // and aversion to extensive and intrusive system ordering.
-                // See https://github.com/bevyengine/bevy/issues/14770 for more context.
+                // we've chosen to simply ignore the ambiguities out of a desire for a better
+                // refactor and aversion to extensive and intrusive system
+                // ordering. See https://github.com/bevyengine/bevy/issues/14770 for more context.
                 prepare_view_upscaling_pipelines
                     .in_set(RenderSystems::Prepare)
                     .ambiguous_with_all(),
@@ -46,25 +55,26 @@ fn prepare_view_upscaling_pipelines(
         let out_texture_id = view_target.out_texture().id();
         let blend_state = if let Some(extracted_camera) = camera {
             match extracted_camera.output_mode {
-                CameraOutputMode::Skip => None,
-                CameraOutputMode::Write { blend_state, .. } => {
+                | CameraOutputMode::Skip => None,
+                | CameraOutputMode::Write { blend_state, .. } => {
                     let already_seen = output_textures.contains(&out_texture_id);
                     output_textures.insert(out_texture_id);
 
                     match blend_state {
-                        None => {
-                            // If we've already seen this output for a camera and it doesn't have an output blend
-                            // mode configured, default to alpha blend so that we don't accidentally overwrite
+                        | None => {
+                            // If we've already seen this output for a camera and it doesn't have an
+                            // output blend mode configured, default to
+                            // alpha blend so that we don't accidentally overwrite
                             // the output texture
                             if already_seen {
                                 Some(BlendState::ALPHA_BLENDING)
                             } else {
                                 None
                             }
-                        }
-                        _ => blend_state,
+                        },
+                        | _ => blend_state,
                     }
-                }
+                },
             }
         } else {
             output_textures.insert(out_texture_id);
@@ -78,7 +88,8 @@ fn prepare_view_upscaling_pipelines(
         };
         let pipeline = pipelines.specialize(&pipeline_cache, &blit_pipeline, key);
 
-        // Ensure the pipeline is loaded before continuing the frame to prevent frames without any GPU work submitted
+        // Ensure the pipeline is loaded before continuing the frame to prevent frames
+        // without any GPU work submitted
         pipeline_cache.block_on_render_pipeline(pipeline);
 
         commands
