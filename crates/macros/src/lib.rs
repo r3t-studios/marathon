@@ -163,9 +163,11 @@ pub fn derive_draw_function_label(input: TokenStream) -> TokenStream {
 /// Attribute macro for automatic component synchronization.
 ///
 /// Automatically generates `Component`, `Clone`, `Debug`, and rkyv
-/// serialization derives, and registers the component in the
-/// `ComponentTypeRegistry` for network synchronization. `Copy` is *not*
-/// derived — add `#[derive(Copy)]` yourself if the type supports it.
+/// serialization derives, registers the component in the
+/// `ComponentTypeRegistry` for network synchronization, and registers a
+/// per-type change detection system so edits to the component automatically
+/// produce deltas. `Copy` is *not* derived — add `#[derive(Copy)]` yourself
+/// if the type supports it.
 ///
 /// # CRDT merge semantics
 ///

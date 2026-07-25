@@ -90,5 +90,21 @@ pub fn synced_attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #merge_fn_tokens
             }
         }
+
+        // Register for per-type change detection: edits to this component
+        // mark the entity for delta generation (see ChangeDetectionMeta)
+        ::inventory::submit! {
+            ::libmarathon::networking::ChangeDetectionMeta {
+                type_name: stringify!(#struct_name),
+                system: {
+                    // fn item (not a call — statics can't call); the builder
+                    // runs when the system executes, not at registration
+                    fn detect(world: &mut ::bevy::ecs::world::World) {
+                        ::libmarathon::networking::build_change_detection_system::<#struct_name #ty_generics>()(world)
+                    }
+                    detect
+                },
+            }
+        }
     })
 }
