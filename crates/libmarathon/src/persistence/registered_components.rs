@@ -60,5 +60,7 @@ inventory::submit! {
                 entity_mut.insert(*transform);
             }
         },
+
+        merge_fn: None,
     }
 }

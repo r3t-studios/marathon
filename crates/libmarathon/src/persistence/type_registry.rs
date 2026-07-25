@@ -34,6 +34,16 @@ pub struct ComponentMeta {
     /// Insert function that takes a boxed component and inserts it into an
     /// entity
     pub insert_fn: fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>),
+
+    /// Optional merge function for CRDT-semantics components.
+    ///
+    /// When `Some`, remote `Set` operations for this type are always applied
+    /// via this function and never dropped by the last-writer-wins clock
+    /// gate — a CRDT merge is always safe to apply. The function reads the
+    /// existing component off the entity, merges the incoming one into it,
+    /// and writes the result back (see
+    /// [`crate::networking::merge::merge_into`]).
+    pub merge_fn: Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
 }
 
 // Collect all registered components via inventory
@@ -59,6 +69,10 @@ pub struct ComponentTypeRegistry {
     discriminant_to_inserter:
         HashMap<u16, fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
 
+    /// Discriminant to merge function (only for CRDT-semantics components)
+    discriminant_to_merger:
+        HashMap<u16, fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)>,
+
     /// Discriminant to type name (for debugging)
     discriminant_to_name: HashMap<u16, &'static str>,
 
@@ -78,6 +92,7 @@ impl ComponentTypeRegistry {
         let mut discriminant_to_deserializer = HashMap::new();
         let mut discriminant_to_serializer = HashMap::new();
         let mut discriminant_to_inserter = HashMap::new();
+        let mut discriminant_to_merger = HashMap::new();
         let mut discriminant_to_name = HashMap::new();
         let mut discriminant_to_path = HashMap::new();
         let mut type_to_name = HashMap::new();
@@ -95,6 +110,9 @@ impl ComponentTypeRegistry {
             discriminant_to_deserializer.insert(discriminant, meta.deserialize_fn);
             discriminant_to_serializer.insert(discriminant, meta.serialize_fn);
             discriminant_to_inserter.insert(discriminant, meta.insert_fn);
+            if let Some(merge_fn) = meta.merge_fn {
+                discriminant_to_merger.insert(discriminant, merge_fn);
+            }
             discriminant_to_name.insert(discriminant, meta.type_name);
             discriminant_to_path.insert(discriminant, meta.type_path);
             type_to_name.insert(meta.type_id, meta.type_name);
@@ -117,6 +135,7 @@ impl ComponentTypeRegistry {
             discriminant_to_deserializer,
             discriminant_to_serializer,
             discriminant_to_inserter,
+            discriminant_to_merger,
             discriminant_to_name,
             discriminant_to_path,
             type_to_name,
@@ -150,6 +169,18 @@ impl ComponentTypeRegistry {
         discriminant: u16,
     ) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
         self.discriminant_to_inserter.get(&discriminant).copied()
+    }
+
+    /// Get the merge function for a discriminant, if the type registered one.
+    ///
+    /// Types with a merge function use CRDT semantics: remote `Set` operations
+    /// are always applied via this function and bypass the last-writer-wins
+    /// clock gate.
+    pub fn get_merge_fn(
+        &self,
+        discriminant: u16,
+    ) -> Option<fn(&mut bevy::ecs::world::EntityWorldMut, Box<dyn std::any::Any>)> {
+        self.discriminant_to_merger.get(&discriminant).copied()
     }
 
     /// Get type name for a discriminant (for debugging)
@@ -261,7 +292,6 @@ impl Default for ComponentTypeRegistryResource {
     }
 }
 
-
 /// Macro to register a component type with the inventory system
 ///
 /// This generates the necessary serialize/deserialize functions and submits
@@ -282,12 +312,12 @@ macro_rules! register_component {
                 type_name: stringify!($component_type),
                 type_path: $type_path,
                 type_id: std::any::TypeId::of::<$component_type>(),
-                
+
                 deserialize_fn: |bytes: &[u8]| -> anyhow::Result<Box<dyn std::any::Any>> {
-                    let component: $component_type = rkyv::from_bytes(bytes)?;
+                    let component: $component_type = rkyv::from_bytes::<$component_type, rkyv::rancor::Failure>(bytes)?;
                     Ok(Box::new(component))
                 },
-                
+
                 serialize_fn: |world: &bevy::ecs::world::World, entity: bevy::ecs::entity::Entity| -> Option<bytes::Bytes> {
                     world.get::<$component_type>(entity).map(|component| {
                         let serialized = rkyv::to_bytes::<rkyv::rancor::Failure>(component)
@@ -295,12 +325,14 @@ macro_rules! register_component {
                         bytes::Bytes::from(serialized.to_vec())
                     })
                 },
-                
+
                 insert_fn: |entity_mut: &mut bevy::ecs::world::EntityWorldMut, boxed: Box<dyn std::any::Any>| {
                     if let Ok(component) = boxed.downcast::<$component_type>() {
                         entity_mut.insert(*component);
                     }
                 },
+
+                merge_fn: None,
             }
         }
     };

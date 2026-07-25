@@ -1,6 +1,9 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{
+    DeriveInput,
+    parse_macro_input,
+};
 
 pub fn synced_attribute(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
@@ -9,10 +12,10 @@ pub fn synced_attribute(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = &ast.attrs;
     let generics = &ast.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    
+
     let fields = match &ast.data {
-        syn::Data::Struct(data) => &data.fields,
-        _ => panic!("#[synced] can only be used on structs"),
+        | syn::Data::Struct(data) => &data.fields,
+        | _ => panic!("#[synced] can only be used on structs"),
     };
 
     TokenStream::from(quote! {
@@ -51,6 +54,8 @@ pub fn synced_attribute(_attr: TokenStream, item: TokenStream) -> TokenStream {
                         entity_mut.insert(*component);
                     }
                 },
+
+                merge_fn: None,
             }
         }
     })
