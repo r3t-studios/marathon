@@ -168,14 +168,16 @@ pub fn apply_entity_delta(delta: &EntityDelta, world: &mut World) {
 
     // CRITICAL: Add marker to prevent feedback loop
     //
-    // When we apply remote operations, insert_fn() triggers Bevy's change detection.
-    // This causes auto_detect_transform_changes_system to mark NetworkedEntity as changed,
-    // which would normally trigger generate_delta_system to broadcast it back, creating
-    // an infinite feedback loop.
+    // When we apply remote operations, insert_fn() triggers Bevy's change
+    // detection. This causes auto_detect_transform_changes_system to mark
+    // NetworkedEntity as changed, which would normally trigger
+    // generate_delta_system to broadcast it back, creating an infinite feedback
+    // loop.
     //
-    // By adding SkipNextDeltaGeneration marker, we tell generate_delta_system to skip
-    // this entity for one frame. A cleanup system removes the marker after delta
-    // generation runs, allowing future local changes to be broadcast normally.
+    // By adding SkipNextDeltaGeneration marker, we tell generate_delta_system to
+    // skip this entity for one frame. A cleanup system removes the marker after
+    // delta generation runs, allowing future local changes to be broadcast
+    // normally.
     if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
         entity_mut.insert(crate::networking::SkipNextDeltaGeneration);
         debug!(
@@ -284,6 +286,27 @@ fn apply_set_operation_with_lww(
         }
     };
 
+    // CRDT components always apply remote state via their merge function — the
+    // merge is commutative, associative, and idempotent, so the LWW gate would
+    // only ever discard updates that should have been merged. The clock is
+    // still updated for bookkeeping.
+    if type_registry.get_merge_fn(discriminant).is_some() {
+        debug!(
+            "Applying remote Set for {} via CRDT merge (bypassing LWW gate)",
+            component_type_name
+        );
+        apply_set_operation(entity, discriminant, data, world);
+        if let Some(mut component_clocks) = world.get_resource_mut::<ComponentVectorClocks>() {
+            component_clocks.set(
+                entity_network_id,
+                component_type_name.to_string(),
+                incoming_clock.clone(),
+                incoming_node_id,
+            );
+        }
+        return;
+    }
+
     // Check if we should apply this operation based on LWW
     let should_apply = {
         if let Some(component_clocks) = world.get_resource::<ComponentVectorClocks>() {
@@ -376,6 +399,29 @@ fn apply_set_operation_with_lww(
     }
 }
 
+/// Insert a component on an entity, or merge it into the existing component if
+/// its type registered a merge function.
+///
+/// This is the single dispatch point used by every apply path (deltas, full
+/// state joins), so CRDT components converge no matter how the state arrives.
+pub fn insert_or_merge_component(
+    type_registry: &crate::persistence::ComponentTypeRegistry,
+    entity_mut: &mut EntityWorldMut,
+    discriminant: u16,
+    boxed_component: Box<dyn std::any::Any>,
+) {
+    if let Some(merge_fn) = type_registry.get_merge_fn(discriminant) {
+        merge_fn(entity_mut, boxed_component);
+    } else if let Some(insert_fn) = type_registry.get_insert_fn(discriminant) {
+        insert_fn(entity_mut, boxed_component);
+    } else {
+        error!(
+            "Discriminant {} not registered in ComponentTypeRegistry",
+            discriminant
+        );
+    }
+}
+
 /// Apply a Set operation (Last-Write-Wins)
 ///
 /// Deserializes the component and inserts/updates it on the entity.
@@ -415,13 +461,11 @@ fn apply_set_operation(entity: Entity, discriminant: u16, data: &ComponentData, 
         registry_resource.0
     };
 
-    // Look up deserialize and insert functions by discriminant
-    let deserialize_fn = type_registry.get_deserialize_fn(discriminant);
-    let insert_fn = type_registry.get_insert_fn(discriminant);
-
-    let (deserialize_fn, insert_fn) = match (deserialize_fn, insert_fn) {
-        | (Some(d), Some(i)) => (d, i),
-        | _ => {
+    // Look up the deserialize function by discriminant (insert/merge dispatch
+    // happens in insert_or_merge_component)
+    let deserialize_fn = match type_registry.get_deserialize_fn(discriminant) {
+        | Some(d) => d,
+        | None => {
             error!(
                 "Discriminant {} not registered in ComponentTypeRegistry",
                 discriminant
@@ -439,9 +483,14 @@ fn apply_set_operation(entity: Entity, discriminant: u16, data: &ComponentData, 
         },
     };
 
-    // Insert the component into the entity
+    // Insert the component into the entity (or merge it, for CRDT types)
     if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-        insert_fn(&mut entity_mut, boxed_component);
+        insert_or_merge_component(
+            type_registry,
+            &mut entity_mut,
+            discriminant,
+            boxed_component,
+        );
         debug!("Applied Set operation for discriminant {}", discriminant);
 
         // If we just inserted a Transform component, also add NetworkedTransform
