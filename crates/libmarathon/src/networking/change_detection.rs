@@ -10,6 +10,63 @@ use crate::networking::{
     NetworkedTransform,
 };
 
+/// Registration for per-type change detection, emitted by `#[synced]`.
+///
+/// Each synced component type registers one of these via `inventory`. The
+/// `NetworkingPlugin` collects them at startup and runs each `system` every
+/// frame (before delta generation): the system marks `NetworkedEntity` as
+/// changed on any entity whose component of that type changed, which is what
+/// causes a delta to be generated and broadcast.
+///
+/// Without this, only `Transform` changes auto-sync; edits to any other
+/// component replicate only if something else marks `NetworkedEntity`
+/// changed (see backlog item 3).
+pub struct ChangeDetectionMeta {
+    /// Human-readable type name (for debugging)
+    pub type_name: &'static str,
+
+    /// Exclusive system that touches `NetworkedEntity` on entities whose
+    /// component of this type changed this frame
+    pub system: fn(&mut World),
+}
+
+// Collect all per-type change detection registrations
+inventory::collect!(ChangeDetectionMeta);
+
+/// Build the change detection system for one component type (used by the
+/// `#[synced]` macro).
+///
+/// The returned function is what gets stored in [`ChangeDetectionMeta`].
+pub fn build_change_detection_system<T: Component>() -> fn(&mut World) {
+    |world: &mut World| {
+        let entities: Vec<Entity> = {
+            let mut query = world.query_filtered::<Entity, (
+                Changed<T>,
+                With<NetworkedEntity>,
+                Without<crate::networking::SkipNextDeltaGeneration>,
+            )>();
+            query.iter(world).collect()
+        };
+
+        for entity in entities {
+            if let Ok(mut entity_mut) = world.get_entity_mut(entity) &&
+                let Some(mut networked) = entity_mut.get_mut::<NetworkedEntity>()
+            {
+                // The mutable access itself marks NetworkedEntity as
+                // changed, which triggers delta generation
+                let _ = &mut *networked;
+            }
+        }
+    }
+}
+
+/// Query filter for [`auto_detect_transform_changes_system`]
+type TransformChangeFilter = (
+    With<NetworkedTransform>,
+    Or<(Changed<Transform>, Changed<GlobalTransform>)>,
+    Without<crate::networking::SkipNextDeltaGeneration>,
+);
+
 /// System to automatically detect Transform changes and mark entity for sync
 ///
 /// This system detects changes to Transform components on networked entities
@@ -26,14 +83,7 @@ use crate::networking::{
 /// App::new().add_systems(Update, auto_detect_transform_changes_system);
 /// ```
 pub fn auto_detect_transform_changes_system(
-    mut query: Query<
-        (Entity, &mut NetworkedEntity, &Transform),
-        (
-            With<NetworkedTransform>,
-            Or<(Changed<Transform>, Changed<GlobalTransform>)>,
-            Without<crate::networking::SkipNextDeltaGeneration>,
-        ),
-    >,
+    mut query: Query<(Entity, &mut NetworkedEntity, &Transform), TransformChangeFilter>,
 ) {
     // Count how many changed entities we found
     let count = query.iter().count();

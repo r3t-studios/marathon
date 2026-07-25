@@ -219,6 +219,14 @@ fn auto_insert_sync_components(
     }
 }
 
+/// Query filter for [`auto_insert_networked_transform`]
+type NetworkedTransformInsertFilter = (
+    With<NetworkedEntity>,
+    With<Synced>,
+    Added<Transform>,
+    Without<NetworkedTransform>,
+);
+
 /// System that adds NetworkedTransform to networked entities when Transform is
 /// added.
 ///
@@ -227,15 +235,7 @@ fn auto_insert_sync_components(
 /// Transform is added.
 fn auto_insert_networked_transform(
     mut commands: Commands,
-    query: Query<
-        Entity,
-        (
-            With<NetworkedEntity>,
-            With<Synced>,
-            Added<Transform>,
-            Without<NetworkedTransform>,
-        ),
-    >,
+    query: Query<Entity, NetworkedTransformInsertFilter>,
 ) {
     for entity in &query {
         commands.entity(entity).insert(NetworkedTransform);
@@ -464,6 +464,15 @@ impl Plugin for NetworkingPlugin {
             trigger_sync_on_connect
                 .run_if(bevy::ecs::schedule::common_conditions::resource_exists::<GossipBridge>),
         );
+
+        // Per-type change detection systems registered by #[synced] components.
+        // Each system touches NetworkedEntity on entities whose component of
+        // that type changed this frame, so edits to ANY synced component
+        // produce a delta (not just Transform edits). Runs in FixedUpdate so
+        // detection always precedes delta generation in FixedPostUpdate.
+        for meta in inventory::iter::<crate::networking::change_detection::ChangeDetectionMeta>() {
+            app.add_systems(FixedUpdate, meta.system);
+        }
 
         // FixedPostUpdate systems - generate and send deltas at locked 60fps
         app.add_systems(
