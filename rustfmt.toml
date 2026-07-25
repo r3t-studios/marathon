@@ -2,7 +2,7 @@ binop_separator = "Back"
 brace_style = "PreferSameLine"
 control_brace_style = "AlwaysSameLine"
 comment_width = 80
-edition = "2021"
+edition = "2024"
 enum_discrim_align_threshold = 40
 fn_params_layout = "Tall"
 fn_single_line = false
@@ -22,3 +22,8 @@ reorder_impl_items = true
 reorder_imports = true
 group_imports = "StdExternalCrate"
 wrap_comments = true
+# Vendored bevy render code is excluded from formatting (slated for removal;
+# unstable comment reflow in it is not idempotent and breaks the fmt gate)
+ignore = [
+    "crates/libmarathon/src/render",
+]

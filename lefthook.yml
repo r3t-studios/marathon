@@ -35,12 +35,11 @@ pre-commit:
   commands:
     fmt:
       glob: "*.rs"
-      run: cargo fmt --check
-      stage_fixed: true
+      run: cargo +nightly fmt --all -- --check
 
     clippy:
       glob: "*.rs"
-      run: cargo clippy --workspace --all-targets -- -D warnings
+      run: scripts/clippy-changed-files.sh {staged_files}
 
     trailing-whitespace:
       glob: "*.{rs,toml,md,yml,yaml}"
