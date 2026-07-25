@@ -88,7 +88,7 @@ pub fn create_test_app_maybe_offline(node_id: Uuid, db_path: PathBuf, bridge: Op
 }
 
 /// Helper to ensure FixedUpdate and FixedPostUpdate run (since they're on a fixed timestep)
-fn update_with_fixed(app: &mut App) {
+pub fn update_with_fixed(app: &mut App) {
     use bevy::prelude::{FixedUpdate, FixedPostUpdate};
     // Run Main schedule (which includes Update)
     app.update();
