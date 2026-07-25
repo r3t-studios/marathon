@@ -39,7 +39,7 @@ tracing-appender = "0.2"
 tracing-oslog = "0.3"
 
 # Random
-rand = "0.8"
+rand = "0.9"
 
 # Encoding
 hex = "0.4"
