@@ -1,3 +1,9 @@
+---
+title: "Estimation and Prioritization"
+description: "How r3t Studios sizes, estimates, and prioritizes work, grounded in Lean Software Development principles adapted for indie game development."
+updated_at: "2026-07-28"
+---
+
 # Estimation and Prioritization
 
 This document defines how r3t Studios sizes, estimates, and prioritizes work. Our approach is grounded in **Lean Software Development** principles, adapted for indie game development.

@@ -1,3 +1,9 @@
+---
+title: "iOS Deployment Guide"
+description: "Building and deploying Aspen (built on the Marathon engine) to iOS devices and simulators."
+updated_at: "2026-07-28"
+---
+
 # iOS Deployment Guide
 
 This guide covers building and deploying Aspen (built on Marathon engine) to iOS devices and simulators.

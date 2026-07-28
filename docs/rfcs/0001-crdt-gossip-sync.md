@@ -1,3 +1,9 @@
+---
+title: "RFC 0001: CRDT Synchronization Protocol over iroh-gossip"
+description: "A gossip-based CRDT synchronization protocol for building eventually-consistent multiplayer collaborative applications with 2-5 concurrent users."
+updated_at: "2026-07-28"
+---
+
 # RFC 0001: CRDT Synchronization Protocol over iroh-gossip
 
 **Status:** Implemented

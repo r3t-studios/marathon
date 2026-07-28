@@ -1,3 +1,9 @@
+---
+title: "Agent Simulation Framework - Task Breakdown"
+description: "Breakdown of the 12 layers of the agent simulation framework into specific, sized tasks for prioritization and scheduling."
+updated_at: "2026-07-28"
+---
+
 # Agent Simulation Framework - Task Breakdown
 
 **Epic:** Agent Simulation Framework (#5)

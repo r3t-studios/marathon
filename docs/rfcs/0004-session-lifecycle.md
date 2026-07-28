@@ -1,3 +1,9 @@
+---
+title: "RFC 0004: Session Lifecycle Management"
+description: "Session-based lifecycle management for peer-to-peer collaborative sessions, with session-scoped network isolation and hybrid state restoration."
+updated_at: "2026-07-28"
+---
+
 # RFC 0004: Session Lifecycle Management
 
 **Status:** Draft

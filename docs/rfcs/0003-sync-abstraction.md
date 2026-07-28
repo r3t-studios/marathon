@@ -1,3 +1,9 @@
+---
+title: 'RFC 0003: Sync Abstraction Layer - "Never Think About It Again"'
+description: "A high-level abstraction layer that makes CRDT synchronization, persistence, and networking feel effortless through compile-time code generation and explicit configuration."
+updated_at: "2026-07-28"
+---
+
 # RFC 0003: Sync Abstraction Layer - "Never Think About It Again"
 
 **Status:** Draft

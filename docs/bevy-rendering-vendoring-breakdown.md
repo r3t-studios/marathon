@@ -1,3 +1,9 @@
+---
+title: "Bevy Rendering Vendoring - Task Breakdown"
+description: "Breakdown of the 5 phases of the Bevy rendering vendoring epic into specific, sized tasks for prioritization and scheduling."
+updated_at: "2026-07-28"
+---
+
 # Bevy Rendering Vendoring - Task Breakdown
 
 **Epic:** Vendor Bevy Renderer and Eliminate Window Component Duplication (#2)

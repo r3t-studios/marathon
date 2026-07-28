@@ -1,5 +1,8 @@
 # Marathon
 
+[![Matrix](https://img.shields.io/badge/chat-%23hello%3Asunbeam.pt-0dbd8b?logo=matrix)](https://matrix.to/#/#hello:sunbeam.pt)
+[![License](https://img.shields.io/github/license/sunbeamdotpt/marathon)](LICENSE.md)
+
 **A peer-to-peer game engine development kit built with Rust and CRDTs**
 
 Marathon is a multiplayer game engine framework designed for building real-time collaborative games with offline-first capabilities. Built on [Bevy](https://bevyengine.org/) and [iroh](https://iroh.computer/), it provides CRDT-based state synchronization, peer-to-peer networking, and persistent state management out of the box - so you can focus on making great games instead of wrestling with networking code.
@@ -104,7 +107,7 @@ For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
   - [0002: Persistence Strategy](docs/rfcs/0002-persistence-strategy.md)
   - [0003: Sync Abstraction](docs/rfcs/0003-sync-abstraction.md)
   - [0004: Session Lifecycle](docs/rfcs/0004-session-lifecycle.md)
-  - [0005: Spatial Audio System](docs/rfcs/0005-spatial-audio-vendoring.md)
+  - [0005: Spatial Audio System](docs/rfcs/0005-spatial-audio-system.md)
   - [0006: Agent Simulation Architecture](docs/rfcs/0006-agent-simulation-architecture.md)
 - **[iOS Deployment Guide](docs/ios-deployment.md)** - Complete iOS build instructions
 - **[Estimation Methodology](docs/ESTIMATION.md)** - Project sizing and prioritization approach
