@@ -1,3 +1,9 @@
+---
+title: "RFCs"
+description: "Request for Comments (RFCs) for major design decisions in the Lonni project."
+updated_at: "2026-07-28"
+---
+
 # RFCs
 
 Request for Comments (RFCs) for major design decisions in the Lonni project.

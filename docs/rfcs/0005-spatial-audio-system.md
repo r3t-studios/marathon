@@ -1,3 +1,9 @@
+---
+title: "RFC 0005: Spatial Audio System"
+description: "Vendoring Firewheel and Steam Audio into Marathon's engine layer for a bus-based mixing architecture with spatial 3D audio and real-time environmental simulation."
+updated_at: "2026-07-28"
+---
+
 # RFC 0005: Spatial Audio System
 
 **Status:** Draft

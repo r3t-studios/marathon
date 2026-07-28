@@ -1,3 +1,9 @@
+---
+title: "RFC: Agent Simulation Architecture"
+description: "NPC behavior, lifecycle, scheduling, and world interaction for simulating a village of up to 500 inhabitants in real-time."
+updated_at: "2026-07-28"
+---
+
 # RFC: Agent Simulation Architecture
 
 **Status:** Draft

@@ -1,3 +1,9 @@
+---
+title: "RFC 0002: Persistence Strategy for Battery-Efficient State Management"
+description: "A persistence strategy that balances data durability with battery efficiency for mobile platforms."
+updated_at: "2026-07-28"
+---
+
 # RFC 0002: Persistence Strategy for Battery-Efficient State Management
 
 **Status:** Implemented

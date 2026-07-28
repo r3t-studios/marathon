@@ -1,3 +1,9 @@
+---
+title: "Spatial Audio System - Task Breakdown"
+description: "Breakdown of the 8 phases of the spatial audio system epic into specific, sized tasks for prioritization and scheduling."
+updated_at: "2026-07-28"
+---
+
 # Spatial Audio System - Task Breakdown
 
 **Epic:** Spatial Audio System (#4)
